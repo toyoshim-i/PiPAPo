@@ -98,7 +98,7 @@ After dispatch, the SVC handler checks (in order):
 1. **exec_pending** — `sys_execve` loaded a new image; do a full PendSV-style
    restore from `current->sp` (r4-r11 including r9/GOT base).
 2. **Process blocked** — PendSV already pended by `sched_yield()`; if
-   `svc_restart` is set, restore original `frame[0]` and adjust `PC -= 2` so
+   `syscall_restart` is set, restore original `frame[0]` and adjust `PC -= 2` so
    the SVC re-executes on reschedule.
 3. **Pending signals** — `signal_check()` may modify PSP for signal delivery.
 

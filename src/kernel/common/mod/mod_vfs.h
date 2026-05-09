@@ -192,7 +192,7 @@ MOD_FUNC(vfs, void, fd_pool_init, void)
  *   n     Maximum bytes to read.
  *
  * Returns bytes read (0 = EOF), or negative errno.  May block
- * on TTY or pipe (uses svc_set_restart + sched_switch).
+ * on TTY or pipe (uses syscall_set_restart + sched_switch).
  */
 MOD_FUNC(vfs, long, fd_read, int, page_id_t, uint16_t, size_t)
 

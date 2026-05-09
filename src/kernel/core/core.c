@@ -30,7 +30,7 @@ mod_core_t mod_core = {
     .sched_wakeup = sched_wakeup,
     .sched_switch = sched_switch,
     .sched_get_ticks = sched_get_ticks,
+    .syscall_set_restart = syscall_set_restart,
     .subsys_read_proc = subsys_read_proc,
-    .svc_set_restart = svc_set_restart,
     .time_now_sec = time_now_sec,
 };

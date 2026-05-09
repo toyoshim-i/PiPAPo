@@ -195,7 +195,7 @@ typedef struct pcb {
   user_page_ref_t clear_child_tid; /* set_tid_address reference         */
 
   /* ── m68k syscall restart (per-process, not global) ─────────── */
-  uint8_t svc_needs_restart; /* set by blocking syscalls            */
+  uint8_t syscall_needs_restart; /* set by blocking syscalls            */
 
   /* ── Tracing ─────────────────────────────────────────────────── */
   pid_t tracer_pid;             /* parent tracer PID, or 0 if none     */

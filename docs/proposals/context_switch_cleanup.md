@@ -104,7 +104,7 @@ Remaining:
    kernel-continuation model where they do not already have one.  RISC-V now
    uses a machine-mode `ecall` continuation switch; Xtensa still needs a design
    decision.
-3. REMAINING: rename shared restart symbols from ARM-flavored `svc_*` names to
+3. DONE: rename shared restart symbols from ARM-flavored `svc_*` names to
    syscall names:
    - `svc_restart[]` -> `syscall_restart[]`
    - `svc_saved_a0[]` -> `syscall_saved_arg0[]`
@@ -197,7 +197,7 @@ Current state:
   IRET-compatible frame and restores through `i16_trap_after_switch`.
 - Context switches also shadow the core/VFS far-call entry-stub globals into
   the PCB, making the stubs effectively per-process while suspended.
-- Restart is partly per-process through `pcb_t.svc_needs_restart`, but shared
+- Restart is partly per-process through `pcb_t.syscall_needs_restart`, but shared
   symbol names still expose the ARM-flavored `svc_*` vocabulary.
 
 Plan:
@@ -227,7 +227,7 @@ Current state:
   emulator paths all save full register frames and swap SSP/USP through the
   PCB.
 - Syscall restart is more per-process than ARM/RISC-V: the trap path comments
-  note that global `svc_restart` is unsafe for nested m68k trap handling.
+  note that global `syscall_restart` is unsafe for nested m68k trap handling.
 
 Plan:
 

@@ -93,14 +93,14 @@ static int timespec64_write_remaining(uintptr_t rem_ptr) {
 long sys_nanosleep(uintptr_t req_ptr, uintptr_t rem_ptr) {
   if (req_ptr == 0u) return -(long)EINVAL;
 
-  /* On svc_restart re-entry: check for pending signal first */
+  /* On syscall_restart re-entry: check for pending signal first */
   if (current->sig_pending & ~current->sig_blocked) {
     if (timespec32_write_remaining(rem_ptr) < 0) return -(long)EFAULT;
     current->sleep_until = 0;
     return -(long)EINTR;
   }
 
-  /* On svc_restart re-entry: check if sleep has expired */
+  /* On syscall_restart re-entry: check if sleep has expired */
   if (current->sleep_until != 0 &&
       (int32_t)(sched_get_ticks() - current->sleep_until) >= 0) {
     current->sleep_until = 0;
@@ -121,9 +121,9 @@ long sys_nanosleep(uintptr_t req_ptr, uintptr_t rem_ptr) {
     current->sleep_until = sched_get_ticks() + ticks;
   }
 
-  /* Block with svc_restart so SVC re-executes when woken */
+  /* Block with syscall_restart so SVC re-executes when woken */
   current->state = PROC_SLEEPING;
-  svc_set_restart();
+  syscall_set_restart();
   sched_switch();
   return 0; /* ignored — SVC restores original args */
 }
@@ -224,14 +224,14 @@ long sys_clock_nanosleep32(long clk, long flags, uintptr_t req_ptr,
   (void)flags;
   if (req_ptr == 0u) return -(long)EINVAL;
 
-  /* On svc_restart re-entry: check for pending signal first */
+  /* On syscall_restart re-entry: check for pending signal first */
   if (current->sig_pending & ~current->sig_blocked) {
     if (timespec32_write_remaining(rem_ptr) < 0) return -(long)EFAULT;
     current->sleep_until = 0;
     return -(long)EINTR;
   }
 
-  /* On svc_restart re-entry: check if sleep has expired */
+  /* On syscall_restart re-entry: check if sleep has expired */
   if (current->sleep_until != 0 &&
       (int32_t)(sched_get_ticks() - current->sleep_until) >= 0) {
     current->sleep_until = 0;
@@ -250,9 +250,9 @@ long sys_clock_nanosleep32(long clk, long flags, uintptr_t req_ptr,
     current->sleep_until = sched_get_ticks() + ticks;
   }
 
-  /* Block with svc_restart */
+  /* Block with syscall_restart */
   current->state = PROC_SLEEPING;
-  svc_set_restart();
+  syscall_set_restart();
   sched_switch();
   return 0;
 }
@@ -270,14 +270,14 @@ long sys_clock_nanosleep64(long clk, long flags, uintptr_t req_ptr,
   (void)flags;
   if (req_ptr == 0u) return -(long)EINVAL;
 
-  /* On svc_restart re-entry: check for pending signal first */
+  /* On syscall_restart re-entry: check for pending signal first */
   if (current->sig_pending & ~current->sig_blocked) {
     if (timespec64_write_remaining(rem_ptr) < 0) return -(long)EFAULT;
     current->sleep_until = 0;
     return -(long)EINTR;
   }
 
-  /* On svc_restart re-entry: check if sleep has expired */
+  /* On syscall_restart re-entry: check if sleep has expired */
   if (current->sleep_until != 0 &&
       (int32_t)(sched_get_ticks() - current->sleep_until) >= 0) {
     current->sleep_until = 0;
@@ -296,9 +296,9 @@ long sys_clock_nanosleep64(long clk, long flags, uintptr_t req_ptr,
     current->sleep_until = sched_get_ticks() + ticks;
   }
 
-  /* Block with svc_restart */
+  /* Block with syscall_restart */
   current->state = PROC_SLEEPING;
-  svc_set_restart();
+  syscall_set_restart();
   sched_switch();
   return 0;
 }

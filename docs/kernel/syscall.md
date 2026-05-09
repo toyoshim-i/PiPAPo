@@ -242,7 +242,7 @@ Wait for a child process to exit.
 `wait4` ignores the `rusage` parameter and delegates to `waitpid`.
 
 If children exist but none has exited, the caller blocks.  The blocking uses
-the **svc_restart** mechanism: when the process is woken, SVC re-executes
+the **syscall_restart** mechanism: when the process is woken, SVC re-executes
 the syscall with the original arguments.
 
 **vs POSIX/Linux:**
@@ -523,7 +523,7 @@ write end.
 - Write returns `-EPIPE` when all read ends are closed.
 - Maximum 4 concurrent pipes (`PIPE_MAX`).
 
-Blocking uses the svc_restart mechanism (syscall re-executes on wake).
+Blocking uses the syscall_restart mechanism (syscall re-executes on wake).
 
 **vs POSIX/Linux:**
 - Buffer is 512 bytes (Linux default is 64 KB).
@@ -889,10 +889,10 @@ The following syscalls can block the calling process:
 | write (pipe) | Pipe buffer full |
 | ppoll | No ready fds and timeout not expired |
 
-Blocking uses the **svc_restart** mechanism:
+Blocking uses the **syscall_restart** mechanism:
 
 1. The syscall marks the process as `PROC_BLOCKED` or `PROC_SLEEPING`.
-2. It sets `svc_restart[core_id] = 1` and saves the original first argument.
+2. It sets `syscall_restart[core_id] = 1` and saves the original first argument.
 3. The process yields to the scheduler.
 4. When woken, SVC_Handler restores the saved argument into the exception
    frame and adjusts the stacked PC back by 2 bytes (to the `svc 0`
@@ -900,6 +900,6 @@ Blocking uses the **svc_restart** mechanism:
 5. The syscall re-executes with the original arguments and checks whether the
    blocking condition has been resolved.
 
-On m68k, a per-process `svc_needs_restart` flag is used instead of the global
-`svc_restart` array, because the m68k TRAP handler re-executes in a C loop
+On m68k, a per-process `syscall_needs_restart` flag is used instead of the global
+`syscall_restart` array, because the m68k TRAP handler re-executes in a C loop
 rather than adjusting the stacked PC.

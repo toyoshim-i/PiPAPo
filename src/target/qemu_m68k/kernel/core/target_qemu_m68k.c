@@ -57,10 +57,10 @@ void m68k_syscall_entry(uint32_t *regs) {
   /* Save original d1 (first arg) for potential restart.
    * These are C locals on the process stack, so they survive context
    * switches (TRAP #1 / timer ISR) — unlike the globals m68k_saved_nr
-   * and svc_saved_a0 which leak between processes. */
+   * and syscall_saved_arg0 which leak between processes. */
   uint32_t saved_d1 = regs[1];
 
-  current->svc_needs_restart = 0;
+  current->syscall_needs_restart = 0;
 
   syscall_dispatch(&regs[1], nr, a4, a5);
 
@@ -69,12 +69,12 @@ void m68k_syscall_entry(uint32_t *regs) {
   regs[0] = regs[1];
 
   /* Handle restart: blocking syscalls (read, waitpid, sleep, etc.)
-   * set current->svc_needs_restart = 1 before yielding.  When woken,
+   * set current->syscall_needs_restart = 1 before yielding.  When woken,
    * we loop here to re-execute the syscall with original arguments.
    * The per-process flag is safe across context switches, unlike the
-   * global svc_restart which gets corrupted by other processes. */
-  while (current->svc_needs_restart) {
-    current->svc_needs_restart = 0;
+   * global syscall_restart which gets corrupted by other processes. */
+  while (current->syscall_needs_restart) {
+    current->syscall_needs_restart = 0;
     regs[0] = nr;
     regs[1] = saved_d1;
     syscall_dispatch(&regs[1], nr, a4, a5);

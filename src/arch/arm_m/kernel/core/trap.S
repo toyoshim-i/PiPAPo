@@ -34,10 +34,10 @@
 @      sched_switch() via arm_kernel_sched_switch(); by the time execution
 @      reaches this check again, the same kernel continuation has resumed.
 @      Restart-style blocking syscalls (e.g. waitpid) pend PendSV instead;
-@      when svc_restart[core_id] is set, we restore the original frame[0]
+@      when syscall_restart[core_id] is set, we restore the original frame[0]
 @      and adjust the stacked PC back by 2 so SVC re-executes after wakeup.
 @
-@ All per-core state (exec_pending, svc_restart, svc_saved_a0, current_core)
+@ All per-core state (exec_pending, syscall_restart, syscall_saved_arg0, current_core)
 @ is indexed by core_id via the core_id_reg indirect pointer.
 @
 @ SVC runs its body on the current process's kernel stack.  After the initial
@@ -90,9 +90,9 @@ SVC_Handler:
     @ --- Save original frame[0] for potential syscall restart ---
     mrs   r0, psp              @ r0 = frame pointer on PSP
     ldr   r2, [r0]             @ r2 = original frame[0] (a0)
-    ldr   r3, =svc_saved_a0
+    ldr   r3, =syscall_saved_arg0
     adds  r3, r3, r6
-    str   r2, [r3]             @ svc_saved_a0[core_id] = original a0
+    str   r2, [r3]             @ syscall_saved_arg0[core_id] = original a0
 
     @ --- Build argument registers for syscall_dispatch(frame, nr, a4, a5) ---
     @ Reads from [sp, #N] must happen BEFORE the MSP swap below — they
@@ -157,7 +157,7 @@ SVC_Handler:
     @ arm_kernel_sched_switch() has already switched away and later resumed
     @ this SVC continuation.  For restart blocking, PendSV will tail-chain
     @ after exception return and the adjusted SVC will replay after wakeup.
-    ldr   r0, =svc_restart
+    ldr   r0, =syscall_restart
     adds  r0, r0, r6
     ldr   r1, [r0]
     cmp   r1, #0
@@ -165,10 +165,10 @@ SVC_Handler:
 
     @ --- Syscall restart: restore frame[0] and adjust PC-2 ---
     movs  r1, #0
-    str   r1, [r0]                    @ svc_restart[core_id] = 0
+    str   r1, [r0]                    @ syscall_restart[core_id] = 0
 
     mrs   r0, psp
-    ldr   r1, =svc_saved_a0
+    ldr   r1, =syscall_saved_arg0
     adds  r1, r1, r6
     ldr   r1, [r1]
     str   r1, [r0, #0]               @ frame[0] = original a0 (pid arg etc.)

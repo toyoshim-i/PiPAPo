@@ -245,11 +245,11 @@ _trap_entry:
     j       .Ltrap_return
 .Lno_exec:
 
-    # ── Check svc_restart (blocking syscall needs re-execution) ─────
-    # If svc_restart is set, rewind mepc by 4 (back to ecall) and
-    # restore the original a0 from svc_saved_a0, so the syscall
+    # ── Check syscall_restart (blocking syscall needs re-execution) ─────
+    # If syscall_restart is set, rewind mepc by 4 (back to ecall) and
+    # restore the original a0 from syscall_saved_arg0, so the syscall
     # re-executes with original arguments when the process resumes.
-    la      t0, svc_restart
+    la      t0, syscall_restart
     lw      t1, 0(t0)
     beqz    t1, .Lno_restart
     sw      zero, 0(t0)
@@ -258,7 +258,7 @@ _trap_entry:
     addi    t1, t1, -4
     sw      t1, TF_MEPC(sp)
     # Restore original a0
-    la      t0, svc_saved_a0
+    la      t0, syscall_saved_arg0
     lw      t1, 0(t0)
     sw      t1, 32(sp)             # frame[0] = saved a0 at sp+32
 .Lno_restart:

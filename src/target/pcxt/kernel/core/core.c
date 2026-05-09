@@ -30,7 +30,7 @@ void sched_switch(void);
 uint32_t sched_get_ticks(void);
 struct pcb;
 int subsys_read_proc(int, struct pcb *, const char *, char *, int);
-void svc_set_restart(void);
+void syscall_set_restart(void);
 uint32_t time_now_sec(void);
 
 /* MOD_IMPL(core, X) expands to .X = core_X — alias stubs */
@@ -48,8 +48,8 @@ uint32_t time_now_sec(void);
 #define core_sched_wakeup        sched_wakeup
 #define core_sched_switch        sched_switch
 #define core_sched_get_ticks     sched_get_ticks
+#define core_syscall_set_restart syscall_set_restart
 #define core_subsys_read_proc    subsys_read_proc
-#define core_svc_set_restart     svc_set_restart
 #define core_time_now_sec        time_now_sec
 
 #include "kernel/common/mod/mod_core.h"

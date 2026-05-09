@@ -162,11 +162,11 @@ static void xtensa_syscall_handler(XtExcFrame *frame) {
     frame->a2 = 0;
   }
 
-  /* svc_restart: blocking syscall needs re-execution */
-  if (svc_restart[0]) {
-    svc_restart[0] = 0;
+  /* syscall_restart: blocking syscall needs re-execution */
+  if (syscall_restart[0]) {
+    syscall_restart[0] = 0;
     frame->pc -= 3; /* rewind to SYSCALL instruction */
-    frame->a2 = svc_saved_a0[0];
+    frame->a2 = syscall_saved_arg0[0];
   }
 
   /* Context switch via cooperative yield.

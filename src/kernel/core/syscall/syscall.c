@@ -34,8 +34,8 @@
  * For single-core (Steps 6-7), C uses [0]; assembly accesses [0] implicitly
  * because the symbol address = &array[0]. */
 volatile int exec_pending[2] = {0, 0};
-volatile int svc_restart[2] = {0, 0};
-volatile uint32_t svc_saved_a0[2] = {0, 0};
+volatile int syscall_restart[2] = {0, 0};
+volatile uint32_t syscall_saved_arg0[2] = {0, 0};
 volatile uint32_t svc_exc_return[2] = {0, 0};
 
 #if defined(__ia16__)
@@ -49,9 +49,9 @@ static long ia16_sign_extend_arg(long value) {
 #define SYSCALL_TRACK_KSTACK 1
 #endif
 
-void svc_set_restart(void) {
-  svc_restart[core_id()] = 1;
-  current->svc_needs_restart = 1;
+void syscall_set_restart(void) {
+  syscall_restart[core_id()] = 1;
+  current->syscall_needs_restart = 1;
 }
 
 /* Translate a user pointer into a (page, off) pair for path/buffer

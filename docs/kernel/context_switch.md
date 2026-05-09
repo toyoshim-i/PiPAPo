@@ -34,8 +34,8 @@ state before returning to user code.
 ## Restartable Syscalls
 
 Some syscalls use the restart path instead of preserving a kernel
-continuation.  These syscalls set `svc_restart[core]`, save the original first
-argument in `svc_saved_a0[core]`, block the process, and yield.  The trap
+continuation.  These syscalls set `syscall_restart[core]`, save the original first
+argument in `syscall_saved_arg0[core]`, block the process, and yield.  The trap
 return path then rewinds the saved user PC to the syscall instruction and
 restores the first argument, so the syscall re-executes when the process runs
 again.
@@ -61,7 +61,7 @@ priority and must not preempt SVC.  SVC runs with the process's per-process
 MSP; see [`stack.md`](stack.md).
 
 When `sched_switch()` is called inside Handler mode and the current process is
-`PROC_BLOCKED` without `svc_restart`, `arch_sched_switch()` calls
+`PROC_BLOCKED` without `syscall_restart`, `arch_sched_switch()` calls
 `arm_kernel_sched_switch()` directly.  That path saves the live kernel
 continuation on MSP, saves PSP in `pcb_t.sp`, marks the PCB as a kernel
 continuation, calls the scheduler, reloads MPU/debug state for the incoming

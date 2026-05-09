@@ -381,8 +381,8 @@ skip TCB save/restore. PPAP manages its own context switching entirely.
 
 ### Syscall restart
 
-`svc_restart[0]` rewinds `frame->pc` by 3 (SYSCALL instruction size) and
-restores `frame->a2` from `svc_saved_a0[0]`.
+`syscall_restart[0]` rewinds `frame->pc` by 3 (SYSCALL instruction size) and
+restores `frame->a2` from `syscall_saved_arg0[0]`.
 
 ---
 

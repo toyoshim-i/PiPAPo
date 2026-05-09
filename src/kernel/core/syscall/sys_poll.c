@@ -8,7 +8,7 @@
  *   - Poll all fds via file_ops->poll callback
  *   - If any events match, return immediately
  *   - If timeout is zero, return 0 (non-blocking poll)
- *   - Otherwise, block with svc_restart; the process is woken by either:
+ *   - Otherwise, block with syscall_restart; the process is woken by either:
  *     (a) data arrival (e.g. tty_rx_notify → sched_wakeup)
  *     (b) timeout expiry (sched_tick checks PROC_BLOCKED + sleep_until)
  *     (c) signal delivery (returns -EINTR)
@@ -75,7 +75,7 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds, uint32_t timeout_ticks,
     return 0;
   }
 
-  /* Check if we've timed out (on svc_restart re-entry) */
+  /* Check if we've timed out (on syscall_restart re-entry) */
   if (current->sleep_until != 0 &&
       (int32_t)(mod_core.sched_get_ticks() - current->sleep_until) >= 0) {
     current->sleep_until = 0;
@@ -107,7 +107,7 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds, uint32_t timeout_ticks,
     }
   }
   current->state = PROC_BLOCKED;
-  mod_core.svc_set_restart();
+  mod_core.syscall_set_restart();
   mod_core.sched_switch();
   return 0; /* ignored — SVC restores original args */
 }

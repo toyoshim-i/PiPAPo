@@ -105,8 +105,8 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   PATCH_CORE(11, sched_get_ticks);
   PATCH_CORE(12, sched_wakeup);
   PATCH_CORE(13, sched_switch);
-  PATCH_CORE(14, subsys_read_proc);
-  PATCH_CORE(15, svc_set_restart);
+  PATCH_CORE(14, syscall_set_restart);
+  PATCH_CORE(15, subsys_read_proc);
   PATCH_CORE(16, time_now_sec);
 #undef PATCH_CORE
 }

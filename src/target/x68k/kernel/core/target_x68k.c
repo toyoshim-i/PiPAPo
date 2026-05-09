@@ -69,14 +69,14 @@ void m68k_syscall_entry(uint32_t *regs) {
 
   uint32_t saved_d1 = regs[1];
 
-  current->svc_needs_restart = 0;
+  current->syscall_needs_restart = 0;
 
   syscall_dispatch(&regs[1], nr, a4, a5);
 
   regs[0] = regs[1];
 
-  while (current->svc_needs_restart) {
-    current->svc_needs_restart = 0;
+  while (current->syscall_needs_restart) {
+    current->syscall_needs_restart = 0;
     regs[0] = nr;
     regs[1] = saved_d1;
     syscall_dispatch(&regs[1], nr, a4, a5);

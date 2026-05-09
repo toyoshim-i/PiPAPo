@@ -40,7 +40,7 @@ int arm_take_kernel_context(pcb_t *p) {
  * direct MSP continuation switch. */
 int arm_can_kernel_sched_switch(void) {
   return current && current->state == PROC_BLOCKED &&
-         svc_restart[core_id()] == 0;
+         syscall_restart[core_id()] == 0;
 }
 
 /* POSIX signal numbers */

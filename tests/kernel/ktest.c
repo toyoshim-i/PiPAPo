@@ -1614,7 +1614,7 @@ static void blocking_io_integration_test(void)
         /* Clean up */
         current->sig_pending = 0;
         current->state = PROC_RUNNABLE;
-        svc_restart[core_id()] = 0;
+        syscall_restart[core_id()] = 0;
     }
 
     /* Summary */

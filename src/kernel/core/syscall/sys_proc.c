@@ -313,7 +313,7 @@ static void trace_stop_current(int restart) {
     return;
   }
 #endif
-  if (restart) svc_set_restart();
+  if (restart) syscall_set_restart();
   sched_switch();
 }
 
@@ -1935,10 +1935,10 @@ long sys_vfork(uint32_t *frame) {
   sched_switch();
 
   /* Clear stale flags left by the child's syscalls while we were blocked.
-   * exec_pending and svc_restart are global (not per-process), so a child's
+   * exec_pending and syscall_restart are global (not per-process), so a child's
    * execve or blocking read can leave flags that would corrupt our return. */
   exec_pending[core_id()] = 0;
-  svc_restart[core_id()] = 0;
+  syscall_restart[core_id()] = 0;
 
   return (long)child->pid;
 }
@@ -1956,7 +1956,7 @@ long sys_vfork(uint32_t *frame) {
  *
  * Blocking: since this runs inside SVC_Handler (Handler mode), we cannot
  * loop and retry — sched_switch() only pends PendSV, which cannot preempt
- * SVC.  Instead, we mark PROC_BLOCKED, set svc_restart = 1, and return.
+ * SVC.  Instead, we mark PROC_BLOCKED, set syscall_restart = 1, and return.
  * SVC_Handler restores frame[0] and adjusts PC-2 so the syscall re-executes
  * when the process is rescheduled.  PendSV tail-chains after SVC returns.
  */
@@ -2053,7 +2053,7 @@ long sys_waitpid(long pid, long status_ptr, long options) {
    * sys_exit will wake us by setting PROC_RUNNABLE.
    * SVC_Handler will restore frame[0] and PC-2 so the SVC re-executes. */
   current->state = PROC_BLOCKED;
-  svc_set_restart();
+  syscall_set_restart();
   sched_switch();
   return 0; /* value ignored — SVC_Handler restores original frame[0] */
 }

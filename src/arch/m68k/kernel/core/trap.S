@@ -38,8 +38,8 @@
 |
 | m68k_syscall_entry(regs) reads arguments from this frame and writes
 | the return value into regs[0] (the d0 slot).  It also handles syscall
-| restart internally (looping on current->svc_needs_restart) instead of
-| using the global svc_restart flag, which is unsafe on m68k because
+| restart internally (looping on current->syscall_needs_restart) instead of
+| using the global syscall_restart flag, which is unsafe on m68k because
 | nested TRAP handlers share globals across processes.
 |
 | Post-dispatch check:

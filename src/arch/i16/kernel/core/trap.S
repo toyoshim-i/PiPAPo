@@ -160,7 +160,7 @@ i16_syscall_isr:
   testb %al, %al
   jz    .Lno_restart
   movb  $0, %ss:PCB_SVC_NEEDS_RESTART_OFFSET(%bx)
-  movw  $0, %ss:svc_restart
+  movw  $0, %ss:syscall_restart
   popw  %bx
   /* Rewind IP on the interrupted stack: IP is at user_SP+18 */
   movw  %cx, %ds        /* DS = user_SS */

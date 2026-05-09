@@ -39,20 +39,21 @@ typedef struct pcb pcb_t;
  */
 void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5);
 
-/* Per-core SVC state arrays — indexed by core_id() for dual-core.
- * Assembly (svc.S) accesses [0] implicitly via the symbol base address;
- * Step 9 converts assembly to use core_id() indexing.
+/* Per-core syscall trap state arrays — indexed by core_id() for dual-core.
+ * Assembly accesses [0] implicitly via the symbol base address; Step 9
+ * converts assembly to use core_id() indexing.
  *
- * exec_pending: set by sys_execve to tell SVC_Handler to do a full
+ * exec_pending: set by sys_execve to tell the trap handler to do a full
  *   context restore from the new process image (r9/GOT base).
  *
- * svc_restart / svc_saved_a0: blocking syscalls set svc_restart[N] = 1.
- *   SVC_Handler detects this, restores frame[0] from svc_saved_a0[N], and
- *   adjusts the stacked PC back by 2 bytes (size of "svc 0").  When the
- *   process is rescheduled, the SVC re-executes with original arguments. */
+ * syscall_restart / syscall_saved_arg0: blocking syscalls set
+ *   syscall_restart[N] = 1.  The trap handler detects this, restores frame[0]
+ *   from syscall_saved_arg0[N], and rewinds the saved PC by the architecture's
+ *   syscall instruction size.  When rescheduled, the syscall re-executes with
+ *   original arguments. */
 extern volatile int exec_pending[2];
-extern volatile int svc_restart[2];
-extern volatile uint32_t svc_saved_a0[2];
+extern volatile int syscall_restart[2];
+extern volatile uint32_t syscall_saved_arg0[2];
 extern volatile uint32_t
     svc_exc_return[2]; /* EXC_RETURN saved by SVC_Handler (M33) */
 
@@ -63,9 +64,9 @@ extern volatile uint32_t svc_saved_msp[2];
 #endif
 
 /* Helper: mark current syscall for restart after blocking yield.
- * Sets both the global svc_restart (for ARM trap.S) and the per-process
- * flag (for m68k, where globals leak between nested TRAP #0 handlers). */
-void svc_set_restart(void);
+ * Sets both the global syscall_restart and the per-process flag used by
+ * arches that must replay syscalls outside the shared trap-return path. */
+void syscall_set_restart(void);
 
 /* ── Syscall implementations ─────────────────────────────────────────────────
  */

@@ -446,7 +446,7 @@ static long tty_read_raw(tty_dev_t *t, int nonblock, page_id_t page,
   int c;
   /* Wait loop: block in sched_switch() and retry t->in() after each
    * wakeup until we actually have a byte.  The syscall completes with
-   * a real status — no svc_set_restart + trap-IP-rewind dance — so
+   * a real status — no syscall_set_restart + trap-IP-rewind dance — so
    * kernel-side callers (DOS/CP/M/Human68k bridges) see the correct
    * return value. */
   for (;;) {

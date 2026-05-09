@@ -8,7 +8,7 @@
  * calling process is marked PROC_BLOCKED with wait_channel pointing at
  * the pipe_t.  pipe_read/pipe_write loop internally across sched_switch
  * until data/space is available, a signal arrives, or O_NONBLOCK makes
- * us return -EAGAIN.  No svc_restart IP-rewind is needed — the syscall
+ * us return -EAGAIN.  No syscall_restart IP-rewind is needed — the syscall
  * completes with a real status in one call.
  *
  * Wake-up: pipe_write wakes blocked readers after adding data;
