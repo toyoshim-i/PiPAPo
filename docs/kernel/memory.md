@@ -241,9 +241,9 @@ Each process owns:
 - **mmap pages** — `user_pages[]` high slots (top-down), allocated by
   `sys_mmap2()` for anonymous mappings.
 - **Process stack page** — `stack_page_id`, one 4 KB page.  On ARM this is
-  the PSP stack; on m68k the per-process SSP stack.  On RISC-V, kernel
-  continuations use the fixed kstack region instead; `stack_page_id` remains
-  the process stack allocation tracked outside `user_pages[]`.
+  the PSP stack; on m68k the per-process SSP stack.  RISC-V native ELF
+  processes no longer allocate this page; kernel continuations use the fixed
+  kstack region and the user stack is tracked in `user_pages[]`.
 - **User stack page** (m68k and RISC-V) — `user_stack_page` (m68k) or a
   dedicated page in `user_pages[]` (RISC-V), one 4 KB page.
 - **Fixed kernel-stack slot** (ARM, ia16, and RISC-V) — a per-process slot in
@@ -258,7 +258,7 @@ All pages come from the same global page pool.
 sys_exit:
   1. image_release_owned_segments()  <- frees OWNED text/staged segments
   2. proc_release_tracked_pages()    <- frees user_pages[] (data, brk, mmap)
-  3. free stack_page_id              <- process stack page
+  3. free stack_page_id              <- process stack page, if allocated
 ```
 
 No duplicate-tracking, no overlap check.  Each page has exactly one
@@ -270,11 +270,11 @@ owner.
 
 When `execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
 
-1. **Pre-allocate the process stack page** — `mem_region_alloc()` returns one
-   page.  This is done first to prevent the LIFO free-stack from interfering
-   with contiguous allocation below.  On m68k and RISC-V, a separate user
-   stack page is also allocated here.  On RISC-V, the kernel trap frame is
-   built on the fixed kstack slot instead of this page.
+1. **Pre-allocate process stacks** — architectures that use `stack_page_id`
+   allocate one page first to prevent the LIFO free-stack from interfering
+   with contiguous allocation below.  m68k and RISC-V also allocate a separate
+   user stack page.  RISC-V skips `stack_page_id` and builds the kernel trap
+   frame on the fixed kstack slot.
 
 2. **Allocate contiguous data pages** — `mem_region_alloc()` scans the page
    pool from the bottom and allocates N adjacent pages for the data segment

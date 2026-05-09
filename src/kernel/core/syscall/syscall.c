@@ -77,10 +77,9 @@ static int xlate_user_ptr_optional(uintptr_t up, user_page_ref_t *ref) {
 }
 
 #if defined(__m68k__) || defined(__riscv)
-/* m68k and RISC-V have no MSP/PSP split — kernel runs on the process
- * stack page.  sys_execve cannot free the old stack while still
- * executing on it.  Store it here; trap.S frees it after switching
- * SP to the new stack. */
+/* m68k cannot free the old stack page while executing on it.  RISC-V shares
+ * the same exec_pending hook to install the fresh trap frame; after fixed
+ * kstacks, exec_old_stack is normally NULL there. */
 #include "kernel/core/mm/mem_region.h"
 volatile void *exec_old_stack = NULL;
 void exec_free_old_stack(void) {

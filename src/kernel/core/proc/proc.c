@@ -352,8 +352,6 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
     }
     sp = arch_build_initial_frame(sp, entry);
     p->sp = (uint32_t)(uintptr_t)sp;
-#else
-    uint8_t *stack_base = (uint8_t *)mem_region_page_to_ptr(p->stack_page_id);
 #endif
 
 #if !defined(__ia16__)
@@ -363,14 +361,15 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
     sp = (uint32_t *)(uintptr_t)p->kernel_sp;
     sp = arch_build_initial_frame(sp, entry);
     /* TF_USER_SP at word offset 32 (byte offset 128) */
-    sp[32] = user_sp ? (uint32_t)user_sp
-                     : (uint32_t)(uintptr_t)stack_base + PAGE_SIZE;
+    sp[32] = user_sp ? (uint32_t)user_sp : 0u;
     p->sp = (uint32_t)(uintptr_t)sp;
 #elif defined(__m68k__)
+    uint8_t *stack_base = (uint8_t *)mem_region_page_to_ptr(p->stack_page_id);
     sp = (uint32_t *)(stack_base + PAGE_SIZE);
     sp = arch_build_initial_frame(sp, entry);
     p->sp = (uint32_t)(uintptr_t)sp;
 #else
+    uint8_t *stack_base = (uint8_t *)mem_region_page_to_ptr(p->stack_page_id);
     if (user_sp)
       sp = (uint32_t *)(void *)user_sp;
     else

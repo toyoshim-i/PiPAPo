@@ -1648,9 +1648,9 @@ long sys_getpid(void) { return (long)current->pid; }
  * Create a child process.  The parent is blocked until the child calls
  * execve() or _exit().
  *
- * The child gets its own stack page with a copy of the parent's exception
- * frame (return register = 0 for child). The child shares the parent's
- * tracked page-backed slots (GOT/data).
+ * The child gets its own saved context with a copy of the parent's exception
+ * or trap frame (return register = 0 for child). The child shares the
+ * parent's tracked page-backed slots (GOT/data).
  *
  * frame: pointer to the parent's stacked exception frame
  *   ARM:  [r0, r1, r2, r3, r12, lr, pc, xpsr] on PSP
@@ -1662,7 +1662,8 @@ long sys_vfork(uint32_t *frame) {
   if (!child) return -(long)ENOMEM;
 
 #if !defined(__ia16__)
-  /* 2. Allocate stack page for child */
+    /* 2. Allocate stack page for child */
+#if !defined(__riscv)
   proc_image_segment_t stack_region = {0};
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                        PROC_IMAGE_SEG_WRITABLE) < 0) {
@@ -1671,6 +1672,8 @@ long sys_vfork(uint32_t *frame) {
   }
   void *stack = stack_region.base;
   child->stack_page_id = mem_region_ptr_to_page(stack);
+#endif
+  uint32_t *child_frame = NULL;
 #endif
 
   /* 3. Share parent's user_pages with child */
@@ -1748,13 +1751,13 @@ long sys_vfork(uint32_t *frame) {
     uint16_t ax_off = ax_rel % PAGE_SIZE;
     mem_region_page_write(ax_page, ax_off, &zero, 2);
   }
-#else
+#elif !defined(__riscv)
   memcpy(stack, mem_region_page_to_ptr(current->stack_page_id), PAGE_SIZE);
 
   /* Calculate child's frame position at the same offset as parent's */
   uintptr_t frame_off = (uintptr_t)frame - (uintptr_t)mem_region_page_to_ptr(
                                                current->stack_page_id);
-  uint32_t *child_frame = (uint32_t *)((uint8_t *)stack + frame_off);
+  child_frame = (uint32_t *)((uint8_t *)stack + frame_off);
 #endif
 
 #if defined(__m68k__)
@@ -1823,8 +1826,6 @@ long sys_vfork(uint32_t *frame) {
       uint32_t child_usp = 0;
       if (vfork_copy_user_stack(parent_ustack, child_tf[32], &child_ustack,
                                 &child_usp) < 0) {
-        proc_release_stack_page(&stack);
-        child->stack_page_id = PAGE_ID_INVALID;
         proc_free(child);
         return -(long)ENOMEM;
       }
@@ -2218,9 +2219,9 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
      * m68k: kernel runs on stack_page.  sys_execve returns through the old
      * kernel stack before trap.S switches to the new one via exec_pending.
      * Defer the free until after the switch.
-     * RISC-V: kernel runs on the fixed kstack region, but trap.S still uses
-     * exec_pending to install the fresh trap frame before releasing the old
-     * stack_page_id page.
+     * RISC-V: kernel runs on the fixed kstack region and no longer allocates
+     * stack_page_id for native ELF processes; exec_free_old_stack is still
+     * called from trap.S and becomes a no-op when old_stack_id is invalid.
      * ARM: kernel runs on MSP (separate), so PSP stack can be freed
      * immediately. */
 #if defined(__m68k__) || defined(__riscv)

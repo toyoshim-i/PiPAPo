@@ -462,17 +462,23 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   proc_image_segment_t data_region = {0};
 
   /* --- 2. Allocate stacks --- */
-  if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
-    return -(int)ENOMEM;
-  }
-  p->stack_page_id = mem_region_ptr_to_page(stack_region.base);
-  p->image.stack = stack_region;
-  out->stack_top = (uint32_t)(uintptr_t)stack_region.base + PAGE_SIZE;
-
-  /* m68k and RISC-V use a separate user-mode stack */
+  int need_process_stack = cpu_ops->arch_id != CPU_ARCH_RISCV;
   int need_user_stack =
       (cpu_ops->arch_id == CPU_ARCH_M68K || cpu_ops->arch_id == CPU_ARCH_RISCV);
+
+  if (need_process_stack) {
+    if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                         PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
+      return -(int)ENOMEM;
+    }
+    p->stack_page_id = mem_region_ptr_to_page(stack_region.base);
+    p->image.stack = stack_region;
+    out->stack_top = (uint32_t)(uintptr_t)stack_region.base + PAGE_SIZE;
+  } else {
+    p->stack_page_id = PAGE_ID_INVALID;
+  }
+
+  /* m68k and RISC-V use a separate user-mode stack */
   if (need_user_stack) {
     if (mem_region_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                          PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {

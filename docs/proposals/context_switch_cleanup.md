@@ -85,6 +85,9 @@ Done:
 - RISC-V now uses fixed per-process kernel-stack slots on `qemu_rv32` and
   `pico2rv`; `mscratch` is loaded from `pcb_t.kernel_sp` rather than lazily
   deriving the kernel stack from `stack_page_id`.
+- RISC-V native ELF processes no longer allocate the old placeholder
+  `stack_page_id` page; the user stack remains a tracked page in
+  `user_pages[USER_PAGES_MAX - 1]`.
 - Kernel-stack-use reduction for deep subsystem paths is deferred in
   [`kernel_stack_use.md`](kernel_stack_use.md), because userland subsystem
   work may obsolete much of that path.

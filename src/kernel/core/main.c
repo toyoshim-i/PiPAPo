@@ -87,10 +87,10 @@ void kmain(void) {
   /* Kernel integration tests (no-op unless PPAP_TESTS=ON) */
   target_post_mount();
 
-  /* Give the kernel init thread (thread 0) its own PSP stack page.
-   * i16 uses the fixed SS=0 kernel stack slots instead, so no extra
-   * page-backed stack allocation is needed there. */
-#if !defined(__ia16__)
+  /* Give the kernel init thread (thread 0) its own page-backed stack when
+   * the architecture needs one.  ia16 and RISC-V use fixed kernel-stack slots
+   * instead, so no extra page-backed allocation is needed there. */
+#if !defined(__ia16__) && !defined(__riscv)
   {
     proc_image_segment_t stack_region;
     if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
@@ -100,10 +100,10 @@ void kmain(void) {
       proc_table[0].stack_page_id = PAGE_ID_INVALID;
   }
 #endif
-#if defined(__ia16__)
+#if defined(__ia16__) || defined(__riscv)
   proc_table[0].stack_page_id = PAGE_ID_INVALID;
 #endif
-#if !defined(__ia16__)
+#if !defined(__ia16__) && !defined(__riscv)
   if (proc_table[0].stack_page_id == PAGE_ID_INVALID) {
     mod_vfs.klogf("PANIC: no page for thread 0 stack\n");
     target_qemu_poweroff(1);
