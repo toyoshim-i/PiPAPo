@@ -114,7 +114,7 @@ Remaining:
    `svc_exc_return[]`.
 5. REMAINING: normalize context-switch helper names where useful:
    - RISC-V already uses `riscv_ctx_switch`
-   - extract m68k inline switch bodies behind `m68k_ctx_switch`
+   - m68k switch paths now share `m68k_ctx_switch`
    - decide whether `i16_sched_yield` should stay public or become
      `i16_ctx_switch`
    - extract/rename Xtensa helper glue as `xtensa_ctx_switch` if it improves
@@ -232,8 +232,8 @@ Current state:
 Plan:
 
 1. Preserve the full-frame SSP/USP switch contract.
-2. Extract or rename the duplicated switch bodies behind a clearly named
-   helper such as `m68k_ctx_switch`, without changing frame format.
+2. DONE: extract the duplicated switch bodies behind `m68k_ctx_switch`,
+   without changing frame format.
 3. Keep TRAP #1 as the synchronous cooperative switch trigger.
 4. Document that the process stack page is the per-process kernel stack and
    the user stack page is separate USP storage.

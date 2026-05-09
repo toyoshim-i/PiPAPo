@@ -38,16 +38,16 @@
     .even
 
 | -----------------------------------------------------------------------------
-| m68k_trap1_handler — TRAP #1 cooperative yield
+| m68k_ctx_switch — common SSP/USP handoff
 |
-| Called via TRAP #1 instruction from thread context.  Hardware pushes
-| SR + PC onto the supervisor stack before entering this handler.
-| Always performs a context switch (unconditional yield).
+| Enter with the full register frame already saved at SP.  The caller's return
+| address is popped into a callee-saved address register before sched_next(),
+| because the helper changes SP to the incoming process's supervisor stack and
+| cannot return with RTS after that handoff.
 | -----------------------------------------------------------------------------
-    .globl m68k_trap1_handler
-m68k_trap1_handler:
-    | Save ALL registers (d0-d7/a0-a6 = 15 × 4 = 60 bytes)
-    movem.l %d0-%d7/%a0-%a6,%sp@-
+    .globl m68k_ctx_switch
+m68k_ctx_switch:
+    move.l  %sp@+,%a2              | return address; SP again points at frame
 
     | Store SP (SSP) and USP into current PCB
     move.l  current_core,%a0
@@ -66,6 +66,22 @@ m68k_trap1_handler:
     move.l  %a0@(PCB_SP_OFFSET),%sp
     move.l  %a0@(PCB_USP_OFFSET),%a1
     move.l  %a1,%usp
+
+    jmp     %a2@
+
+| -----------------------------------------------------------------------------
+| m68k_trap1_handler — TRAP #1 cooperative yield
+|
+| Called via TRAP #1 instruction from thread context.  Hardware pushes
+| SR + PC onto the supervisor stack before entering this handler.
+| Always performs a context switch (unconditional yield).
+| -----------------------------------------------------------------------------
+    .globl m68k_trap1_handler
+m68k_trap1_handler:
+    | Save ALL registers (d0-d7/a0-a6 = 15 × 4 = 60 bytes)
+    movem.l %d0-%d7/%a0-%a6,%sp@-
+
+    jsr     m68k_ctx_switch
 
     | Restore all registers (a1 overwritten by movem from saved frame)
     movem.l %sp@+,%d0-%d7/%a0-%a6
@@ -96,21 +112,7 @@ m68k_trace_handler:
     beq.s   .Ltrace_no_switch
     clr.l   switch_pending
 
-    | Store SP (SSP) and USP into current PCB
-    move.l  current_core,%a0
-    move.l  %sp,%a0@(PCB_SP_OFFSET)
-    move.l  %usp,%a1
-    move.l  %a1,%a0@(PCB_USP_OFFSET)
-
-    | Pick next process and switch current_core
-    jsr     sched_next
-    move.l  %d0,current_core
-
-    | Restore incoming context
-    move.l  %d0,%a0
-    move.l  %a0@(PCB_SP_OFFSET),%sp
-    move.l  %a0@(PCB_USP_OFFSET),%a1
-    move.l  %a1,%usp
+    jsr     m68k_ctx_switch
 
 .Ltrace_no_switch:
     | Restore all registers and return from exception
@@ -148,23 +150,7 @@ m68k_timer_isr:
     tst.l   exec_pending
     bne.s   .Lno_switch
 
-    | Store SP (SSP) and USP into current PCB
-    move.l  current_core,%a0
-    move.l  %sp,%a0@(PCB_SP_OFFSET)
-    move.l  %usp,%a1
-    move.l  %a1,%a0@(PCB_USP_OFFSET)
-
-    | Pick next process
-    jsr     sched_next
-
-    | Update current_core[0]
-    move.l  %d0,current_core
-
-    | Restore SP (SSP) and USP from next PCB
-    move.l  %d0,%a0
-    move.l  %a0@(PCB_SP_OFFSET),%sp
-    move.l  %a0@(PCB_USP_OFFSET),%a1
-    move.l  %a1,%usp
+    jsr     m68k_ctx_switch
 
 .Lno_switch:
     | Restore all registers

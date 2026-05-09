@@ -87,21 +87,7 @@ m68k_trap0_handler:
     beq.s   .Lret_current
     clr.l   switch_pending
 
-    | Save current SP/USP into PCB
-    move.l  current_core,%a0
-    move.l  %sp,%a0@(PCB_SP_OFFSET)
-    move.l  %usp,%a1
-    move.l  %a1,%a0@(PCB_USP_OFFSET)
-
-    | Pick next runnable process and switch current_core
-    jsr     sched_next
-    move.l  %d0,current_core
-
-    | Load next SP/USP
-    move.l  %d0,%a0
-    move.l  %a0@(PCB_SP_OFFSET),%sp
-    move.l  %a0@(PCB_USP_OFFSET),%a1
-    move.l  %a1,%usp
+    jsr     m68k_ctx_switch
 
 .Lret_current:
     | Return value is already in regs[0] (d0 slot on stack),
@@ -135,18 +121,7 @@ m68k_trap0_handler:
     beq.s   .Lexec_return
     clr.l   switch_pending
 
-    move.l  current_core,%a0
-    move.l  %sp,%a0@(PCB_SP_OFFSET)
-    move.l  %usp,%a1
-    move.l  %a1,%a0@(PCB_USP_OFFSET)
-
-    jsr     sched_next
-    move.l  %d0,current_core
-
-    move.l  %d0,%a0
-    move.l  %a0@(PCB_SP_OFFSET),%sp
-    move.l  %a0@(PCB_USP_OFFSET),%a1
-    move.l  %a1,%usp
+    jsr     m68k_ctx_switch
 
 .Lexec_return:
     | Restore all registers from the new frame and return
