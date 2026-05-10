@@ -389,12 +389,15 @@ static char state_char(const pcb_t *p) {
   }
 }
 
-/* Calculate VSZ (virtual memory size) for a process in bytes */
-static uint32_t proc_vsz(const pcb_t *p) {
+/* Count page-pool-backed process memory in bytes.
+ *
+ * Fixed kstack slots are reserved by target linker scripts and are not part of
+ * the page pool, so they are intentionally excluded from /proc/<pid>/stat
+ * vsize/rss.  Architectures that use a page-backed process stack expose it via
+ * stack_page_id; RISC-V instead tracks its user stack in user_pages[]. */
+static uint32_t proc_page_pool_bytes(const pcb_t *p) {
   uint32_t pages = 0;
-  /* Stack page */
   if (p->stack_page_id != PAGE_ID_INVALID) pages++;
-  /* Tracked page-backed user pages (includes mmap pages) */
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     if (p->user_pages[i] != PAGE_ID_INVALID) pages++;
   }
@@ -449,10 +452,11 @@ static int gen_pid_stat(char *buf, int bufsiz, const pcb_t *p) {
   pos = fmt_append_u32(buf, pos, bufsiz, p->start_time);
   pos = fmt_append(buf, pos, bufsiz, " ");
   /* 23: vsize (bytes) */
-  pos = fmt_append_u32(buf, pos, bufsiz, proc_vsz(p));
+  uint32_t page_pool_bytes = proc_page_pool_bytes(p);
+  pos = fmt_append_u32(buf, pos, bufsiz, page_pool_bytes);
   pos = fmt_append(buf, pos, bufsiz, " ");
-  /* 24: rss (pages) — same as vsz/PAGE_SIZE on PPAP (no swap) */
-  pos = fmt_append_u32(buf, pos, bufsiz, proc_vsz(p) / PAGE_SIZE);
+  /* 24: rss (pages) — page-pool-backed resident pages; no swap */
+  pos = fmt_append_u32(buf, pos, bufsiz, page_pool_bytes / PAGE_SIZE);
   /* Fields 25–52: all zeros */
   pos =
       fmt_append(buf, pos, bufsiz,

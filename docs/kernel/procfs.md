@@ -22,12 +22,19 @@ OomCount:      0
 
 | Field      | Description                                      |
 |------------|--------------------------------------------------|
-| MemTotal   | Total allocatable pages x PAGE_SIZE, in kB       |
-| MemFree    | Free pages x PAGE_SIZE, in kB                    |
+| MemTotal   | Total page-pool-backed RAM, in kB                |
+| MemFree    | Free page-pool-backed RAM, in kB                 |
 | PageSize   | Page allocator granularity in bytes (always 4096) |
+| DataMax    | Maximum tracked user pages per process, in kB    |
 | OomCount   | Number of `page_alloc()` failures since boot     |
 
-Source: `page_free_count()`, `page_count` (runtime-detected), and `oom_count` from `mm/page.c`.
+Fixed kstack regions reserved by target linker scripts are not part of
+`MemTotal` or `MemFree`; those fields describe only memory managed by the page
+allocator.
+
+Source: `mem_region_total_bytes(PPAP_MEM_RAM_STACK)`,
+`mem_region_free_bytes(PPAP_MEM_RAM_STACK)`, `USER_PAGES_MAX`, and
+`oom_count`.
 
 ---
 
@@ -149,18 +156,23 @@ Key fields used by PPAP:
 | 14 | utime     | User-mode ticks (`pcb->utime`)                    |
 | 15 | stime     | System-mode ticks (`pcb->stime`)                  |
 | 22 | starttime | Boot tick when process was created (`pcb->start_time`) |
-| 23 | vsize     | Virtual memory size in bytes (see below)           |
-| 24 | rss       | Resident pages (= vsize / PAGE_SIZE, no swap)     |
+| 23 | vsize     | Page-pool-backed process bytes (see below)        |
+| 24 | rss       | Resident page-pool pages (= vsize / PAGE_SIZE)    |
 
 All other fields are 0.
 
-**VSZ calculation** (`proc_vsz()`):
-Counts pages from three sources:
-- `pcb->stack_page` (1 page if allocated)
-- `pcb->user_pages[0..USER_PAGES_MAX-1]` (data/text segment pages)
-- `pcb->mmap_regions[0..MMAP_REGIONS_MAX-1]` (mmap'd regions by page count)
+**VSZ/RSS calculation** (`proc_page_pool_bytes()`):
+Counts page-pool-backed process pages from:
+
+- `pcb->stack_page_id` (one page if the architecture allocates it)
+- `pcb->user_pages[0..USER_PAGES_MAX-1]` (data, heap, mmap, and RISC-V user
+  stack pages)
 
 Result = total pages x PAGE_SIZE.
+
+Fixed per-process kstack slots on ARM, ia16, and RISC-V are reserved outside
+the page pool and are intentionally excluded.  m68k SSP storage is page-backed
+and is counted through `stack_page_id`.
 
 ---
 

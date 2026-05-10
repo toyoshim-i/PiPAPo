@@ -248,9 +248,10 @@ Each process owns:
   dedicated page in `user_pages[]` (RISC-V), one 4 KB page.
 - **Fixed kernel-stack slot** (ARM, ia16, and RISC-V) — a per-process slot in
   the target linker script's `__kstack_region_base` region, initialized into
-  `pcb_t.kernel_sp`.
+  `pcb_t.kernel_sp`.  These slots are reserved outside the page pool and are
+  not included in `/proc/meminfo` or `/proc/<pid>/stat` vsize/rss.
 
-All pages come from the same global page pool.
+All page-backed entries above come from the same global page pool.
 
 ### 4.4 Exit Path
 
