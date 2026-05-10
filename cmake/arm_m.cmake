@@ -17,6 +17,11 @@ else()
     set(PPAP_SHARED_BUILD "${PPAP_ROOT}/build/arm_m")
 endif()
 
+# Userland follows the sa_restorer signal-delivery model and supplies
+# _ppap_sigreturn_trampoline in src/arch/arm_m/user/syscall.S, so the
+# shared user-space signal() shim under src/user/lib/sigaction.c links.
+set(PPAP_USER_HAS_SIGRETURN_TRAMPOLINE TRUE)
+
 # Userland build config (rogue, romfs pipeline)
 # Must be included before kernel.cmake to define PPAP_ENABLE_* options
 include(${CMAKE_CURRENT_LIST_DIR}/user.cmake)

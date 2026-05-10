@@ -1,9 +1,9 @@
 /*
  * signal.c — POSIX raise() (arch-neutral).
  *
- * signal() itself is arch-specific (lives in src/arch/<arch>/user/
- * sigaction.c, since it needs the per-arch sigreturn trampoline).
- * raise() is portable: send a signal to the current process.
+ * signal() lives in the shared src/user/lib/sigaction.c on arches whose
+ * cmake config sets PPAP_USER_HAS_SIGRETURN_TRAMPOLINE.  raise() itself
+ * is portable: send a signal to the current process.
  */
 
 #include "syscall.h"

@@ -436,18 +436,19 @@ function(_ppap_build_user_programs)
         ${PPAP_SHARED_BUILD}/crt0.o ${PPAP_SHARED_BUILD}/syscall.o
         ${_libc_objs})
 
-    # --- Optional arch-supplied sigaction() wrapper ---
-    # Arches using the sa_restorer signal-delivery model (ARM today;
-    # others migrating later) provide sigaction() in C so the compiler
-    # emits a PIC-correct reference to _ppap_sigreturn_trampoline.
-    if(EXISTS ${PPAP_ARCH_DIR}/sigaction.c)
+    # --- Shared signal() wrapper (sa_restorer model) ---
+    # Arches that follow the sa_restorer signal-delivery model and
+    # provide _ppap_sigreturn_trampoline in their user/syscall.S set
+    # PPAP_USER_HAS_SIGRETURN_TRAMPOLINE.  i16 supplies its own asm
+    # signal() (real-mode-specific) and does not set the flag.
+    if(PPAP_USER_HAS_SIGRETURN_TRAMPOLINE)
         add_custom_command(
             OUTPUT ${PPAP_SHARED_BUILD}/sigaction.o
             COMMAND ${PPAP_CC} ${PPAP_USER_CFLAGS}
                     -ffunction-sections -fdata-sections
                     -c -o ${PPAP_SHARED_BUILD}/sigaction.o
-                    ${PPAP_ARCH_DIR}/sigaction.c
-            DEPENDS ${PPAP_ARCH_DIR}/sigaction.c
+                    ${PPAP_ROOT}/src/user/lib/sigaction.c
+            DEPENDS ${PPAP_ROOT}/src/user/lib/sigaction.c
                     ${PPAP_ROOT}/src/user/syscall.h
             COMMENT "Compiling sigaction.o (${PPAP_ARCH})"
         )
@@ -527,7 +528,7 @@ function(_ppap_add_rogue)
     foreach(_unit IN ITEMS string stdio stdlib alloc file time errno signal util)
         list(APPEND _rogue_libc_deps ${PPAP_SHARED_BUILD}/libc_${_unit}.o)
     endforeach()
-    if(EXISTS ${PPAP_ARCH_DIR}/sigaction.c)
+    if(PPAP_USER_HAS_SIGRETURN_TRAMPOLINE)
         list(APPEND _rogue_libc_deps ${PPAP_SHARED_BUILD}/sigaction.o)
     endif()
     if(EXISTS ${PPAP_ARCH_DIR}/setjmp.S)

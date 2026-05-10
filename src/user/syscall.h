@@ -92,11 +92,12 @@ void *brk(void *addr);
 
 int kill(pid_t pid, int sig);
 
-/* signal() (POSIX) is declared in <signal.h>; it lives in
- * arch-specific user/sigaction.c which builds a struct ppap_sigaction
- * with sa_restorer pointing at _ppap_sigreturn_trampoline (defined in
- * each arch's user/syscall.S) and forwards to rt_sigaction (also in
- * user/syscall.S). */
+/* signal() (POSIX) is declared in <signal.h>; it lives in the shared
+ * src/user/lib/sigaction.c which builds a struct ppap_sigaction with
+ * sa_restorer pointing at _ppap_sigreturn_trampoline (defined in each
+ * arch's user/syscall.S) and forwards to rt_sigaction (also in
+ * user/syscall.S).  i16 supplies its own asm signal() in
+ * src/arch/i16/user/syscall.S instead. */
 struct ppap_sigaction {
   void (*sa_handler)(int);
   unsigned long sa_flags;
