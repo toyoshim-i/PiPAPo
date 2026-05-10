@@ -11,6 +11,7 @@
  *   ...               .data (initialized data)
  *   ...               .bss (zero-initialized)
  *   ...               Stack (16 KB, supervisor stack)
+ *   ...               Fixed per-process kernel stacks
  *   ...               Page pool (for mm_init)
  *
  * Everything runs from RAM — no separate ROM region.
@@ -103,6 +104,21 @@ SECTIONS {
 
 
     /* ------------------------------------------------------------------
+     * Per-process kernel stacks.  Slot 0 = 128 B (idle), slots 1..7
+     * = 2 KB each.  Total 128 + 7 * 2048 = 14464 bytes.  Must match
+     * PROC_KSTACK_IDLE_SIZE / PROC_KSTACK_SIZE / PROC_MAX in config.h
+     * and this target's compile definitions.  TODO: shrink to 1 KB after
+     * fixed-kstack high-water measurements.
+     * ------------------------------------------------------------------ */
+    .kstack (NOLOAD) : {
+        . = ALIGN(4);
+        __kstack_region_base = .;
+        . += 14464;
+        __kstack_region_end = .;
+    } > RAM
+
+
+    /* ------------------------------------------------------------------
      * Page pool — remainder of RAM available for page_alloc()
      * ------------------------------------------------------------------ */
     .pagepool (NOLOAD) : {
@@ -115,6 +131,8 @@ SECTIONS {
     /* Sanity checks */
     ASSERT((__stack_top <= __page_pool_start),
            "ERROR: Kernel stack overflows into page pool")
+    ASSERT((__kstack_region_end <= __page_pool_start),
+           "ERROR: Per-process kernel stacks overflow into page pool")
     ASSERT((__page_pool_start <= ORIGIN(RAM) + LENGTH(RAM)),
            "ERROR: Kernel image too large — page pool outside RAM")
 }

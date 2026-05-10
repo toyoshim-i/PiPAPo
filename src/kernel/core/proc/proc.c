@@ -79,6 +79,13 @@ _Static_assert(offsetof(pcb_t, vfs_stub_saved_ip) ==
                "PCB_VFS_STUB_SAVED_IP_OFFSET must match switch.S");
 #endif
 
+#if defined(__m68k__)
+_Static_assert(offsetof(pcb_t, usp) == PCB_USP_OFFSET,
+               "PCB_USP_OFFSET must match trap.S/switch.S");
+_Static_assert(offsetof(pcb_t, kernel_sp) == PCB_KERNEL_SP_OFFSET,
+               "PCB_KERNEL_SP_OFFSET must match proc_info.h");
+#endif
+
 /* ── Globals ─────────────────────────────────────────────────────────────── */
 
 pcb_t proc_table[PROC_MAX];
@@ -364,8 +371,7 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
     sp[32] = user_sp ? (uint32_t)user_sp : 0u;
     p->sp = (uint32_t)(uintptr_t)sp;
 #elif defined(__m68k__)
-    uint8_t *stack_base = (uint8_t *)mem_region_page_to_ptr(p->stack_page_id);
-    sp = (uint32_t *)(stack_base + PAGE_SIZE);
+    sp = (uint32_t *)(uintptr_t)p->kernel_sp;
     sp = arch_build_initial_frame(sp, entry);
     p->sp = (uint32_t)(uintptr_t)sp;
 #else

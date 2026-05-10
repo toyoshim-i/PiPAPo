@@ -132,13 +132,13 @@ void proc_release_private_tracked_pages_from_array(
     page_id_t pages[USER_PAGES_MAX], const page_id_t shared[USER_PAGES_MAX]);
 
 /*
- * Set up an initial kernel stack frame for a new process so that
- * PendSV_Handler can restore it on the first context switch.
+ * Set up an initial kernel stack frame for a new process so that the
+ * architecture context-switch path can restore it on the first switch.
  *
  * Pre-condition: p->stack_page_id must already reference a 4 KB stack backing
- * page on architectures that use one.  RISC-V instead builds the initial trap
- * frame on p->kernel_sp.  After this call p->sp is set and the process is
- * ready to be made PROC_RUNNABLE.
+ * page on architectures that use one.  m68k and RISC-V build the initial
+ * frame on p->kernel_sp instead.  After this call p->sp is set and the
+ * process is ready to be made PROC_RUNNABLE.
  *
  * On entry to `entry`, all callee-saved registers are zero, r0-r3 are zero,
  * and lr = 0xFFFFFFFD (EXC_RETURN: Thread mode, PSP, basic frame).

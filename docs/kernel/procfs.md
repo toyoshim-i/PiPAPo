@@ -164,15 +164,15 @@ All other fields are 0.
 **VSZ/RSS calculation** (`proc_page_pool_bytes()`):
 Counts page-pool-backed process pages from:
 
-- `pcb->stack_page_id` (one page if the architecture allocates it)
+- `pcb->stack_page_id` (one page if the process image allocates it)
 - `pcb->user_pages[0..USER_PAGES_MAX-1]` (data, heap, mmap, and RISC-V user
   stack pages)
 
 Result = total pages x PAGE_SIZE.
 
-Fixed per-process kstack slots on ARM, ia16, and RISC-V are reserved outside
-the page pool and are intentionally excluded.  m68k SSP storage is page-backed
-and is counted through `stack_page_id`.
+Fixed per-process kstack slots on ARM, ia16, m68k, and RISC-V are reserved
+outside the page pool and are intentionally excluded.  On m68k, a non-invalid
+`stack_page_id` is page-backed process/subsystem storage, not SSP storage.
 
 ---
 

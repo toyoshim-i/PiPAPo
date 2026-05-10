@@ -1663,7 +1663,7 @@ long sys_vfork(uint32_t *frame) {
 
 #if !defined(__ia16__)
     /* 2. Allocate stack page for child */
-#if !defined(__riscv)
+#if !defined(__riscv) && !defined(__m68k__)
   proc_image_segment_t stack_region = {0};
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                        PROC_IMAGE_SEG_WRITABLE) < 0) {
@@ -1673,7 +1673,9 @@ long sys_vfork(uint32_t *frame) {
   void *stack = stack_region.base;
   child->stack_page_id = mem_region_ptr_to_page(stack);
 #endif
+#if !defined(__m68k__)
   uint32_t *child_frame = NULL;
+#endif
 #endif
 
   /* 3. Share parent's user_pages with child */
@@ -1751,7 +1753,7 @@ long sys_vfork(uint32_t *frame) {
     uint16_t ax_off = ax_rel % PAGE_SIZE;
     mem_region_page_write(ax_page, ax_off, &zero, 2);
   }
-#elif !defined(__riscv)
+#elif !defined(__riscv) && !defined(__m68k__)
   memcpy(stack, mem_region_page_to_ptr(current->stack_page_id), PAGE_SIZE);
 
   /* Calculate child's frame position at the same offset as parent's */
@@ -1765,10 +1767,18 @@ long sys_vfork(uint32_t *frame) {
    * the switch.S context frame.  The child returns directly to user code
    * via switch.S restore (movem.l + rte), bypassing TRAP #0 cleanup.
    *
-   * frame = &regs[1] (d1 slot).  child_frame - 1 = d0 slot. */
-  uint32_t *child_regs = child_frame - 1; /* d0 slot */
-  child_regs[0] = 0;                      /* d0 = 0 (child return) */
-  child_regs[13] = current->got_base;     /* a5 = GOT base for PIC */
+   * frame = &regs[1] (d1 slot).  Copy the live frame range from the
+   * parent's fixed kstack to the child's fixed kstack at the same top
+   * distance, then patch the child's d0/a5 slots. */
+  uint32_t *parent_regs = frame - 1; /* d0 slot */
+  uintptr_t parent_top = (uintptr_t)current->kernel_sp;
+  uintptr_t parent_base = (uintptr_t)parent_regs;
+  uint32_t frame_bytes = (uint32_t)(parent_top - parent_base);
+  uint32_t *child_regs =
+      (uint32_t *)(uintptr_t)(child->kernel_sp - frame_bytes);
+  memcpy(child_regs, parent_regs, frame_bytes);
+  child_regs[0] = 0;                  /* d0 = 0 (child return) */
+  child_regs[13] = current->got_base; /* a5 = GOT base for PIC */
 
   child->sp = (uint32_t)(uintptr_t)child_regs;
 
@@ -1781,8 +1791,6 @@ long sys_vfork(uint32_t *frame) {
       uint32_t child_usp = 0;
       if (vfork_copy_user_stack(parent_ustack, current->usp, &child_ustack,
                                 &child_usp) < 0) {
-        proc_release_stack_page(&stack);
-        child->stack_page_id = PAGE_ID_INVALID;
         proc_free(child);
         return -(long)ENOMEM;
       }
@@ -2212,22 +2220,17 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
    * Only install default tty stdio if fd 0/1/2 are not already open
    * (e.g. init's first exec before any shell sets up fds). */
   if (current->fd_map[0] == FD_DESC_NONE &&
-      current->fd_map[1] == FD_DESC_NONE && current->fd_map[2] == FD_DESC_NONE)
+      current->fd_map[1] == FD_DESC_NONE &&
+      current->fd_map[2] == FD_DESC_NONE) {
     mod_vfs.fd_stdio_init(current);
+  }
 
-    /* Free old stack page.
-     * m68k: kernel runs on stack_page.  sys_execve returns through the old
-     * kernel stack before trap.S switches to the new one via exec_pending.
-     * Defer the free until after the switch.
-     * RISC-V: native ELF processes no longer allocate stack_page_id.
-     * ARM: kernel runs on MSP (separate), so PSP stack can be freed
-     * immediately. */
-#if defined(__m68k__)
-  extern volatile void *m68k_exec_old_stack;
-  m68k_exec_old_stack = (old_stack_id != PAGE_ID_INVALID)
-                            ? mem_region_page_to_ptr(old_stack_id)
-                            : NULL;
-#elif defined(__ia16__)
+  /* Free old page-backed stack, if the previous image allocated one.
+   * m68k and RISC-V native ELF processes use fixed kernel stacks now, so
+   * stack_page_id is either invalid or non-continuation user/subsystem
+   * storage. ARM also runs kernel continuations on MSP, so the old PSP page
+   * can be freed immediately. */
+#if defined(__ia16__)
   if (old_stack_id != PAGE_ID_INVALID) mem_region_page_free(old_stack_id);
 #else
   if (old_stack_id != PAGE_ID_INVALID) {

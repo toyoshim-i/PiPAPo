@@ -212,6 +212,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   proc_image_segment_t stack_region = {0};
   proc_image_segment_t image_region = {0};
 
+#if !defined(__m68k__)
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                        PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
     rc = -(int)ENOMEM;
@@ -219,6 +220,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   }
   p->stack_page_id = mem_region_ptr_to_page(stack_region.base);
   p->image.stack = stack_region;
+#endif
 
 #if !defined(__m68k__) && defined(PPAP_ENABLE_ECPU_M68K)
   /* ── Emulated path (requires m68k eCPU) ─────────────────────────────── */

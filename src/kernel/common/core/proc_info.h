@@ -36,6 +36,7 @@ typedef void (*sighandler_t)(int);
 #elif defined(__m68k__)
 #define PCB_SP_OFFSET 44u
 #define PCB_USP_OFFSET 48u
+#define PCB_KERNEL_SP_OFFSET 52u
 #elif defined(__riscv)
 #define PCB_SP_OFFSET 48u
 #elif defined(__xtensa__)
@@ -105,6 +106,7 @@ typedef struct pcb {
   uint32_t a2, a3, a4, a5, a6; /* callee-saved addr regs  (offsets 24-43)  */
   uint32_t sp;                 /* saved SSP               (offset 44)      */
   uint32_t usp;                /* saved USP               (offset 48)      */
+  uint32_t kernel_sp;          /* fixed kernel-stack top  (offset 52)      */
 #elif defined(__riscv)
   uint32_t s0, s1;         /* callee-saved (offsets 0-7)               */
   uint32_t s2, s3, s4, s5; /* callee-saved (offsets 8-23)              */

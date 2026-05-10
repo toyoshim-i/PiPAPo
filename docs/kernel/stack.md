@@ -41,7 +41,7 @@ The common defaults are:
 |------|--------------------|------------------|------------------|
 | `arm_m` | Fixed region per process, MSP kernel stack | `sp` = PSP/user context, `kernel_sp` = MSP, `svc_msp` = SVC entry MSP, `kernel_context` distinguishes suspended kernel continuations | PendSV for async preemption; direct `arm_kernel_sched_switch()` for blocked non-restart syscalls inside SVC |
 | `ia16` | Fixed region per process, SS=0 kernel stack | `sp` = saved kernel-stack SP, `kernel_sp` = slot top, plus entry-stub shadows | Timer INT 08h and `i16_ctx_switch()` save `SS:SP` on the kernel stack and restore through a shared IRET tail |
-| `m68k` | Per-process supervisor stack from the process stack page | `sp` = SSP, `usp` = user stack pointer | TRAP/timer paths save full frames on SSP, call `sched_next()`, then restore incoming SSP/USP |
+| `m68k` | Fixed region per process, SSP kernel stack | `sp` = saved SSP frame, `usp` = user stack pointer, `kernel_sp` = slot top | TRAP/timer paths save full frames on SSP, call `sched_next()`, then restore incoming SSP/USP |
 | `riscv` | Fixed region per process, `mscratch` kernel stack | `sp` = trap-frame SP, `kernel_sp` = `mscratch` kernel-stack top | Trap entry swaps `sp` with `mscratch`; `riscv_ctx_switch()` swaps trap-frame SPs and trap return refreshes `mscratch` |
 | `xtensa` | One process stack carries user and kernel/switch frames | `sp` = solicited switch frame | `xtensa_do_yield()` spills register windows, saves SP, calls `sched_next()`, and restores the incoming solicited frame |
 
@@ -106,8 +106,10 @@ marks while keeping the feature compile-time optional.
 ## m68k
 
 m68k user code runs with a user stack pointer (USP), while supervisor/kernel
-code uses the supervisor stack pointer (SSP).  PPAP stores the suspended SSP in
-`pcb_t.sp` and the current USP in `pcb_t.usp`.
+code uses the supervisor stack pointer (SSP).  The initial SSP frame is built
+on the process's fixed kstack slot.  PPAP stores the suspended SSP frame in
+`pcb_t.sp`, the current USP in `pcb_t.usp`, and the slot top in
+`pcb_t.kernel_sp`.
 
 TRAP and timer paths save the register frame on SSP.  When a switch is needed,
 they save SSP/USP into the outgoing PCB, call `sched_next()`, load the
@@ -116,6 +118,10 @@ with `rte`.
 
 Cooperative `sched_switch()` uses TRAP #1 so the switch happens immediately
 instead of waiting for a later interrupt to consume `switch_pending`.
+
+Native m68k ELF and Human68k processes no longer allocate `stack_page_id` for
+kernel continuation storage.  `stack_page_id`, when present for a subsystem,
+is page-pool-backed process storage rather than the live SSP.
 
 ## RISC-V
 
@@ -139,6 +145,15 @@ RISC-V targets currently use 4 KB user-process slots:
 ```cmake
 PROC_KSTACK_SIZE=4096u
 ```
+
+m68k targets currently use 2 KB user-process slots:
+
+```cmake
+PROC_KSTACK_SIZE=2048u
+```
+
+TODO: measure m68k fixed-kstack high-water marks and shrink to 1 KB if the
+runtime margin is safe.
 
 ## Xtensa
 

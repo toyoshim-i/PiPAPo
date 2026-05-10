@@ -463,6 +463,9 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
 
   /* --- 2. Allocate stacks --- */
   int need_process_stack = cpu_ops->arch_id != CPU_ARCH_RISCV;
+#if defined(__m68k__)
+  if (cpu_ops->arch_id == CPU_ARCH_M68K) need_process_stack = 0;
+#endif
   int need_user_stack =
       (cpu_ops->arch_id == CPU_ARCH_M68K || cpu_ops->arch_id == CPU_ARCH_RISCV);
 

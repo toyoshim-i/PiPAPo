@@ -76,22 +76,6 @@ static int xlate_user_ptr_optional(uintptr_t up, user_page_ref_t *ref) {
   return 0;
 }
 
-#if defined(__m68k__)
-/* m68k cannot free the old stack page while executing on it.  Store it here;
- * trap.S frees it after switching SP to the new process frame. */
-#include "kernel/core/mm/mem_region.h"
-volatile void *m68k_exec_old_stack = NULL;
-void m68k_exec_free_old_stack(void) {
-  void *p = (void *)m68k_exec_old_stack;
-  m68k_exec_old_stack = NULL;
-  if (p) {
-    proc_image_segment_t seg = proc_image_segment_make(
-        p, PAGE_SIZE, PPAP_MEM_RAM_STACK, PROC_IMAGE_SEG_WRITABLE);
-    mem_region_free(&seg);
-  }
-}
-#endif
-
 void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
   long a0 = (long)frame[0];
   long a1 = (long)frame[1];

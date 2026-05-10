@@ -86,8 +86,10 @@ tail used by syscall/timer exits.
 
 ## m68k
 
-m68k has separate USP and SSP.  Cooperative `sched_switch()` triggers TRAP #1,
-which saves registers on SSP, saves SSP/USP into the outgoing PCB, calls
+m68k has separate USP and SSP.  Each process's SSP frame lives in the fixed
+kstack region; `pcb_t.kernel_sp` stores the slot top and `pcb_t.sp` stores the
+saved frame pointer.  Cooperative `sched_switch()` triggers TRAP #1, which
+saves registers on SSP, saves SSP/USP into the outgoing PCB, calls
 `sched_next()`, restores the incoming SSP/USP, and returns with the same frame
 layout used by timer and syscall paths.
 

@@ -240,16 +240,17 @@ Each process owns:
   on demand by `sys_brk()`.
 - **mmap pages** — `user_pages[]` high slots (top-down), allocated by
   `sys_mmap2()` for anonymous mappings.
-- **Process stack page** — `stack_page_id`, one 4 KB page.  On ARM this is
-  the PSP stack; on m68k the per-process SSP stack.  RISC-V native ELF
-  processes no longer allocate this page; kernel continuations use the fixed
-  kstack region and the user stack is tracked in `user_pages[]`.
+- **Process stack page** — `stack_page_id`, one 4 KB page, if the process
+  image needs page-pool-backed stack storage.  On ARM this is the PSP stack.
+  Native m68k and RISC-V ELF processes do not allocate it for kernel
+  continuations; those use fixed kstack slots instead.
 - **User stack page** (m68k and RISC-V) — `user_stack_page` (m68k) or a
   dedicated page in `user_pages[]` (RISC-V), one 4 KB page.
-- **Fixed kernel-stack slot** (ARM, ia16, and RISC-V) — a per-process slot in
-  the target linker script's `__kstack_region_base` region, initialized into
-  `pcb_t.kernel_sp`.  These slots are reserved outside the page pool and are
-  not included in `/proc/meminfo` or `/proc/<pid>/stat` vsize/rss.
+- **Fixed kernel-stack slot** (ARM, ia16, m68k, and RISC-V) — a per-process
+  slot in the target linker script's `__kstack_region_base` region,
+  initialized into `pcb_t.kernel_sp`.  These slots are reserved outside the
+  page pool and are not included in `/proc/meminfo` or `/proc/<pid>/stat`
+  vsize/rss.
 
 All page-backed entries above come from the same global page pool.
 
@@ -273,9 +274,9 @@ When `execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
 
 1. **Pre-allocate process stacks** — architectures that use `stack_page_id`
    allocate one page first to prevent the LIFO free-stack from interfering
-   with contiguous allocation below.  m68k and RISC-V also allocate a separate
-   user stack page.  RISC-V skips `stack_page_id` and builds the kernel trap
-   frame on the fixed kstack slot.
+   with contiguous allocation below.  m68k and RISC-V allocate separate user
+   stack storage and build kernel frames on fixed kstack slots instead of
+   allocating `stack_page_id` for continuations.
 
 2. **Allocate contiguous data pages** — `mem_region_alloc()` scans the page
    pool from the bottom and allocates N adjacent pages for the data segment
@@ -375,9 +376,9 @@ overflows its stack:
   silently corrupts adjacent memory (same as m68k).
 
 The kernel stack (MSP on ARM, SSP on m68k, mscratch-based on RISC-V) is also
-fixed-size: 4 KB on ARM, 16 KB on m68k, 4 KB on RISC-V.  On ARM and RISC-V it
-comes from a fixed per-process kstack region; on m68k it is page-backed SSP
-storage.
+fixed-size and comes from a fixed per-process kstack region: 2 KB on m68k
+today, 4 KB on RISC-V, and target-specific sizes on ARM.  TODO: measure m68k
+fixed-kstack high-water marks and shrink to 1 KB if the runtime margin is safe.
 
 ---
 

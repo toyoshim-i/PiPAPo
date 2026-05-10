@@ -8,9 +8,8 @@
  * sentinel from end-of-syscall paths; on mismatch it logs and halts.
  *
  * Implementation in kstack.c is selected at compile time by
- * PROC_HAS_FIXED_REGION_KSTACK (config.h, set per arch + per-target
- * opt-in flag): fixed-region for targets that own a linker-reserved
- * __kstack_region_base, no-op otherwise.
+ * PROC_HAS_FIXED_REGION_KSTACK (config.h): fixed-region for targets that own a
+ * linker-reserved __kstack_region_base, no-op otherwise.
  */
 
 #ifndef PPAP_KERNEL_CORE_PROC_KSTACK_H

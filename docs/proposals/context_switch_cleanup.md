@@ -11,6 +11,8 @@ Establish one long-term context-switch model for all architectures:
 
 - Every process has a kernel stack that can hold a suspended kernel
   continuation.
+- That kernel stack comes from the common fixed-region kstack helper where the
+  target has a suitable fixed kernel-memory window.
 - `sched_switch()` performs a real cooperative switch even when called while
   the process is already executing kernel code.
 - When the blocked process is scheduled again, it resumes the same kernel call
@@ -20,7 +22,9 @@ Establish one long-term context-switch model for all architectures:
 
 This makes blocking syscalls, VFS waits, pipes, TTY waits, subsystem bridges,
 and future kernel services use the same continuation-blocking contract across
-ARM, ia16, m68k, RISC-V, Xtensa, and later ports.
+ARM, ia16, m68k, RISC-V, Xtensa, and later ports.  The final convergence target
+is that no architecture borrows a user/process data page as its kernel
+continuation stack.
 
 An architecture may also keep a native interrupt stack, such as ARM MSP, for
 fast system interrupt handling.  That is an optional optimization.  It must not
@@ -32,7 +36,8 @@ view.
 
 Each architecture should provide:
 
-1. A per-process kernel stack or equivalent saved kernel-continuation frame.
+1. A per-process kernel stack, preferably allocated by the common
+   fixed-region helper.
 2. A saved context pointer in `pcb_t.sp`.
 3. If the architecture uses a separate kernel-stack top, a live saved value in
    `pcb_t.kernel_sp`.
@@ -45,6 +50,26 @@ The shared kernel should not need to know whether the architecture uses
 hardware stack switching, `mscratch`, separate USP/SSP, register windows, or a
 far-call real-mode stack.  Those details belong behind the architecture switch
 entry points.
+
+## Final Fixed-Kstack Model
+
+The desired steady state is:
+
+1. Each target reserves a fixed `__kstack_region_base` window in its linker
+   script or equivalent target memory map.
+2. `proc_kstack_init_slot()` initializes `pcb_t.kernel_sp` for every process
+   slot and installs canaries / optional `KSTACK_USAGE_TRACK` painting.
+3. Architecture trap, syscall, and cooperative switch paths use
+   `pcb_t.kernel_sp` as the process kernel-continuation stack.
+4. User stacks, PSP/USP stacks, data pages, heap, and mmap pages are tracked
+   independently from fixed kernel stacks.
+5. `execve()` does not need arch-specific deferred freeing for the old kernel
+   stack, because the live kernel continuation does not reside in a page-pool
+   stack page.
+
+Architectures may temporarily keep an equivalent saved-continuation frame while
+being migrated, but that is an intermediate compatibility state, not the final
+goal.
 
 ## Native Interrupt Stacks
 
@@ -88,14 +113,20 @@ Done:
 - RISC-V native ELF processes no longer allocate the old placeholder
   `stack_page_id` page; the user stack remains a tracked page in
   `user_pages[USER_PAGES_MAX - 1]`.
+- m68k now uses fixed per-process kernel-stack slots on `qemu_m68k` and
+  `x68k`; native m68k ELF and Human68k loaders no longer allocate
+  `stack_page_id` as SSP storage.
+- m68k `execve()` no longer needs the deferred old-SSP-page free hook because
+  syscall return switches between fixed kstack frames.
 - Kernel-stack-use reduction for deep subsystem paths is deferred in
   [`kernel_stack_use.md`](kernel_stack_use.md), because userland subsystem
   work may obsolete much of that path.
 
 Remaining:
 
-- Xtensa needs an explicit decision: accept the current solicited-frame stack
-  as its kernel-continuation equivalent, or add a separate kernel stack.
+- Xtensa still carries user, kernel, and solicited switch frames on one process
+  stack.  It needs a fixed-kstack migration design after `xtensa_cc` builds
+  again.
 - Optional naming cleanup remains for arch switch helpers (`*_ctx_switch`).
 - ARM stack-size reduction is deferred until measurements are useful after, or
   independent of, userland subsystem migration.
@@ -104,10 +135,9 @@ Remaining:
 
 1. DONE: audit ARM-M, ia16, m68k, RISC-V, and Xtensa against the target
    contract in this proposal and the stack/context-switch docs.
-2. PARTIAL: move architectures toward an explicit per-process
-   kernel-continuation model where they do not already have one.  RISC-V now
-   uses a machine-mode `ecall` continuation switch; Xtensa still needs a design
-   decision.
+2. PARTIAL: move every architecture to the fixed per-process kstack model.
+   ARM-M, ia16, m68k, and RISC-V already use fixed kstack slots.  Xtensa needs
+   the same migration after `xtensa_cc` builds reliably again.
 3. DONE: rename shared restart symbols from ARM-flavored `svc_*` names to
    syscall names:
    - `svc_restart[]` -> `syscall_restart[]`
@@ -134,8 +164,8 @@ The stack items support the single continuation-blocking model.  They should
 stay behavior-preserving unless a subtask explicitly calls for
 measurement-driven sizing.
 
-1. DONE: prefer a common fixed-region helper for per-process kernel stacks
-   where it fits the target memory map.  ARM-M, ia16, and RISC-V use it today.
+1. DONE: establish the common fixed-region helper for per-process kernel
+   stacks.  ARM-M, ia16, and RISC-V use it today.
 2. DONE: move RISC-V away from lazy `kernel_sp` initialization from the
    process stack page.  `qemu_rv32` and `pico2rv` now reserve fixed kstack
    regions and initialize slots through `proc_kstack_init_slot`.
@@ -144,10 +174,67 @@ measurement-driven sizing.
    stack for continuations.
 4. DONE: use the optional common fixed-region `KSTACK_USAGE_TRACK` helper on
    ARM when measuring kernel-stack high-water marks.
-5. DEFERRED: measure pico1calc stack usage with CP/M and other deep subsystem
+5. DONE: migrate m68k SSP storage from `stack_page_id` to fixed kstack
+   slots while preserving the existing USP and full-frame switch contract.
+6. DONE: set m68k fixed-kstack user-process slots to 2 KB on `qemu_m68k` and
+   `x68k`; TODO: measure high-water marks and shrink to 1 KB if safe.
+7. REMAINING: migrate Xtensa solicited switch frames to a fixed per-process
+   kernel stack after the target builds reliably again.
+8. DEFERRED: measure pico1calc stack usage with CP/M and other deep subsystem
    paths.  See [`kernel_stack_use.md`](kernel_stack_use.md).
-6. DEFERRED: shrink pico1calc `PROC_KSTACK_SIZE` from 2 KB only if
+9. DEFERRED: shrink pico1calc `PROC_KSTACK_SIZE` from 2 KB only if
    measurements show a safe margin.
+
+## Step-by-Step Fixed-Kstack Migration
+
+### Phase 1: Keep The Contract Green
+
+1. Keep the userland empty-pipe blocking test passing on every QEMU target
+   that can run it.
+2. Build each neighboring architecture after shared process, exec, or procfs
+   changes.
+3. Keep restart/replay state separate from continuation blocking state.
+
+### Phase 2: Finish Page-Backed Kernel Stack Ports
+
+1. DONE: migrate m68k first because its SSP model already cleanly separates
+   user USP from kernel SSP.
+2. DONE: add fixed kstack reservations for m68k targets and enable
+   `PROC_HAS_FIXED_REGION_KSTACK`.
+3. DONE: initialize m68k `pcb_t.kernel_sp` via `proc_kstack_init_slot()`.
+4. DONE: build initial m68k frames on the fixed kstack slot and keep
+   `pcb_t.usp` / `user_stack_page` as user stack storage.
+5. DONE: update TRAP #0, TRAP #1, timer, trace, and emulator switch paths so
+   SSP is saved/restored from fixed kstack frames instead of `stack_page_id`.
+6. DONE: remove m68k's deferred exec old-stack hook once `stack_page_id` is no
+   longer the live SSP.
+7. DONE: remove native m68k `stack_page_id` allocation from ELF and Human68k
+   process loaders.  Subsystems may still use it as page-backed process
+   storage, but not as SSP continuation storage.
+8. DONE: update stack, memory, target, and procfs docs to describe fixed m68k
+   kstacks.
+
+### Phase 3: Finish Shared Accounting And Diagnostics
+
+1. Keep `/proc/meminfo` and `/proc/<pid>/stat` reporting page-pool-backed
+   memory only.
+2. Document fixed kstack memory as target-reserved kernel memory, not process
+   page-pool memory.
+3. Use common `KSTACK_USAGE_TRACK` for fixed-kstack high-water measurements on
+   every fixed-kstack architecture that has a suitable syscall/trap hook.
+
+### Phase 4: Migrate Xtensa
+
+1. Restore a reliable `xtensa_cc` build before functional migration.
+2. Document the current solicited-frame layout and all places where user,
+   kernel, and switch frames share the process stack.
+3. Add `pcb_t.kernel_sp` for Xtensa if it is not already present.
+4. Reserve a fixed kstack region in the Xtensa target memory map.
+5. Move syscall continuation and solicited yield frames onto fixed kstack
+   slots, keeping register-window spilling hidden inside the arch helper.
+6. Make timer/fault return paths restore either normal user state or suspended
+   kernel continuations from the fixed kstack.
+7. Add or enable a userland blocking-continuation test for Xtensa.
 
 ## Architecture Notes
 
@@ -220,29 +307,37 @@ Current state:
 
 - m68k has separate USP and SSP.  `pcb_t.sp` stores SSP and `pcb_t.usp` stores
   USP.
-- ELF loading allocates a kernel stack page and a separate user stack page for
-  native m68k user processes.
+- Native m68k ELF and Human68k loading build initial SSP frames on the fixed
+  kstack slot.  Native ELF still allocates a separate user stack page for USP.
 - `arch_sched_switch()` executes TRAP #1, so cooperative `sched_switch()` is
   immediate and satisfies continuation blocking.
 - TRAP #1, TRAP #0 return, timer interrupts, trace exceptions, and boot
   emulator paths all save full register frames and swap SSP/USP through the
   PCB.
+- `execve()` can free old page-backed stack storage immediately when present;
+  the syscall return path no longer runs through a page-backed SSP.
 - Syscall restart is more per-process than ARM/RISC-V: the trap path comments
   note that global `syscall_restart` is unsafe for nested m68k trap handling.
 
 Plan:
 
-1. Preserve the full-frame SSP/USP switch contract.
+1. Preserve the full-frame SSP/USP switch contract while moving SSP storage.
 2. DONE: extract the duplicated switch bodies behind `m68k_ctx_switch`,
    without changing frame format.
 3. Keep TRAP #1 as the synchronous cooperative switch trigger.
-4. Document that the process stack page is the per-process kernel stack and
-   the user stack page is separate USP storage.
-5. Move remaining restart naming toward `syscall_*`, but keep the actual
+4. DONE: add fixed kstack regions to m68k target linker scripts and initialize
+   `pcb_t.kernel_sp` from the common helper.
+5. DONE: build the initial m68k SSP frame on the fixed kstack slot.  Keep
+   `user_stack_page` and `pcb_t.usp` as separate user storage.
+6. DONE: update TRAP #0, TRAP #1, timer, trace, and emulator switch paths so
+   they save/restore SSP from the fixed slot.
+7. DONE: remove `m68k_exec_old_stack` / `m68k_exec_free_old_stack()` after
+   `execve()` no longer returns through a page-backed SSP.
+8. DONE: remove native m68k kernel-stack `stack_page_id` allocation from ELF,
+   `.x`, and `.r` loaders.  Keep subsystem-owned `stack_page_id` uses where
+   they represent page-backed process storage rather than SSP.
+9. Move remaining restart naming toward `syscall_*`, but keep the actual
    restart state per-process where m68k already needs it.
-6. Consider a common fixed-region helper only if later memory measurements
-   show value; the current page-backed SSP model already satisfies the target
-   contract.
 
 ### `riscv`
 
@@ -304,17 +399,19 @@ Current state:
 
 Plan:
 
-1. Keep register-window spilling hidden inside the architecture helper.
-2. Decide whether the current solicited-frame stack is an acceptable
-   "equivalent saved kernel-continuation frame" for the target contract, or
-   whether Xtensa should gain an explicit per-process kernel stack.
-3. If the current model is accepted, document why `pcb_t.sp` alone is enough
-   and what invariants protect user frames from kernel continuation frames.
-4. If an explicit kernel stack is required, add `pcb_t.kernel_sp` for Xtensa
-   and move solicited yield frames there before broadening user-space support.
-5. Rename `xtensa_do_yield()` / `xtensa_do_switch()` only after deciding the
+1. Restore a reliable `xtensa_cc` build before changing stack semantics.
+2. Keep register-window spilling hidden inside the architecture helper.
+3. Document the current solicited-frame layout and the invariants that keep
+   user frames, kernel frames, and switch frames recoverable.
+4. Add `pcb_t.kernel_sp` for Xtensa and initialize it from a target-reserved
+   fixed kstack region.
+5. Move solicited yield frames and syscall continuations onto the fixed kstack
+   while preserving the window-spill discipline.
+6. Make exception return restore either a normal user frame or a suspended
+   kernel continuation from the fixed kstack.
+7. Rename `xtensa_do_yield()` / `xtensa_do_switch()` only after deciding the
    shared helper naming convention.
-6. Add a test that blocks inside the syscall handler and resumes through the
+8. Add a test that blocks inside the syscall handler and resumes through the
    same windowed call chain, because this is the Xtensa-specific risk.
 
 ## Constraints

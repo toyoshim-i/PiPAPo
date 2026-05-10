@@ -36,7 +36,11 @@ function(ppap_m68k_target_common target)
     target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter)
 
     # Core kernel definitions
-    target_compile_definitions(${target} PRIVATE PPAP_KERNEL=1)
+    target_compile_definitions(${target} PRIVATE
+        PPAP_KERNEL=1
+        # TODO: shrink to 1 KB after fixed-kstack high-water measurements.
+        PROC_KSTACK_SIZE=2048u
+    )
     
     # Subsystem and eCPU build flags
     if(PPAP_ENABLE_HUMAN68K)
