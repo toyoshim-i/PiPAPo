@@ -142,7 +142,7 @@ void klog_init_logger(void) {
   initialized = 1;
   uart_init();
   klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
-  klogf("PiPaPo booting... [pico1calc]\n");
+  klogf("PiPAPo booting... [pico1calc]\n");
   klogf("UART: 115200 bps @ 12 MHz XOSC\n");
 }
 

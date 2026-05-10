@@ -17,7 +17,7 @@ void klog_init_logger(void) {
   initialized = 1;
   uart_init();
   klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
-  klogf("PiPaPo booting... [pico2rv]\n");
+  klogf("PiPAPo booting... [pico2rv]\n");
 }
 
 void vfs_notify(int event) {
