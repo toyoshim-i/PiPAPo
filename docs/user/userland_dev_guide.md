@@ -36,26 +36,24 @@ PPAP runs on multiple architectures. Key characteristics shared by all targets:
 | Concurrent processes | 8 (system-wide) |
 | mmap regions | 4 per process |
 
-## 2. Development Paths
+## 2. Programming Model
 
-There are two ways to write applications for PPAP:
+User programs link against **PPAP libc** (`src/user/lib/` +
+`src/user/include/`), which provides POSIX-named symbols (`printf`,
+`malloc`, `fopen`, `setjmp`, …) on top of the per-arch syscall stubs
+in `src/arch/<arch>/user/syscall.S`.  Headers under
+`src/user/include/` cover `<stdio.h>`, `<stdlib.h>`, `<string.h>`,
+`<setjmp.h>`, `<time.h>`, `<signal.h>`, `<errno.h>`, etc.
 
-### Path A: Bare-Metal (no libc)
+Programs that want the absolute smallest binary (a few hundred
+bytes) can skip the libc and call the syscall stubs directly via
+`#include "syscall.h"` — `src/user/hello.c` is the reference for
+that style.  Both link the same way; libc is just a few extra `.o`
+files contributed by the build pipeline.
 
-Use raw syscall stubs. No standard C library — only freestanding
-headers (`<stdint.h>`, `<stddef.h>`). This produces the smallest binaries
-and is suitable for test programs and simple utilities.
-
-Reference implementation: `src/user/` directory.
-
-### Path B: musl libc
-
-Link against musl libc for full POSIX C library support (`printf`,
-`malloc`, `fopen`, etc.). This is what Rogue uses and is the
-recommended path for ports of existing UNIX applications.
-
-Reference implementation:
-- `third_party/build_rogue.sh` — Rogue 5.4.4 (standalone build script, minimal curses shim)
+For ports of existing UNIX applications, see
+[`../getting_started/porting.md`](../getting_started/porting.md);
+`third_party/build_rogue.sh` is the worked example.
 
 ## 3. Toolchain Requirements
 
@@ -73,20 +71,6 @@ sudo apt install gcc-arm-none-eabi binutils-arm-none-eabi
 
 - `m68k-elf-gcc` — custom-built cross compiler (provided by Docker image `docker/m68k/`)
 - `m68k-elf-binutils`
-
-### musl Sysroot (Path B only)
-
-Build the musl sysroot before compiling applications:
-
-```sh
-./third_party/build_musl.sh       # builds ARM sysroot
-./third_party/build_musl.sh m68k  # builds m68k sysroot (if supported)
-```
-
-This produces `build/musl-sysroot/` (or architecture-specific variant) containing:
-- `lib/libc.a` — static C library
-- `lib/crt1.o`, `crti.o`, `crtn.o` — CRT startup objects
-- `include/` — POSIX headers
 
 ## 4. Compiler Flags
 
@@ -121,20 +105,17 @@ Every ARM PPAP userland binary **must** be compiled with all of these flags:
 | `-fPIC` | Position-independent code |
 | `-msep-data` | Separate text and data segments (a5 = data base) |
 
-### Additional Flags (Path A: Bare-Metal)
+### Common additional flags
 
 ```
 -ffreestanding -nostdlib -Os -g -Wall -Werror
+-I src/user            # for "syscall.h"
+-isystem src/user/include   # for <stdio.h>, <stdlib.h>, ...
 ```
 
-### Additional Flags (Path B: musl)
-
-```
--Os -nostdinc
--isystem build/musl-sysroot/include
--isystem $(<compiler> -print-file-name=include)
--pie
-```
+`cmake/user.cmake` (and `scripts/build.sh xtensa_cc`) compose these
+together with the per-arch mandatory flags above; new code rarely
+needs to override anything.
 
 ## 5. Linking
 
@@ -151,17 +132,6 @@ The kernel's ELF loader identifies segments by their flags:
 - Segment with `PF_W` (write) set → data
 
 Architecture-specific linker scripts are in `src/user/arch/<arch>/user.ld`.
-
-#### PIE Linker Script (Path B: musl)
-
-musl programs built with `-pie` need additional sections. See
-`third_party/patches/musl/libc_arm_m.ld` for the full ARM reference. Key additions:
-
-- `.rel.dyn` / `.rela.dyn` section — contains relocation entries
-- `.dynamic`, `.dynsym`, `.dynstr`, `.hash` sections — required by `-pie`
-- **`.rodata` splitting** (ARM) — string literals and numeric constants stay in
-  the text segment (flash-safe); function pointer tables move to the data segment
-  where the kernel can patch relocations
 
 ### Verifying the ELF
 
@@ -264,7 +234,7 @@ Note: addresses increase downward in this diagram (low addresses at top).
 │  │  .bss   (zero-initialized)   │    │  Zeroed at exec
 │  ├──────────────────────────────┤    │
 │  │  brk_base                    │    │  ← initial break (16-byte aligned)
-│  │  Heap (toward higher addr)   │    │  Expanded by musl malloc / sbrk
+│  │  Heap (toward higher addr)   │    │  Expanded by PPAP libc malloc / sbrk
 │  │        ...                   │    │  New pages allocated on demand
 │  │  brk_current                 │    │  ← current break
 │  └──────────────────────────────┘    │
@@ -333,7 +303,7 @@ Note: addresses increase downward in this diagram (low addresses at top).
 │  │  .bss   (zero-initialized)   │    │  Zeroed at exec
 │  ├──────────────────────────────┤    │
 │  │  brk_base                    │    │  ← initial break (16-byte aligned)
-│  │  Heap (toward higher addr)   │    │  Expanded by musl malloc / sbrk
+│  │  Heap (toward higher addr)   │    │  Expanded by PPAP libc malloc / sbrk
 │  │        ...                   │    │  New pages allocated on demand
 │  │  brk_current                 │    │  ← current break
 │  └──────────────────────────────┘    │
@@ -384,7 +354,7 @@ and details on `_SETBLOCK` / `_MALLOC` heap management.
 | Data + heap pages | 64 pages (256 KB) | `USER_PAGES_MAX`; m68k targets may override to 512 pages (2 MB) |
 | Stack | 1 page (4 KB) | ARM: user PSP; m68k: kernel SSP (user stack is within the data block) |
 | Page size | 4096 bytes | All architectures |
-| Heap alignment | 16-byte | `brk_base` aligned up to 16 bytes (musl malloc requirement) |
+| Heap alignment | 16-byte | `brk_base` aligned up to 16 bytes (heap allocator requirement) |
 
 ### Heap Management
 
@@ -393,8 +363,9 @@ and details on `_SETBLOCK` / `_MALLOC` heap management.
 - `brk(0)` — query current break without changing it
 - `brk(addr)` — set the break to `addr`; the kernel allocates or frees
   pages as needed. Returns the resulting break (unchanged on failure).
-- musl's `malloc` uses `brk` internally. Bare-metal programs can call
-  `brk` directly or implement their own allocator on top of it.
+- PPAP libc's `malloc` uses `brk` internally.  Programs that bypass
+  the libc can call `brk` directly or implement their own allocator
+  on top of it.
 
 **m68k (X-format):** Heap is managed via Human68k DOS calls (`_MALLOC`,
 `_MFREE`, `_SETBLOCK`). See
@@ -435,7 +406,7 @@ architectures. The trap mechanism is architecture-specific:
 
 See [syscall.md](/docs/kernel/syscall.md) for the complete syscall reference.
 
-## 9. Path A: Bare-Metal Development
+## 9. Building User Programs
 
 ### Directory Structure
 
@@ -472,36 +443,7 @@ then issues `_exit()` with main's return value.
 2. Add `myapp` to the `USER_APPS` list in `cmake/user.cmake`
 3. Build: CMake links `crt0.o + syscall.o + myapp.o → myapp.elf`
 
-## 10. Path B: musl-Based Development
-
-### Prerequisites
-
-```sh
-# Build musl sysroot (one-time, per architecture)
-./third_party/build_musl.sh
-```
-
-### Build Process
-
-1. **Generate specs file** (see section 5 or reference build scripts)
-2. **Write or copy a linker script** — start from `src/user/arch/<arch>/user.ld`
-   for simple programs, or use `third_party/patches/musl/libc_arm_m.ld` for PIE
-3. **Compile and link** with the appropriate architecture flags
-
-### When to Use `-pie` and `.rodata` Splitting (ARM)
-
-**Simple programs** (no function pointer arrays in const data): use the
-basic linker script without `-pie`. All `.rodata` stays in the text segment.
-
-**Complex programs** (function pointer dispatch tables): use `-pie` and a
-linker script that splits `.rodata`:
-- `.rodata.str*` (string literals) → text segment (flash-safe, no addresses)
-- `.rodata.cst*` (numeric constants) → text segment (flash-safe)
-- `.rodata` (everything else) → data segment (kernel patches relocations)
-
-On m68k, this splitting is not needed because both text and data are in RAM.
-
-## 11. Packaging and Deployment
+## 10. Packaging and Deployment
 
 ### romfs Image
 
@@ -536,7 +478,7 @@ At runtime, these writable filesystems are available:
 | `/tmp` | tmpfs | RAM-backed temporary storage |
 | `/mnt/sd` | vfat | SD card (if present, FAT32) |
 
-## 12. Testing
+## 11. Testing
 
 ### QEMU
 
@@ -564,7 +506,7 @@ The kernel runs integration tests at boot, then launches `/sbin/init`
 
 Connect a serial terminal to the UART (115200 baud, 8N1).
 
-## 13. Porting Third-Party Applications
+## 12. Porting Third-Party Applications
 
 Existing UNIX applications can be ported to PPAP if they fit within the
 per-process memory budget (128 KB data+bss). The recommended pattern:
@@ -573,14 +515,14 @@ per-process memory budget (128 KB data+bss). The recommended pattern:
 2. **Create patches** under `third_party/patches/<app>/` — PPAP-specific
    headers injected via `-isystem`
 3. **Write a build script** `third_party/build-<app>.sh` that cross-compiles
-   against musl
+   against PPAP libc
 4. **Integrate with CMake** — add a custom command and wire into the romfs
    dependency chain
 5. **Build for each target architecture** as needed
 
 See [porting.md](/docs/getting_started/porting.md) for the detailed guide.
 
-## 14. Known Limitations
+## 13. Known Limitations
 
 - **No shared libraries**: all linking is static (`libc.a`)
 - **No `fork()`**: only `vfork()` is available (NOMMU model). The child
