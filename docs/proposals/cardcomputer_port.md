@@ -42,16 +42,20 @@ ELF loading), see [`docs/targets/xtensa.md`](../targets/xtensa.md).
 | microSD | SPI (HSPI) | MISO=39, MOSI=14, SCK=40, CS=12 | FAT32 |
 | Speaker | I2S | BCLK=41, LRCK=43, DIN=42 | NS4168 amplifier |
 | IR TX | GPIO | GPIO44 | 38 kHz modulation |
-| USB | Native USB | GPIO19 (D-), GPIO20 (D+) | CDC-ACM for UART |
-| UART0 | UART | TX=43, RX=44 | Shared with I2S/IR |
+| USB | Native USB | GPIO19 (D-), GPIO20 (D+) | USB Serial JTAG |
+| UART0 | UART | TX=43, RX=44 | **Unusable as console** — pins shared with I2S/IR |
 
 ### 1.3 Console Strategy
 
-- **Primary console (`ttyS0`)**: USB CDC-ACM via ESP32-S3's native USB
-  (appears as `/dev/ttyACM0` on host). Used for development and flashing.
-- **Display console (`tty1`)**: ST7789 + keyboard — standalone terminal.
-- Default console: `tty1` when keyboard is detected (always present on
-  CardComputer).
+- **Primary console (`ttyS0`)**: USB Serial JTAG via ESP32-S3's native
+  USB (appears as `/dev/ttyACM0` on host).  Used for development and
+  flashing.  USJ is the only practical console interface because
+  UART0's TX/RX pins are reused for I2S and IR on this board.
+- **Display console (`tty1`)** *(future)*: ST7789 + keyboard — joins
+  as `KLOG_LOGGER_SECONDARY` on top of the existing USJ primary,
+  matching the pico1calc UART+FBCON pattern.
+- Default console: `ttyS0` today; flips to `tty1` once display +
+  keyboard land and the kernel auto-detects them via target caps.
 
 ---
 
@@ -203,9 +207,46 @@ scanning logic is straightforward once pins are known.
 
 ## 7. Implementation Plan
 
-Phases CC-1 through CC-3 (architecture bring-up, interrupts, context
-switch, syscalls, user-space binaries) are complete or in progress.
-See [xtensa.md](../targets/xtensa.md) §8 for current status.
+### Current Status
+
+| Phase | Status |
+|-------|--------|
+| CC-1: boot, clock, BSS, kmain handoff from app_main | DONE |
+| CC-2: SysTimer-driven scheduler tick | DONE |
+| CC-3: ILL-syscall trap, exec, vfork, signals (delivery still stubbed) | DONE |
+| CC-3.1: USB Serial JTAG primary console (TX + RX) | DONE |
+| CC-3.5: runtime ownership handoff (PMS, exception/IRQ ownership) | partial |
+| CC-4: ST7789 display + framebuffer console | not started |
+| CC-5: GPIO-matrix keyboard + `tty1` input | not started |
+| CC-6: microSD over HSPI | not started |
+
+User-space currently boots to a working `push` shell prompt over USJ;
+keystrokes are delivered, exec/vfork/signal-action paths are exercised.
+See [xtensa.md](../targets/xtensa.md) §8 for the architecture-level
+checklist.
+
+### Known Gaps (tracked, not phase-blocking)
+
+- **User-app build is a hardcoded subset**: `scripts/build.sh xtensa_cc`
+  compiles only `init`, `getty`, `push`, `hello`.  The canonical
+  `cmake/user_apps.cmake` `USER_APPS` list (50+ apps) is the source of
+  truth used by every other target via `cmake/user.cmake`.  Unifying
+  the xtensa_cc user build to consume that list is a follow-up cleanup
+  in the same family as the recent kernel-source / libc-unit / signal-
+  shim dedups.  Until then most utilities (ls, cat, grep, …) are
+  missing on this target.
+- **`runtests` not built for xtensa_cc**: blocks `./scripts/run.sh
+  --test xtensa_cc`.  Falls out naturally once the user-app dedup
+  above lands.  The kernel-side hooks (`target_post_mount` runs
+  `ktest_run_all()`, `target_init_path` returns `/bin/runtests`
+  under `PPAP_TESTS`) are already in place.
+- **Stale duplicate sdkconfig under `esp_idf/`**: the active sdkconfig
+  lives at `src/target/xtensa_cc/sdkconfig{,.defaults}` (where
+  `idf.py` actually reads from); the `esp_idf/sdkconfig*` mirror
+  files are unused leftovers and should be deleted.
+- **`uart_*` API name on a USJ-backed driver**: now that the file is
+  USJ-only, renaming `uart_esp32s3.c` and the kernel-side `uart_*`
+  symbols to `console_*` is a tree-wide cleanup.
 
 ### Guiding Principle
 
