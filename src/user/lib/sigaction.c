@@ -8,11 +8,11 @@
  * convention as glibc / musl on Linux: libc owns the sigreturn
  * trampoline, the kernel just records its address via sa_restorer.
  *
- * Compiled into PPAP libc only on arches whose cmake config sets
- * PPAP_USER_HAS_SIGRETURN_TRAMPOLINE.  Arches that supply their own
- * signal() (currently i16, which has a real-mode-friendly asm version)
- * or that do not yet provide a sigreturn trampoline are skipped at
- * cmake time, not via #ifdef here.
+ * Compiled into PPAP libc as a regular libc unit by cmake/user.cmake.
+ * Every arch that goes through user.cmake must therefore provide
+ * _ppap_sigreturn_trampoline in its user/syscall.S; an arch that
+ * supplies its own signal() (e.g. i16's real-mode-friendly asm version)
+ * does not go through user.cmake.
  */
 
 #include <signal.h>

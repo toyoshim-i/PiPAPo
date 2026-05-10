@@ -13,11 +13,6 @@ include_guard(GLOBAL)
 # All m68k targets share one build to avoid redundant musl/rogue rebuilds.
 set(PPAP_SHARED_BUILD "${PPAP_ROOT}/build/m68k")
 
-# Userland follows the sa_restorer signal-delivery model and supplies
-# _ppap_sigreturn_trampoline in src/arch/m68k/user/syscall.S, so the
-# shared user-space signal() shim under src/user/lib/sigaction.c links.
-set(PPAP_USER_HAS_SIGRETURN_TRAMPOLINE TRUE)
-
 # Userland build config (rogue, romfs pipeline)
 # Must be included before kernel.cmake to define PPAP_ENABLE_* options
 include(${CMAKE_CURRENT_LIST_DIR}/user.cmake)

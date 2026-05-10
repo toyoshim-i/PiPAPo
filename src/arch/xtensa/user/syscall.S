@@ -36,18 +36,35 @@ _exit:
     j       .                   # should never return
 
 # --- Process management ---
-SYSCALL_STUB getpid,    0x0006
-SYSCALL_STUB uname,     0x0B01
-SYSCALL_STUB getppid,   0x0008
-SYSCALL_STUB vfork,     0x0002
-SYSCALL_STUB execve,    0x0003
-SYSCALL_STUB waitpid,   0x0004
-SYSCALL_STUB setsid,    0x000B
-SYSCALL_STUB setpgid,   0x0009
-SYSCALL_STUB getpgid,   0x000A
-SYSCALL_STUB kill,      0x0600
-SYSCALL_STUB signal,    0x0601
-SYSCALL_STUB ptrace,    0x000F
+SYSCALL_STUB getpid,       0x0006
+SYSCALL_STUB uname,        0x0B01
+SYSCALL_STUB getppid,      0x0008
+SYSCALL_STUB vfork,        0x0002
+SYSCALL_STUB execve,       0x0003
+SYSCALL_STUB waitpid,      0x0004
+SYSCALL_STUB setsid,       0x000B
+SYSCALL_STUB setpgid,      0x0009
+SYSCALL_STUB getpgid,      0x000A
+SYSCALL_STUB kill,         0x0600
+SYSCALL_STUB rt_sigaction, 0x0603
+SYSCALL_STUB ptrace,       0x000F
+
+# --- _ppap_sigreturn_trampoline -----------------------------------------
+# Recorded as sa_restorer when sigaction() installs a handler (see
+# src/user/lib/sigaction.c).  When delivery returns control here, this
+# stub issues SYS_RT_SIGRETURN to unwind the delivery frame — same role
+# as the glibc/musl user-space sigreturn trampolines on Linux.
+#
+# Xtensa kernel-side signal_check / sys_rt_sigreturn are still stubs
+# (see src/kernel/core/signal/signal.c — "CC-3 will implement"), so this
+# trampoline is provided for linkage and forward compatibility; with no
+# user handler currently delivered, control never reaches it today.
+.section .text._ppap_sigreturn_trampoline, "ax"
+.global _ppap_sigreturn_trampoline
+_ppap_sigreturn_trampoline:
+    movi    a7, 0x0605          # SYS_RT_SIGRETURN
+    ill
+    j       .                   # should never return
 
 # --- File I/O ---
 SYSCALL_STUB read,      0x0100

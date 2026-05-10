@@ -3,9 +3,9 @@
  *
  * Numeric SIG* constants come from src/common/signal.h (kernel/user
  * shared).  signal() is provided by the shared shim in
- * src/user/lib/sigaction.c on arches that ship a
- * _ppap_sigreturn_trampoline (ARM, m68k, RISC-V — i16 supplies its
- * own asm signal()); xtensa joins this set once its trampoline lands.
+ * src/user/lib/sigaction.c for every arch that goes through
+ * cmake/user.cmake; i16 supplies its own real-mode-friendly asm
+ * signal() and does not go through user.cmake.
  *
  * POSIX-style sigaction() taking struct sigaction is not yet provided.
  */
