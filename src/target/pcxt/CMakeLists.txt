@@ -458,6 +458,7 @@ add_executable(ppap_pcxt_vfs
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/common/stubs/vfs_header.S
   ${KERNEL_VFS_SOURCES}
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/uart_com.c
+  ${PPAP_ROOT}/src/kernel/vfs/driver/uart.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/bios_con.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/pcxt_logger.c
   ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/pcxt_vfs_init.c

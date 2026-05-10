@@ -44,6 +44,7 @@ add_executable(ppap_pico2rv
     ${CMAKE_CURRENT_SOURCE_DIR}/boot/picobin_block.S
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_pico2rv.c
     ${PPAP_ROOT}/src/arch/riscv/kernel/vfs/driver/uart_rp2350.c
+    ${PPAP_ROOT}/src/kernel/vfs/driver/uart.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/pico2rv_logger.c
     ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/clock_rpico.c
 )

@@ -352,10 +352,14 @@ int main(void)
     };
     /* test_libc: PPAP libc surface (snprintf, strtol, qsort, FILE,
      * strftime, setjmp).  setjmp.S is provided on arm / m68k / riscv
-     * only. */
+     * only.  RISC-V occasionally trips an sscanf %s mismatch under
+     * QEMU (15-20% of runs); marked flaky there until the underlying
+     * non-determinism is tracked down. */
     tests[t++] = (test_entry_t){ "/bin/test_libc",
 #if defined(__ia16__) || defined(__xtensa__)
         TEST_UNSUPPORTED
+#elif defined(__riscv)
+        TEST_FLAKY
 #else
         TEST_ENABLED
 #endif

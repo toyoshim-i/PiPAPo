@@ -244,9 +244,6 @@ checklist.
   lives at `src/target/xtensa_cc/sdkconfig{,.defaults}` (where
   `idf.py` actually reads from); the `esp_idf/sdkconfig*` mirror
   files are unused leftovers and should be deleted.
-- **`uart_*` API name on a USJ-backed driver**: now that the file is
-  USJ-only, renaming `uart_esp32s3.c` and the kernel-side `uart_*`
-  symbols to `console_*` is a tree-wide cleanup.
 
 ### Guiding Principle
 

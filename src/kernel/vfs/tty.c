@@ -33,7 +33,6 @@
 #include "common/termios.h"               /* struct termios, flag bits */
 #include "kernel/common/core/proc_info.h" /* proc_table, PROC_MAX, PROC_FREE */
 #include "kernel/common/mod/mod_core.h"
-#include "kernel/vfs/driver/uart.h" /* uart_putc/getc/rx_avail for static init */
 #include "kernel/vfs/file.h"
 
 /* ── Termios defaults not in common header ─────────────────────────────────
@@ -100,22 +99,15 @@ typedef struct {
   page_id_t tx_page;
 } tty_dev_t;
 
-static int tty_uart_putc(char c, void (*notify)(void)) {
-  return uart_putc(c, notify);
-}
-
-static int tty_uart_getc(void) { return uart_getc(); }
-static int tty_uart_rx_avail(void) { return uart_rx_avail(); }
-
+/* Per-instance state.  All TTY backends — including TTY_SERIAL — are
+ * registered at boot by the target's klog_init_logger() (or by
+ * vfs_notify(VFS_EVENT_LATE_INIT) for targets with elaborate dual-
+ * backend setups like x68k).  tty.c does not pin any specific
+ * transport (UART, USB Serial JTAG, BIOS console, …); the tty_dev_t
+ * fields populated by tty_set_backend() are what carries the link. */
 static tty_dev_t tty_devs[TTY_MAX] = {
     [TTY_SERIAL] =
         {
-            .out = tty_uart_putc,
-            .out_flush = NULL,
-            .in = tty_uart_getc,
-            .in_avail = tty_uart_rx_avail,
-            .win_cols = NULL,
-            .win_rows = NULL,
             .termios =
                 {
                     .c_iflag = ICRNL | IXON,
@@ -129,8 +121,6 @@ static tty_dev_t tty_devs[TTY_MAX] = {
         },
     [TTY_DISPLAY] =
         {
-            /* All NULL — targets register display backend via
-               tty_set_backend() + tty_set_console() */
             .termios =
                 {
                     .c_iflag = ICRNL | IXON,
@@ -191,10 +181,22 @@ void tty_set_console(int idx) {
 }
 
 void *tty_get_console_dev(void) {
-  /* Initialize tx wakeups for statically initialized backends. */
-  tty_devs[TTY_SERIAL].tx_wakeup = tx_ready_0;
-  tty_devs[TTY_DISPLAY].tx_wakeup = tx_ready_1;
+  /* tx_wakeup is wired by tty_set_backend() at registration time. */
   return tty_get_dev(console_tty_idx);
+}
+
+int tty_raw_getc(int idx) {
+  if ((unsigned)idx >= TTY_MAX) return -1;
+  tty_dev_t *t = &tty_devs[idx];
+  if (!t->in) return -1;
+  return t->in();
+}
+
+int tty_raw_putc(int idx, char c, void (*notify)(void)) {
+  if ((unsigned)idx >= TTY_MAX) return 0;
+  tty_dev_t *t = &tty_devs[idx];
+  if (!t->out) return 0;
+  return t->out(c, notify);
 }
 
 static void tty_advance(page_id_t *page, uint16_t *off, size_t delta) {

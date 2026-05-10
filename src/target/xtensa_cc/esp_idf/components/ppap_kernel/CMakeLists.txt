@@ -9,7 +9,7 @@ include(${PPAP_ROOT}/cmake/kernel.cmake)
 
 # ── Xtensa-CC target sources ─────────────────────────────────────────────────
 set(XTENSA_CC_SOURCES
-    ${PPAP_ROOT}/src/arch/xtensa/kernel/vfs/driver/uart_esp32s3.c
+    ${PPAP_ROOT}/src/arch/xtensa/kernel/vfs/driver/usj.c
     ${PPAP_ROOT}/src/target/xtensa_cc/kernel/vfs/driver/xtensa_cc_logger.c
     ${PPAP_ROOT}/src/target/xtensa_cc/kernel/core/xtensa_cc_stubs.c
 )

@@ -24,6 +24,7 @@ add_executable(ppap_qemu_m68k
     ${KERNEL_SHARED_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_qemu_m68k.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/uart_qemu_m68k.c
+    ${PPAP_ROOT}/src/kernel/vfs/driver/uart.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/qemu_m68k_logger.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/timer_qemu_m68k.c
 )

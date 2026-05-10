@@ -2,10 +2,12 @@
 
 #include "kernel/vfs/driver/uart.h"
 #include "kernel/vfs/klog.h"
+#include "kernel/vfs/tty.h"
 
 void klog_init_logger(void) {
   uart_init();
   klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
+  tty_set_backend(TTY_SERIAL, &uart_tty_backend);
   klogf("PiPAPo booting... [qemu_arm]\n");
   klogf("UART: CMSDK UART0 @ 0x40004000\n");
   klogf("Clock: emulated (no PLL)\n");

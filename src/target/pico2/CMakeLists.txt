@@ -44,6 +44,8 @@ add_executable(ppap_pico2
     ${CMAKE_CURRENT_SOURCE_DIR}/boot/picobin_block.S
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_pico2.c
     ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/clock_rpico.c
+    ${PPAP_ROOT}/src/kernel/vfs/driver/uart.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/pico2_logger.c
 )
 
 if(PPAP_SEMIHOST)
@@ -54,7 +56,6 @@ if(PPAP_SEMIHOST)
 else()
     target_sources(ppap_pico2 PRIVATE
         ${PPAP_ROOT}/src/arch/arm_m/kernel/vfs/driver/uart_rpico.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/pico2_logger.c
     )
 endif()
 

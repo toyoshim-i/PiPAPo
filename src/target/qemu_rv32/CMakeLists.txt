@@ -52,6 +52,7 @@ add_executable(ppap_qemu_rv32
     ${PPAP_ROOT}/src/kernel/vfs/driver/flatblk.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_qemu_rv32.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/uart_ns16550.c
+    ${PPAP_ROOT}/src/kernel/vfs/driver/uart.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/qemu_rv32_logger.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/string.c
 )

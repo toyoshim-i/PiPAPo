@@ -34,6 +34,7 @@ add_executable(ppap_pico1
     ${PPAP_ROOT}/src/arch/arm_m/boot/stage1.S
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_pico1.c
     ${PPAP_ROOT}/src/arch/arm_m/kernel/vfs/driver/uart_rpico.c
+    ${PPAP_ROOT}/src/kernel/vfs/driver/uart.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/pico1_logger.c
     ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/clock_rpico.c
 )

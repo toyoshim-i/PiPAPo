@@ -17,6 +17,7 @@ void klog_init_logger(void) {
   initialized = 1;
   uart_init();
   klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
+  tty_set_backend(TTY_SERIAL, &uart_tty_backend);
   klogf("PiPAPo booting... [pico2rv]\n");
 }
 

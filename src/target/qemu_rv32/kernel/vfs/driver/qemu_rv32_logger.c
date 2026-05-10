@@ -9,6 +9,7 @@
 void klog_init_logger(void) {
   uart_init();
   klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
+  tty_set_backend(TTY_SERIAL, &uart_tty_backend);
   klogf("PiPAPo booting... [qemu_rv32]\n");
   klogf("System clock: %lu MHz\n", (unsigned long)(PPAP_SYS_HZ / 1000000u));
 }

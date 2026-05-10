@@ -24,7 +24,7 @@
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_core.h"
-#include "kernel/vfs/driver/uart.h"
+#include "kernel/vfs/tty.h"
 
 /* ── Device node descriptor ──────────────────────────────────────────────── */
 
@@ -81,7 +81,7 @@ static long devtty_read(page_id_t page, uint16_t page_off, size_t n,
   (void)off;
   size_t count = 0;
   while (count < n) {
-    int c = uart_getc();
+    int c = tty_raw_getc(TTY_SERIAL);
     if (c < 0) break; /* no more data available */
     uint8_t ch = (uint8_t)c;
     mod_core.mem_region_page_write(page, page_off, &ch, 1);
@@ -97,7 +97,7 @@ static long devtty_write(page_id_t page, uint16_t page_off, size_t n,
   for (size_t i = 0; i < n; i++) {
     uint8_t ch;
     mod_core.mem_region_page_read(page, page_off, &ch, 1);
-    uart_putc((char)ch, NULL);
+    tty_raw_putc(TTY_SERIAL, (char)ch, NULL);
     page_off++;
   }
   return (long)n;

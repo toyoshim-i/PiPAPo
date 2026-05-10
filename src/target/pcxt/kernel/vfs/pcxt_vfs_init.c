@@ -11,6 +11,7 @@
 #include "kernel/vfs/driver/bios_blk.h"
 #include "kernel/vfs/driver/bios_con.h"
 #include "kernel/vfs/driver/blkdev.h"
+#include "kernel/vfs/driver/uart.h"
 #include "kernel/vfs/klog.h"
 #include "kernel/vfs/tty.h"
 
@@ -18,6 +19,7 @@ void vfs_notify(int event) {
   switch (event) {
     case VFS_EVENT_MODULE_READY:
       klog_init_logger();
+      tty_set_backend(TTY_SERIAL, &uart_tty_backend);
       tty_set_backend(TTY_DISPLAY, &bios_con_backend);
       tty_set_console(TTY_DISPLAY);
       break;

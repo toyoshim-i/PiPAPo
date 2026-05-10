@@ -5,6 +5,7 @@
 #include "kernel/vfs/driver/uart.h"
 #include "kernel/vfs/driver/uart_rpico.h"
 #include "kernel/vfs/klog.h"
+#include "kernel/vfs/tty.h"
 
 void klog_init_logger(void) {
   /* Idempotent: vfs_notify(WILL_PLL_CHANGE) calls this before clock_init_pll()
@@ -18,6 +19,7 @@ void klog_init_logger(void) {
   uart_init();
 #endif
   klog_set_logger(KLOG_LOGGER_PRIMARY, uart_putc, NULL);
+  tty_set_backend(TTY_SERIAL, &uart_tty_backend);
   klogf("PiPAPo booting... [pico2]\n");
 #ifndef PPAP_SEMIHOST
   klogf("UART: 115200 bps @ 12 MHz XOSC\n");

@@ -14,6 +14,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "kernel/vfs/tty.h"
+
 /* ── Init / lifecycle ────────────────────────────────────────────────────────
  */
 
@@ -33,5 +35,19 @@ int uart_putc(char c, void (*notify)(void));
 
 int uart_getc(void);
 int uart_rx_avail(void);
+
+/* ── TTY backend ─────────────────────────────────────────────────────────────
+ *
+ * Pre-built tty_backend_t wrapping uart_putc / uart_getc / uart_rx_avail.
+ * Defined once in src/kernel/vfs/driver/uart.c, which UART-using targets
+ * link via their CMakeLists alongside the per-arch driver implementation
+ * (uart_rpico.c / uart_qemu.c / uart_ns16550.c / …).  Targets register
+ * the serial TTY with one line:
+ *     tty_set_backend(TTY_SERIAL, &uart_tty_backend);
+ * xtensa_cc uses USB Serial JTAG instead and provides its own
+ * usj_tty_backend (see src/arch/xtensa/kernel/vfs/driver/usj.h).  x68k
+ * has a TVRAM/RS-232 dual-backend setup wired in its own logger.c and
+ * does not link uart.c. */
+extern const tty_backend_t uart_tty_backend;
 
 #endif /* PPAP_KERNEL_VFS_DRIVER_UART_H */
