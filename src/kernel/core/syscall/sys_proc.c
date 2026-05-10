@@ -1883,6 +1883,16 @@ long sys_vfork(uint32_t *frame) {
       return -(long)ENOMEM;
     }
     child_user_sp = remapped_sp;
+    /* Track the allocated user-stack page so it is freed on execve
+     * (via exec_snapshot_release_private_tracked_pages) or on _exit
+     * (via proc_release_tracked_pages).  This matches the riscv
+     * convention at sys_proc.c:1840 as a stop-gap; the proper unified
+     * pcb_t::user_stack_page tracking and the underlying no-copy vfork
+     * model are tracked in
+     * docs/proposals/context_switch_cleanup.md "User Stack and Tracking"
+     * and docs/proposals/no_stack_copy_on_vfork.md. */
+    child->user_pages[USER_PAGES_MAX - 1] =
+        mem_region_ptr_to_page(child_ustack);
 
     /* Remap a3 if it points into the parent's stack page */
     {

@@ -185,6 +185,51 @@ measurement-driven sizing.
 9. DEFERRED: shrink pico1calc `PROC_KSTACK_SIZE` from 2 KB only if
    measurements show a safe margin.
 
+## User Stack and Tracking
+
+The user-mode stack page is a separate concern from the per-process kernel
+stack that the rest of this proposal addresses.  It is a page-pool-backed
+page owned by the process for the duration of its life (or until `execve()`
+replaces the image).  Each architecture currently tracks it differently:
+
+| arch    | user-stack page lives in                                   |
+|---------|------------------------------------------------------------|
+| `arm_m` | `pcb_t::stack_page_id` (originally PSP, now solely the user stack after the kernel-stack migration) |
+| `ia16`  | n/a — real-mode does not split user and kernel stacks      |
+| `m68k`  | `pcb_t::user_stack_page` (named field) plus `pcb_t::usp`   |
+| `riscv` | `user_pages[USER_PAGES_MAX - 1]` (magic slot, no name)     |
+| `xtensa`| not tracked anywhere — the page allocated by `vfork_copy_user_stack()` in `sys_vfork()` is referenced only by the child's saved frame, never recorded on the PCB.  Observed symptom: `MemFree` drops 4 KB per shell-spawned `cat /proc/meminfo` on hardware. |
+
+The free sites in `sys_proc.c` mirror that fragmentation: every reference to
+`user_stack_page` in `sys_exit()`, the vfork-child cleanup branch, and the
+post-`execve()` old-stack cleanup is guarded `#if defined(__m68k__)`, RISC-V
+relies on its slot being walked by `proc_release_tracked_pages()`, and
+xtensa has nothing.
+
+When this work is picked up, the four post-Phase-2 architectures
+(`arm_m`, `m68k`, `riscv`, `xtensa`) converge on a single named field
+(`pcb_t::user_stack_page` is the obvious candidate, since it already
+exists for m68k) and the `#if defined(__m68k__)` guards on the lifecycle
+sites are dropped.  `ia16` keeps its current real-mode arrangement
+unchanged — the strict memory limit makes adding a separate user-stack
+page expensive, and there is no kernel/user split to reflect.
+
+This unification interacts with
+[`no_stack_copy_on_vfork.md`](no_stack_copy_on_vfork.md), which proposes
+adopting the ia16 model — child shares the parent's user stack and only
+the parent's vulnerable resume frame is saved out-of-line — across all
+architectures.  If that proposal lands first, `vfork_copy_user_stack()`
+disappears along with the per-vfork page allocation, and the user-stack
+page on `arm_m` / `m68k` / `riscv` / `xtensa` is again a single per-process
+page (allocated at `execve()`, freed at `wait()`-reap) with no
+vfork-specific second copy.  The naming-and-tracking cleanup is still
+needed in that world, just simplified — there is one user-stack page per
+process to track, not one per process plus a per-vfork copy.
+
+The xtensa per-vfork page leak is the immediate symptom that motivates the
+unification, but it can also be fixed standalone within the current xtensa
+convention if the broader cleanup is deferred.
+
 ## Step-by-Step Fixed-Kstack Migration
 
 ### Phase 1: Keep The Contract Green
