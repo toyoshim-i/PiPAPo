@@ -400,7 +400,9 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     echo "[build] Compiling user binaries (xtensa call0)..."
     USER_DIR="$PROJECT_DIR/src/user"
     XTENSA_USER_COMMON_FLAGS="$XTENSA_DYNCONFIG -mabi=call0 \
-        -ffreestanding -nostdlib -Os -fPIC -Wl,--emit-relocs \
+        -ffreestanding -nostdlib -Os -fPIC \
+        -ffunction-sections -fdata-sections \
+        -Wl,--emit-relocs -Wl,--gc-sections \
         -I$USER_DIR -I$PROJECT_DIR/src -isystem $USER_DIR/include \
         $USER_ARCH_DIR/crt0.S $USER_ARCH_DIR/syscall.S \
         $USER_DIR/lib/string.c $USER_DIR/lib/stdio.c \
@@ -416,51 +418,90 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         -Wl,--defsym=__ppap_xip_flash_base=0x3C000000 \
         -T $USER_ARCH_DIR/user_xip.ld"
 
-    # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_RAM_USER_FLAGS "$USER_DIR/hello.c" \
-        -o "$BUILD_DIR/user/hello.elf"
-    # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_RAM_USER_FLAGS "$USER_DIR/init.c" \
-        -o "$BUILD_DIR/user/init.elf"
-    # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_RAM_USER_FLAGS "$USER_DIR/getty.c" \
-        -o "$BUILD_DIR/user/getty.elf"
-    # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_RAM_USER_FLAGS "$USER_DIR/push.c" \
-        "$USER_DIR/push_line.c" \
-        -o "$BUILD_DIR/user/push.elf"
+    # The ESP-IDF toolchain only ships a windowed-ABI libgcc.a, and
+    # PPAP user-space is built with -mabi=call0.  Linking that libgcc
+    # under call0 produces "ABI does not match" warnings and would
+    # corrupt the register window at runtime when any 64-bit math
+    # helper (__udivdi3, __ashldi3, …) is actually invoked, since
+    # those helpers begin with `entry` and end with `retw` instead of
+    # the call0 prologue/return.  We therefore do not link libgcc; any
+    # app that needs 64-bit helpers is excluded via XTENSA_CC_APP_SKIP
+    # below until call0-compatible helpers land in src/user/lib/.
+
+    # Pull the canonical USER_APPS / USER_TESTS / per-app multi-source
+    # mapping from cmake/user_apps.cmake so this target builds the same
+    # set of programs the romfs targets do, without a duplicate list.
+    USER_APPS_SH="$BUILD_DIR/user_apps.sh"
+    EMIT_TESTS_FLAG=()
+    if [[ "$TESTS" == "ON" ]]; then EMIT_TESTS_FLAG=(-DPPAP_TESTS=ON); fi
+    cmake -DPPAP_ROOT="$PROJECT_DIR" -DOUTPUT="$USER_APPS_SH" \
+        "${EMIT_TESTS_FLAG[@]}" \
+        -P "$PROJECT_DIR/cmake/emit_user_apps_sh.cmake"
+    # shellcheck disable=SC1090
+    . "$USER_APPS_SH"
+
+    # Apps that don't yet build cleanly under -mabi=call0 PIC without
+    # the toolchain's (windowed-ABI) libgcc are listed here:
+    #   calc — needs __udivdi3 / __ashldi3 / __umoddi3 etc. for 64-bit
+    #          math in calc_render.c / calc_state.c.  Re-enable once
+    #          call0-compatible 64-bit helpers land in src/user/lib/.
+    XTENSA_CC_APP_SKIP="calc"
+
+    xtensa_app_skipped() {
+        case " $XTENSA_CC_APP_SKIP " in *" $1 "*) return 0;; esac
+        return 1
+    }
+
+    xtensa_app_sources() {
+        local var="USER_APP_$1_SOURCES"
+        if [[ -n "${!var:-}" ]]; then
+            echo "${!var}"
+        else
+            echo "$USER_DIR/$1.c"
+        fi
+    }
+
+    xtensa_compile_app() {
+        local app="$1" flags="$2" out="$3" sources
+        sources=$(xtensa_app_sources "$app")
+        # shellcheck disable=SC2086
+        $XTENSA_CC $flags $sources -o "$out"
+    }
+
+    for app in $USER_APPS; do
+        if xtensa_app_skipped "$app"; then continue; fi
+        xtensa_compile_app "$app" "$XTENSA_RAM_USER_FLAGS" \
+            "$BUILD_DIR/user/$app.elf"
+    done
 
     echo "[build] Compiling Xtensa XIP-layout variants..."
-    # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_XIP_USER_FLAGS "$USER_DIR/hello.c" \
-        -o "$BUILD_DIR/user/hello.xip.elf"
-    # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_XIP_USER_FLAGS "$USER_DIR/init.c" \
-        -o "$BUILD_DIR/user/init.xip.elf"
-    # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_XIP_USER_FLAGS "$USER_DIR/getty.c" \
-        -o "$BUILD_DIR/user/getty.xip.elf"
-    # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_XIP_USER_FLAGS "$USER_DIR/push.c" \
-        "$USER_DIR/push_line.c" \
-        -o "$BUILD_DIR/user/push.xip.elf"
+    for app in $USER_APPS; do
+        if xtensa_app_skipped "$app"; then continue; fi
+        xtensa_compile_app "$app" "$XTENSA_XIP_USER_FLAGS" \
+            "$BUILD_DIR/user/$app.xip.elf"
+    done
 
     echo "[build] Compiling Xtensa fixed-base XIP variants..."
-    # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_XIP_FIXED_USER_FLAGS "$USER_DIR/hello.c" \
-        -o "$BUILD_DIR/user/hello.xipfix.elf"
-    # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_XIP_FIXED_USER_FLAGS "$USER_DIR/init.c" \
-        -o "$BUILD_DIR/user/init.xipfix.elf"
-    # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_XIP_FIXED_USER_FLAGS "$USER_DIR/getty.c" \
-        -o "$BUILD_DIR/user/getty.xipfix.elf"
-    # shellcheck disable=SC2086
-    $XTENSA_CC $XTENSA_XIP_FIXED_USER_FLAGS "$USER_DIR/push.c" \
-        "$USER_DIR/push_line.c" \
-        -o "$BUILD_DIR/user/push.xipfix.elf"
+    for app in $USER_APPS; do
+        if xtensa_app_skipped "$app"; then continue; fi
+        xtensa_compile_app "$app" "$XTENSA_XIP_FIXED_USER_FLAGS" \
+            "$BUILD_DIR/user/$app.xipfix.elf"
+    done
 
-    # Strip debug symbols (keep relocation info)
+    # Test binaries (RAM-only — runtests harness execs them on demand,
+    # XIP variants would just inflate the romfs).
+    if [[ "$TESTS" == "ON" && -n "${USER_TESTS:-}" ]]; then
+        echo "[build] Compiling user-space test binaries..."
+        for t in $USER_TESTS; do
+            srcvar="USER_TEST_${t}_SOURCE"
+            # shellcheck disable=SC2086
+            $XTENSA_CC $XTENSA_RAM_USER_FLAGS \
+                -I"$PROJECT_DIR/tests/user" \
+                "${!srcvar}" -o "$BUILD_DIR/user/$t.elf"
+        done
+    fi
+
+    # Strip debug symbols (keep relocation info — XIP loader needs them)
     for f in "$BUILD_DIR"/user/*.elf; do
         $XTENSA_STRIP --strip-debug "$f"
     done
@@ -469,18 +510,31 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         xtensa_xip_report "$f"
     done
 
-    # Stage romfs directory
+    # Stage romfs directory.  Per-app destination follows the same
+    # convention as cmake/stage_romfs.cmake: init → /sbin, others →
+    # /bin.  Only the RAM-layout ELFs are staged — the .xip / .xipfix
+    # variants are experimental analysis artifacts (see
+    # src/arch/xtensa/user/user_xip.ld) that the runtime loader does
+    # not consume yet, so embedding them in the romfs would just
+    # double the kernel image footprint.
     rm -rf "$ROMFS_STAGING"
     mkdir -p "$ROMFS_STAGING"/{bin,sbin,etc,dev,proc,tmp}
-    cp "$BUILD_DIR/user/init.elf"  "$ROMFS_STAGING/sbin/init"
-    cp "$BUILD_DIR/user/hello.elf" "$ROMFS_STAGING/bin/hello"
-    cp "$BUILD_DIR/user/getty.elf" "$ROMFS_STAGING/bin/getty"
-    cp "$BUILD_DIR/user/push.elf"  "$ROMFS_STAGING/bin/push"
-    cp "$BUILD_DIR/user/init.xip.elf"  "$ROMFS_STAGING/sbin/init.xip"
-    cp "$BUILD_DIR/user/hello.xip.elf" "$ROMFS_STAGING/bin/hello.xip"
-    cp "$BUILD_DIR/user/getty.xip.elf" "$ROMFS_STAGING/bin/getty.xip"
-    cp "$BUILD_DIR/user/push.xip.elf"  "$ROMFS_STAGING/bin/push.xip"
+    for app in $USER_APPS; do
+        if xtensa_app_skipped "$app"; then continue; fi
+        case "$app" in
+            init) destdir="sbin";;
+            *)    destdir="bin";;
+        esac
+        cp "$BUILD_DIR/user/$app.elf" "$ROMFS_STAGING/$destdir/$app"
+    done
     ln -sf push "$ROMFS_STAGING/bin/sh"
+    ln -sf pi   "$ROMFS_STAGING/bin/vi"
+
+    if [[ "$TESTS" == "ON" && -n "${USER_TESTS:-}" ]]; then
+        for t in $USER_TESTS; do
+            cp "$BUILD_DIR/user/$t.elf" "$ROMFS_STAGING/bin/$t"
+        done
+    fi
 
     # Install /etc files (base + target overlay)
     cp "$PROJECT_DIR/src/etc/"* "$ROMFS_STAGING/etc/" 2>/dev/null || true
