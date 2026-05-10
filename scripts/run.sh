@@ -229,6 +229,9 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     # without running as root (typically "dialout", GID 20).
     DEV_GID="$(stat -c '%g' "$PPAP_PORT")"
 
+    # Translate the host build dir to the container path under /ppap.
+    CONTAINER_BUILD_DIR="/ppap/${BUILD_DIR#"$PROJECT_DIR"/}"
+
     echo "[run] Flashing xtensa_cc via Docker ($PPAP_PORT @ "\
 "$PPAP_XTENSA_FLASH_BAUD bps) ..."
     docker run --rm \
@@ -237,11 +240,39 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         "$DOCKER_IMAGE" bash -c "
             export IDF_TOOLS_PATH=/opt/ppap/xtensa-tools && \
             source /opt/ppap/src/esp-idf/export.sh >/dev/null 2>&1 && \
-            cd /ppap/build/xtensa_cc && \
+            cd $CONTAINER_BUILD_DIR && \
             esptool.py --chip esp32s3 -p $PPAP_PORT -b $PPAP_XTENSA_FLASH_BAUD \
                 --before default_reset --after hard_reset \
                 write_flash \$(cat flash_args) \
         " 2>&1
+
+    if [[ $DO_TEST -eq 1 ]]; then
+        # Test mode: capture serial output non-interactively, watch for
+        # the runtests pass/fail markers, exit with CI-friendly status.
+        # Hardware boot + 33 user tests typically completes well under
+        # 180s; the timeout is the upper bound, not the expected duration.
+        TEST_TIMEOUT_S=180
+        echo "[run] Capturing test output (up to ${TEST_TIMEOUT_S}s) ..."
+        OUTPUT=$(docker run --rm \
+            --device="$PPAP_PORT" --group-add "$DEV_GID" \
+            -v "$PROJECT_DIR:/ppap" -w /ppap \
+            "$DOCKER_IMAGE" bash -c "
+                export IDF_TOOLS_PATH=/opt/ppap/xtensa-tools && \
+                source /opt/ppap/src/esp-idf/export.sh >/dev/null 2>&1 && \
+                python3 /ppap/scripts/xtensa_cc_test_monitor.py \
+                    --port $PPAP_PORT --timeout $TEST_TIMEOUT_S
+            " 2>&1)
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -q "ALL TESTS PASSED"; then
+            echo ""
+            echo "[test] PASS — all on-target tests passed"
+            exit 0
+        fi
+        echo ""
+        echo "[test] FAIL — tests did not all pass (or hardware timed out)"
+        exit 1
+    fi
+
     echo "[run] Flash complete. Starting serial monitor..."
     echo "      (Press Ctrl-] to quit)"
 
@@ -256,7 +287,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
             python3 -m esp_idf_monitor \
                 --port $PPAP_PORT \
                 --baud 115200 \
-                /ppap/build/xtensa_cc/ppap_xtensa_cc.elf \
+                $CONTAINER_BUILD_DIR/ppap_xtensa_cc.elf \
         " || true
     exit 0
 fi

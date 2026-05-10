@@ -225,15 +225,6 @@ keystrokes are delivered, exec/vfork/signal-action paths are exercised.
 
 ### Known Gaps (tracked, not phase-blocking)
 
-- **`scripts/run.sh --test xtensa_cc` not yet wired**: the test
-  binaries now build and stage into the romfs (test_libc skipped
-  because xtensa has no setjmp.S), and the kernel-side hooks
-  (`target_post_mount` runs `ktest_run_all()`, `target_init_path`
-  returns `/bin/runtests` under `PPAP_TESTS`) are already in place.
-  What's still missing is the run-side: a non-interactive `idf.py
-  monitor` mode that flashes, watches stdout for runtests pass/fail
-  markers, and returns a CI-friendly exit status.
-
 - **xtensa_cc romfs staging is shell-coded, not unified with
   `cmake/stage_romfs.cmake`**: `scripts/build.sh` open-codes the
   staging directory layout, ELF install destinations, and
@@ -266,6 +257,26 @@ keystrokes are delivered, exec/vfork/signal-action paths are exercised.
   tracked in
   [`docs/proposals/context_switch_cleanup.md`](context_switch_cleanup.md)
   Phase 4 (Migrate Xtensa).
+
+- **User-space loader is RAM-only; tight pool causes OOM cascades
+  during the on-target test suite**: every `exec` on xtensa_cc
+  copies the user binary's `.text` + `.rodata` + `.data` + `.bss`
+  + stack out of the romfs into the page pool, because the runtime
+  loader does not yet consume the `.xip` / `.xipfix` ELF variants
+  that `scripts/build.sh` already builds.  At boot `/proc/meminfo`
+  shows ~72 KB free (≈18 pages); the per-test-binary footprint plus
+  fragmentation across sequential `exec` / `exit` cycles causes
+  random `MM: OOM: page_alloc failed` failures partway through
+  `tests/user/runtests.c`.  This is a loader/memory issue, not a
+  test bug — `runtests.c` keeps the affected tests `TEST_ENABLED`
+  on `__xtensa__` so they recover automatically once XIP is wired.
+  Right fix: extend the user ELF loader to map `.text` / `.rodata`
+  segments directly out of flash (or PSRAM) using the existing
+  `src/arch/xtensa/user/user_xip.ld` layout, paired with stripping
+  any unused `.xipfix` fixed-address variants once the dynamic XIP
+  variant is proven.  See the matching note in
+  `docs/getting_started/testing.md` "Known coverage gaps" for the
+  per-test breakdown.
 
 ### Guiding Principle
 

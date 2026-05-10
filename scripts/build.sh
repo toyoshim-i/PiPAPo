@@ -568,8 +568,11 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     echo "[build] romfs.bin: $(wc -c < "$ROMFS_BIN") bytes"
 
     # ── ESP-IDF kernel build ─────────────────────────────────────────────────
+    IDF_TEST_DEFS=()
+    if [[ "$TESTS" == "ON" ]]; then IDF_TEST_DEFS+=(-D PPAP_TESTS=ON); fi
+    if [[ "$TESTS_EXTENDED" == "ON" ]]; then IDF_TEST_DEFS+=(-D PPAP_TESTS_EXTENDED=ON); fi
     echo "[build] Building xtensa_cc via idf.py..."
-    idf.py -B "$BUILD_DIR" build
+    idf.py -B "$BUILD_DIR" "${IDF_TEST_DEFS[@]}" build
     echo "[build] Built xtensa_cc"
     run_source_checks
     exit 0

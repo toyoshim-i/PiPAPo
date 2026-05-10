@@ -27,6 +27,9 @@ build process, and execution environment.
 # On-target tests (PC/XT i16, requires qemu-system-i386)
 ./scripts/run.sh --test pcxt
 
+# On-target tests (Xtensa, requires M5Stack CardComputer attached)
+./scripts/run.sh --test xtensa_cc
+
 # Extended on-target tests (ARM lane with extra user tests)
 ./scripts/run.sh --test-extended qemu_arm
 
@@ -394,6 +397,36 @@ coverage is not exhaustive yet.
   115 errno mismatch with corrupted summary counters), `test_cpm` /
   `test_sos` (Z80 eCPU path takes a load-access fault early and
   brings the kernel down).
+- **`xtensa_cc` (CardComputer hardware): user 13/13 enabled pass; the
+  remaining tests cascade-fail with `MM: OOM: page_alloc failed`
+  because the loader is not yet XIP and the page pool is tight.**
+  Four tests are `TEST_DISABLED` with per-test comments in
+  `tests/user/runtests.c`: `test_elf` (ELF32 parser rejects inputs
+  with -ENOEXEC, same failure mode as rv32), `test_signal` and
+  `test_sleep_intr` (CC-3 signal-delivery stub — `deliver_signal()`
+  does not yet build a sigreturn frame, so SIGUSR1 handlers never
+  run), `test_iov` (returns exit status 1; root cause not yet
+  investigated).
+
+  All other tests stay `TEST_ENABLED` even when they currently fail
+  on hardware, because the failures are **not** independent test
+  bugs — they are downstream OOM victims of page-pool fragmentation.
+  Test binaries on xtensa_cc are built RAM-only (see
+  `scripts/build.sh` "Test binaries (RAM-only)" comment), so every
+  `exec` copies `.text` + `.rodata` + `.data` + `.bss` + stack out
+  of romfs into the page pool.  At boot `/proc/meminfo` reports
+  ~72 KB free (≈18 pages); after ~10 sequential `exec` / `exit`
+  cycles the pool fragments and subsequent `exec`s can't find a
+  contiguous run, even though total free pages remain.  Which test
+  wins the OOM race differs run-to-run.
+
+  The canonical fix is to wire the experimental `user_xip.ld` /
+  `.xip` / `.xipfix` variants to the runtime loader so `.text` and
+  `.rodata` execute directly from flash/PSRAM and don't consume
+  DRAM pages.  Tracked as a followup in
+  `docs/proposals/cardcomputer_port.md`.  Disabling these tests
+  would mask automatic recovery once the XIP loader lands, so they
+  remain enabled and visibly red.
 - **`pdb` scripted coverage is architecture-asymmetric.**
   `test_pdb` has 170/367 failures on m68k and is marked `TEST_DISABLED` there.
   On ARM it is `TEST_SLOW` (base runner) / `TEST_ENABLED` (extended runner).
