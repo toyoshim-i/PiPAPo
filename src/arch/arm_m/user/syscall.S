@@ -219,11 +219,11 @@ kill:
 .global _ppap_sigreturn_trampoline
 .thumb_func
 _ppap_sigreturn_trampoline:
-    ldr  r7, =0x0605    @ SYS_RT_SIGRETURN
+    ldr  r7, =0x0603    @ SYS_RT_SIGRETURN
     svc  0
     b    .              @ should never return
 
-@ --- rt_sigaction (SYS_RT_SIGACTION = 0x0603) ---------------------------------
+@ --- rt_sigaction (SYS_RT_SIGACTION = 0x0601) ---------------------------------
 @ int rt_sigaction(int sig, const struct sigaction *act,
 @                  struct sigaction *oact, int sigsetsize);
 @ The POSIX-style sigaction() wrapper lives in C (sigaction.c) so the
@@ -235,7 +235,7 @@ _ppap_sigreturn_trampoline:
 .thumb_func
 rt_sigaction:
     push {r7, lr}
-    ldr  r7, =0x0603    @ SYS_RT_SIGACTION
+    ldr  r7, =0x0601    @ SYS_RT_SIGACTION
     DO_SYSCALL
     pop  {r7, pc}
 

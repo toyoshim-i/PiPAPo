@@ -8,7 +8,8 @@ kernel, with usage details and notes on how each differs from POSIX / Linux.
 ## Syscall Numbering
 
 PPAP uses a **16-bit grouped numbering** scheme: the high byte is the group,
-the low byte is the index.  The same numbers are used on all architectures (ARM, m68k, RISC-V).
+the low byte is the index.  The same numbers are used on every architecture
+(ARM Cortex-M, m68k, RISC-V, Xtensa, ia16).
 
 | Group  | Category       | Range          |
 |--------|---------------|----------------|
@@ -28,9 +29,11 @@ the low byte is the index.  The same numbers are used on all architectures (ARM,
 Unimplemented syscalls (0xF0xx) exist so that musl libc compiles, but the
 kernel returns `-ENOSYS` for all of them.
 
-The canonical definitions are in `src/kernel/syscall/syscall.h` (kernel) and
-`third_party/patches/musl/overlay/arch/{arm,m68k,riscv}/bits/syscall.h.in` (musl).
-All architectures must use identical numbers for all implemented syscalls.
+The canonical definitions live in `src/common/syscall_nr.h` (shared by
+kernel and user-space).  Each arch's `src/arch/<arch>/user/syscall.S`
+hard-codes the same numbers in its per-syscall stub; these must stay
+in sync with the header.  All architectures must use identical numbers
+for all implemented syscalls.
 
 ---
 
@@ -141,11 +144,9 @@ M-mode where the kernel handles the request.
 | 0x0504 | clock_gettime64 | `int clock_gettime64(clockid_t clk, struct timespec64 *tp)` |
 | 0x0505 | clock_nanosleep64 | `int clock_nanosleep64(clockid_t clk, int flags, ...)` |
 | 0x0600 | kill | `int kill(pid_t pid, int sig)` |
-| 0x0601 | sigaction | `int sigaction(int sig, uintptr_t handler, uintptr_t *old)` |
-| 0x0602 | sigreturn | `void sigreturn(void)` |
-| 0x0603 | rt_sigaction | `int rt_sigaction(int sig, const struct sigaction *act, ...)` |
-| 0x0604 | rt_sigprocmask | `int rt_sigprocmask(int how, const sigset_t *set, ...)` |
-| 0x0605 | rt_sigreturn | `void rt_sigreturn(void)` |
+| 0x0601 | rt_sigaction | `int rt_sigaction(int sig, const struct sigaction *act, ...)` |
+| 0x0602 | rt_sigprocmask | `int rt_sigprocmask(int how, const sigset_t *set, ...)` |
+| 0x0603 | rt_sigreturn | `void rt_sigreturn(void)` |
 | 0x0700 | poll | `int poll(struct pollfd *fds, nfds_t nfds, int timeout)` |
 | 0x0701 | ppoll / ppoll_time64 | `int ppoll(struct pollfd *fds, nfds_t n, ...)` |
 | 0x0800 | getuid / getuid32 | `uid_t getuid(void)` — always returns 0 |
@@ -652,10 +653,9 @@ Send a signal to a process.
 
 ---
 
-#### sigaction (0x0601) / rt_sigaction (0x0603)
+#### rt_sigaction (0x0601)
 
 ```c
-int sigaction(int sig, uintptr_t handler, uintptr_t *old);
 int rt_sigaction(int sig, const struct sigaction *act,
                  struct sigaction *oact, size_t sigsetsize);
 ```
@@ -664,7 +664,7 @@ Install a signal handler.  `SIGKILL` (9) and `SIGSTOP` (19) cannot be caught.
 
 ---
 
-#### rt_sigprocmask (0x0604)
+#### rt_sigprocmask (0x0602)
 
 ```c
 int rt_sigprocmask(int how, const sigset_t *set, sigset_t *oset,

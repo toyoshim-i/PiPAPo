@@ -398,7 +398,7 @@ ioctl:
   .global _ppap_sigreturn_trampoline
 _ppap_sigreturn_trampoline:
   addw  $2, %sp                 /* drop the sig arg the kernel planted */
-  movw  $0x0605, %ax            /* SYS_RT_SIGRETURN */
+  movw  $0x0603, %ax            /* SYS_RT_SIGRETURN */
   int   $0x30
   hlt                            /* unreachable */
 
@@ -437,7 +437,7 @@ signal:
   movw  %sp, %cx                /* &act */
   xorw  %dx, %dx                /* oact = NULL (old_handler arg ignored) */
   movw  $8, %si                 /* sigsetsize */
-  movw  $0x0603, %ax            /* SYS_RT_SIGACTION */
+  movw  $0x0601, %ax            /* SYS_RT_SIGACTION */
   int   $0x30
 
   addw  $20, %sp                /* drop struct */
@@ -456,7 +456,7 @@ rt_sigaction:
   movw  6(%bp), %cx             /* act */
   movw  8(%bp), %dx             /* oact */
   movw  10(%bp), %si            /* sigsetsize */
-  movw  $0x0603, %ax            /* SYS_RT_SIGACTION */
+  movw  $0x0601, %ax            /* SYS_RT_SIGACTION */
   int   $0x30
   SYSCALL_RET
 

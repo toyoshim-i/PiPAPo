@@ -2,8 +2,11 @@
  * signal.c — Signal infrastructure for PPAP
  *
  *   sys_kill(pid, sig)            — send signal to process
- *   sys_sigaction(sig, hdl, old)  — install/query signal handler
- *   sys_sigreturn()               — restore context after signal handler
+ *   sys_rt_sigaction(sig, ...)    — install/query signal handler
+ *                                   (legacy 3-arg sys_sigaction below
+ *                                   survives only as a kernel-internal
+ *                                   helper that ktest exercises)
+ *   sys_rt_sigreturn()            — restore context after signal handler
  *   signal_check()                — called on return to user mode
  *
  * Signal delivery model:
@@ -93,7 +96,7 @@ int signal_check_kernel(void) {
  * ARM:  RTE-based.  signal_setup_frame pushes a new HW exception frame
  *       below PSP with LR = current->sig_restorers[sig].  The CPU unwinds
  *       into the handler; `bx lr` lands on the restorer, which issues
- *       SYS_RT_SIGRETURN.  sys_sigreturn advances PSP past the
+ *       SYS_RT_SIGRETURN.  sys_rt_sigreturn advances PSP past the
  *       sig-delivery frame.
  *
  * m68k: RTE-based.  signal_check rewrites the (SR, PC) slot in the trap
@@ -355,7 +358,7 @@ uint16_t signal_check(uint16_t user_sp, uint16_t user_ss) {
  * The handler's `bx lr` reaches the per-process sa_restorer the user
  * registered via rt_sigaction (typically _ppap_sigreturn_trampoline in
  * src/arch/arm_m/user/syscall.S), which issues SYS_RT_SIGRETURN.
- * sys_sigreturn reverses this: skips the sigreturn SVC frame, reads the
+ * sys_rt_sigreturn reverses this: skips the sigreturn SVC frame, reads the
  * saved EXC_RETURN, and restores PSP to the original HW frame.
  */
 static int signal_setup_frame(int sig, sighandler_t handler) {
@@ -393,7 +396,7 @@ static int signal_setup_frame(int sig, sighandler_t handler) {
 
 #if __ARM_ARCH >= 8
   /* Save original EXC_RETURN between signal frame and original HW frame.
-   * sys_sigreturn reads this to restore the correct frame type. */
+   * sys_rt_sigreturn reads this to restore the correct frame type. */
   uint32_t cid = core_id();
   frame[8] = svc_exc_return[cid]; /* saved EXC_RETURN */
   frame[9] = 0;                   /* padding          */
@@ -573,7 +576,16 @@ long sys_kill(long pid, long sig) {
   return 0;
 }
 
-/* ── sys_sigaction ──────────────────────────────────────────────────────────
+/* ── sys_sigaction (kernel-internal) ────────────────────────────────────────
+ *
+ * Legacy 3-arg variant.  No longer reachable from user-space — the
+ * SYS_SIGACTION (0x0601) syscall number was retired with this commit.
+ * It survives only because tests/kernel/ktest.c exercises the
+ * handler-install / -query / SIGKILL-reject paths from kernel context
+ * and would otherwise have to build a struct kernel_sigaction on the
+ * stack to drive sys_rt_sigaction.  The raw `*out = ...` deref below
+ * is safe in that single caller because old_ptr is a kernel-stack
+ * address; do not reintroduce it on the user-facing path.
  */
 
 long sys_sigaction(long sig, long handler, long old_ptr) {
@@ -594,7 +606,7 @@ long sys_sigaction(long sig, long handler, long old_ptr) {
   return 0;
 }
 
-/* ── sys_sigreturn ──────────────────────────────────────────────────────────
+/* ── sys_rt_sigreturn ──────────────────────────────────────────────────────
  */
 
 #if defined(__m68k__)
@@ -642,8 +654,6 @@ long sys_rt_sigreturn(void) {
   return (long)(int32_t)orig_d0;
 }
 
-long sys_sigreturn(void) { return sys_rt_sigreturn(); }
-
 #elif defined(__ia16__)
 
 /*
@@ -673,8 +683,6 @@ long sys_rt_sigreturn(void) {
   return 0;
 }
 
-long sys_sigreturn(void) { return sys_rt_sigreturn(); }
-
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 
 /*
@@ -690,7 +698,7 @@ long sys_sigreturn(void) { return sys_rt_sigreturn(); }
  *   We also restore svc_exc_return so SVC_Handler returns with the
  *   correct EXC_RETURN for the original frame type.
  */
-long sys_sigreturn(void) {
+long sys_rt_sigreturn(void) {
   uint32_t psp;
   __asm volatile("mrs %0, psp" : "=r"(psp));
 
@@ -716,8 +724,6 @@ long sys_sigreturn(void) {
   __asm volatile("msr psp, %0" ::"r"(psp));
   return 0; /* value ignored — sigframe[0] has original r0 */
 }
-
-long sys_rt_sigreturn(void) { return sys_sigreturn(); /* same mechanism */ }
 
 #elif defined(__riscv)
 
@@ -749,12 +755,9 @@ long sys_rt_sigreturn(void) {
   return (long)(int32_t)orig_a0;
 }
 
-long sys_sigreturn(void) { return sys_rt_sigreturn(); }
-
 #elif defined(__xtensa__)
 
 /* Xtensa sigreturn — CC-3 will implement. */
-long sys_sigreturn(void) { return -(long)ENOSYS; }
 long sys_rt_sigreturn(void) { return -(long)ENOSYS; }
 
 #endif /* __m68k__ / ARM / __riscv / __xtensa__ */

@@ -217,11 +217,11 @@ setsid:
     .globl _ppap_sigreturn_trampoline
 _ppap_sigreturn_trampoline:
     addq.l  #4, %sp              | discard the sig arg the kernel planted
-    move.l  #0x0605, %d0         | SYS_RT_SIGRETURN
+    move.l  #0x0603, %d0         | SYS_RT_SIGRETURN
     trap    #0
 0:  bra.s   0b                    | should never return
 
-| --- rt_sigaction (SYS_RT_SIGACTION = 0x0603) ---------------------------------
+| --- rt_sigaction (SYS_RT_SIGACTION = 0x0601) ---------------------------------
 | int rt_sigaction(int sig, const struct sigaction *act,
 |                  struct sigaction *oact, int sigsetsize);
 | The POSIX-style sigaction() wrapper lives in C (sigaction.c) so the
@@ -234,7 +234,7 @@ rt_sigaction:
     move.l  20(%sp), %d2         | act
     move.l  24(%sp), %d3         | oact
     move.l  28(%sp), %d4         | sigsetsize
-    move.l  #0x0603, %d0         | SYS_RT_SIGACTION
+    move.l  #0x0601, %d0         | SYS_RT_SIGACTION
     trap    #0
     movem.l %sp@+, %d2-%d4
     rts

@@ -163,8 +163,13 @@ long sys_dup2(long oldfd, long newfd);
 
 /* signal/signal.c */
 long sys_kill(long pid, long sig);
+/* sys_sigaction is the legacy 3-arg variant — no longer wired into the
+ * syscall dispatch table.  It survives only as a kernel-internal helper
+ * that tests/kernel/ktest.c exercises to validate the underlying handler-
+ * install / -query / SIGKILL-reject paths without building a struct
+ * kernel_sigaction on the stack.  User-space goes through
+ * sys_rt_sigaction. */
 long sys_sigaction(long sig, long handler, long old_ptr);
-long sys_sigreturn(void);
 long sys_rt_sigaction(long sig, uintptr_t act_ptr, uintptr_t oact_ptr,
                       long sigsetsize);
 long sys_rt_sigprocmask(long how, uintptr_t set_ptr, uintptr_t oset_ptr,

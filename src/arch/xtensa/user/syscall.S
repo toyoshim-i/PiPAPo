@@ -46,7 +46,7 @@ SYSCALL_STUB setsid,       0x000B
 SYSCALL_STUB setpgid,      0x0009
 SYSCALL_STUB getpgid,      0x000A
 SYSCALL_STUB kill,         0x0600
-SYSCALL_STUB rt_sigaction, 0x0603
+SYSCALL_STUB rt_sigaction, 0x0601
 SYSCALL_STUB ptrace,       0x000F
 
 # --- _ppap_sigreturn_trampoline -----------------------------------------
@@ -62,7 +62,7 @@ SYSCALL_STUB ptrace,       0x000F
 .section .text._ppap_sigreturn_trampoline, "ax"
 .global _ppap_sigreturn_trampoline
 _ppap_sigreturn_trampoline:
-    movi    a7, 0x0605          # SYS_RT_SIGRETURN
+    movi    a7, 0x0603          # SYS_RT_SIGRETURN
     ill
     j       .                   # should never return
 

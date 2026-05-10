@@ -113,8 +113,6 @@ static const char *sys_name(uint32_t nr) {
       return "nanosleep";
     case SYS_KILL:
       return "kill";
-    case SYS_SIGACTION:
-      return "sigaction";
     case SYS_POLL:
       return "poll";
     case SYS_PPOLL:

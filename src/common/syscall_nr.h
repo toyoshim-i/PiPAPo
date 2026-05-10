@@ -88,11 +88,9 @@
 
 /* Group 0x06: Signals */
 #define SYS_KILL 0x0600
-#define SYS_SIGACTION 0x0601
-#define SYS_SIGRETURN 0x0602
-#define SYS_RT_SIGACTION 0x0603
-#define SYS_RT_SIGPROCMASK 0x0604
-#define SYS_RT_SIGRETURN 0x0605
+#define SYS_RT_SIGACTION 0x0601
+#define SYS_RT_SIGPROCMASK 0x0602
+#define SYS_RT_SIGRETURN 0x0603
 
 /* Group 0x07: Poll */
 #define SYS_POLL 0x0700
