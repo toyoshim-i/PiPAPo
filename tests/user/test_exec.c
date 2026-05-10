@@ -26,10 +26,11 @@ int main(void)
     /* RISC-V: code loaded into SRAM (text+data contiguous) */
     UT_ASSERT(pc > 0, "PC should be valid");
 #elif defined(__xtensa__)
-    /* Xtensa has no architectural PC register; mark this check as
-     * trivially satisfied (the very fact that main() executes implies
-     * a valid PC). */
-    pc = 1;
+    /* Xtensa has no architectural PC register, but a0 holds the
+     * return address of the most recent call (call0 ABI), which is
+     * a real code address inside this binary.  Read that as a
+     * stand-in for "PC reachable from valid code". */
+    __asm__ volatile("mov %0, a0" : "=r"(pc));
     UT_ASSERT(pc > 0, "PC should be valid");
 #else
     __asm__ volatile("mov %0, pc" : "=r"(pc));
