@@ -2223,10 +2223,10 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
      * ARM: kernel runs on MSP (separate), so PSP stack can be freed
      * immediately. */
 #if defined(__m68k__)
-  extern volatile void *exec_old_stack;
-  exec_old_stack = (old_stack_id != PAGE_ID_INVALID)
-                       ? mem_region_page_to_ptr(old_stack_id)
-                       : NULL;
+  extern volatile void *m68k_exec_old_stack;
+  m68k_exec_old_stack = (old_stack_id != PAGE_ID_INVALID)
+                            ? mem_region_page_to_ptr(old_stack_id)
+                            : NULL;
 #elif defined(__ia16__)
   if (old_stack_id != PAGE_ID_INVALID) mem_region_page_free(old_stack_id);
 #else

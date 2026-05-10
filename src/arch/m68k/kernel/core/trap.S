@@ -109,7 +109,7 @@ m68k_trap0_handler:
     move.l  %a0@(PCB_SP_OFFSET),%sp
 
     | Now on the NEW stack — safe to free the old stack page.
-    jsr     exec_free_old_stack
+    jsr     m68k_exec_free_old_stack
 
     | Restore USP for the new process (set before movem/rte)
     move.l  current_core,%a0
