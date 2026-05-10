@@ -39,3 +39,10 @@ CONFIG_SPIRAM_IGNORE_NOTFOUND=y
 # Disable memory protection so IRAM can be used as executable heap.
 # PPAP allocates user-process code in IRAM via heap_caps_malloc(MALLOC_CAP_EXEC).
 CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=n
+
+# Use USB Serial JTAG as the primary console.  M5Stack CardComputer
+# does not expose UART0 pins, so the USB-OTG port (wired to USJ) is
+# the only practical console interface for both TX and RX.  Once an
+# embedded display lands it will join as a KLOG_LOGGER_SECONDARY,
+# matching the pico1calc UART+FBCON pattern.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
