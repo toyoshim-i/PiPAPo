@@ -12,7 +12,6 @@ PPAP uses a consistent pattern for all third-party code:
 third_party/
   <app>/              git submodule (upstream source, never modified)
   patches/<app>/      PPAP-specific headers, patches, and config fragments
-  patches/musl/       musl overlay + PIE linker scripts (shared by all musl apps)
   build_<app>.sh      standalone build script
 ```
 
@@ -32,7 +31,7 @@ Constraints vary by architecture. The common limits are:
 |---|---|---|
 | Data+BSS per process | 128 KB | SRAM/RAM pages allocated by ELF loader |
 | Stack | 4 KB | 1 page |
-| libc | musl 1.2.5 | Statically linked, PPAP syscall interface |
+| libc | PPAP libc | `src/user/lib/` + `src/user/include/`; statically linked into every user binary, POSIX-named symbols |
 | Division | Software on ARM | m68k has hardware divide |
 
 ### Architecture-Specific Constraints
@@ -81,11 +80,16 @@ for the current architecture-by-architecture model.
 
 ## Compiler Flags
 
+PPAP libc headers come from `src/user/include/` and are linked
+implicitly via the shared user-build pipeline; ports usually only
+need to add their own `-I` paths and the arch-specific PIC flags.
+See [`../user/userland_dev_guide.md`](../user/userland_dev_guide.md)
+for the full per-arch flag set.
+
 ### ARM
 
 ```sh
 CFLAGS="-mthumb -mcpu=cortex-m0plus -march=armv6s-m -mfloat-abi=soft -Os"
-CFLAGS="$CFLAGS -nostdinc -isystem $MUSL_SYSROOT/include -isystem $GCC_INCLUDE"
 CFLAGS="$CFLAGS -fPIC -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative"
 CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
 ```
@@ -96,27 +100,29 @@ Link with `-pie` to emit `R_ARM_RELATIVE` relocations.
 
 ```sh
 CFLAGS="-m68000 -Os"
-CFLAGS="$CFLAGS -nostdinc -isystem $MUSL_SYSROOT/include -isystem $GCC_INCLUDE"
 CFLAGS="$CFLAGS -fPIC -msep-data"
 CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
 ```
 
 Link with `-pie` to emit `R_68K_RELATIVE` relocations.
 
-## musl libc
+## libc and Syscall ABI
 
-musl is cross-compiled for each architecture with PPAP's SVC/TRAP-based syscall interface.
-Build: `third_party/build_musl.sh` → produces `build/<arch>/musl-sysroot/`.
+PPAP libc provides POSIX-named symbols (`printf`, `malloc`, `fopen`,
+`setjmp`, …) backed by per-arch syscall stubs in
+`src/arch/<arch>/user/syscall.S`.  Ports link it the same way every
+PPAP user binary does — there is no separate "ports use this libc"
+track.
 
-### Syscall Remapping
+The kernel uses Linux-shaped `*64` syscall variants where applicable
+(`stat64` not `stat`, `fstat64` not `fstat`, …).  These map to PPAP's
+unified 16-bit grouped numbering in `src/common/syscall_nr.h`, shared
+across every architecture.
 
-musl internally uses Linux `*64` syscall variants (e.g., `stat64` not `stat`,
-`fstat64` not `fstat`). The kernel's syscall table maps these numbers.
-PPAP uses a unified 16-bit grouped numbering scheme shared across all architectures.
-
-Key structs that must match musl's expectations:
-- `struct stat` — Linux-compatible layout
-- `struct dirent64` — variable-length with `d_ino`, `d_off`, `d_reclen`, `d_type`, `d_name`
+Structs that ports may rely on are kept Linux-ABI-compatible:
+- `struct stat` / `struct stat64`
+- `struct dirent64` — variable-length with
+  `d_ino`, `d_off`, `d_reclen`, `d_type`, `d_name`
 
 ## Rogue 5.4.4
 
