@@ -3,61 +3,19 @@
 # Registers the PPAP kernel as an ESP-IDF component so that idf.py
 # can build it alongside the ESP-IDF framework.
 
-set(PPAP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../..)
+get_filename_component(PPAP_ROOT ${CMAKE_CURRENT_LIST_DIR}/../../../../../.. ABSOLUTE)
 
-# ── Architecture sources ─────────────────────────────────────────────────────
-set(ARCH_SOURCES
-    ${PPAP_ROOT}/src/arch/xtensa/boot/boot.S
-    ${PPAP_ROOT}/src/arch/xtensa/kernel/core/trap.S
-    ${PPAP_ROOT}/src/arch/xtensa/kernel/core/switch.S
-    ${PPAP_ROOT}/src/arch/xtensa/kernel/core/xtensa_common.c
-    ${PPAP_ROOT}/src/arch/xtensa/kernel/core/smp.c
+include(${PPAP_ROOT}/cmake/kernel.cmake)
+
+# ── Xtensa-CC target sources ─────────────────────────────────────────────────
+set(XTENSA_CC_SOURCES
     ${PPAP_ROOT}/src/arch/xtensa/kernel/vfs/driver/uart_esp32s3.c
     ${PPAP_ROOT}/src/target/xtensa_cc/kernel/vfs/driver/xtensa_cc_logger.c
-)
-
-# ── Kernel shared sources ────────────────────────────────────────────────────
-set(KERNEL_SOURCES
-    ${PPAP_ROOT}/src/target/target_default.c
-    ${PPAP_ROOT}/src/kernel/core/main.c
-    ${PPAP_ROOT}/src/kernel/vfs/klog.c
-    ${PPAP_ROOT}/src/kernel/core/core.c
-    ${PPAP_ROOT}/src/kernel/core/mm/page.c
-    ${PPAP_ROOT}/src/kernel/core/mm/page_alloc.c
-    ${PPAP_ROOT}/src/kernel/core/mm/kmem.c
-    ${PPAP_ROOT}/src/kernel/core/mm/mem_region.c
-    ${PPAP_ROOT}/src/kernel/core/proc/proc.c
-    ${PPAP_ROOT}/src/kernel/core/proc/sched.c
-    ${PPAP_ROOT}/src/kernel/core/syscall/syscall.c
-    ${PPAP_ROOT}/src/kernel/core/syscall/sys_proc.c
-    ${PPAP_ROOT}/src/kernel/core/syscall/sys_io.c
-    ${PPAP_ROOT}/src/kernel/core/syscall/sys_time.c
-    ${PPAP_ROOT}/src/kernel/core/syscall/sys_mem.c
-    ${PPAP_ROOT}/src/kernel/core/syscall/sys_poll.c
-    ${PPAP_ROOT}/src/kernel/core/syscall/sys_fs.c
-    ${PPAP_ROOT}/src/kernel/vfs/fd.c
-    ${PPAP_ROOT}/src/kernel/vfs/tty.c
-    ${PPAP_ROOT}/src/kernel/vfs/pipe.c
-    ${PPAP_ROOT}/src/kernel/core/signal/signal.c
-    ${PPAP_ROOT}/src/kernel/vfs/vfs.c
-    ${PPAP_ROOT}/src/kernel/vfs/namei.c
-    ${PPAP_ROOT}/src/kernel/vfs/romfs.c
-    ${PPAP_ROOT}/src/kernel/vfs/devfs.c
-    ${PPAP_ROOT}/src/kernel/vfs/procfs.c
-    ${PPAP_ROOT}/src/kernel/vfs/tmpfs.c
-    ${PPAP_ROOT}/src/kernel/vfs/fstab.c
-    ${PPAP_ROOT}/src/kernel/core/cpu/cpu.c
-    ${PPAP_ROOT}/src/kernel/core/cpu/cpu_native.c
-    ${PPAP_ROOT}/src/kernel/core/exec/elf.c
-    ${PPAP_ROOT}/src/kernel/core/exec/loader.c
-    ${PPAP_ROOT}/src/kernel/core/exec/elf_loader.c
-    ${PPAP_ROOT}/src/kernel/core/exec/exec.c
-    ${PPAP_ROOT}/src/kernel/core/subsys/subsys.c
     ${PPAP_ROOT}/src/target/xtensa_cc/kernel/core/xtensa_cc_stubs.c
 )
 
 idf_component_register(
-    SRCS ${ARCH_SOURCES} ${KERNEL_SOURCES}
+    SRCS ${KERNEL_XTENSA_COMMON_SOURCES} ${XTENSA_CC_SOURCES}
     INCLUDE_DIRS
         "${PPAP_ROOT}/src"
         "${PPAP_ROOT}/src/arch/xtensa"

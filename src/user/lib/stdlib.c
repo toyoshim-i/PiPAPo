@@ -183,8 +183,8 @@ void exit(int status) { _exit(status); }
 
 /* ── srand / rand ──────────────────────────────────────────────────── *
  *
- * Park-Miller minimal-standard LCG.  Period 2^31 - 2; not great for
- * cryptography but adequate for game RNG and shuffle-the-list use.
+ * ANSI-style LCG.  This stays within 32-bit wraparound arithmetic so
+ * freestanding targets do not need libgcc division/modulo helpers.
  */
 
 static uint32_t rng_state = 1u;
@@ -194,8 +194,8 @@ void srand(unsigned int seed) {
 }
 
 int rand(void) {
-  rng_state = (uint32_t)(((uint64_t)rng_state * 48271u) % 0x7fffffffu);
-  return (int)rng_state;
+  rng_state = rng_state * 1103515245u + 12345u;
+  return (int)(rng_state & 0x7fffffffu);
 }
 
 /* The kernel lays out argc, argv[], NULL, envp[], NULL on the initial
