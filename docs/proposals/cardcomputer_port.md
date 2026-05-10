@@ -227,23 +227,33 @@ checklist.
 
 ### Known Gaps (tracked, not phase-blocking)
 
-- **User-app build is a hardcoded subset**: `scripts/build.sh xtensa_cc`
-  compiles only `init`, `getty`, `push`, `hello`.  The canonical
-  `cmake/user_apps.cmake` `USER_APPS` list (50+ apps) is the source of
-  truth used by every other target via `cmake/user.cmake`.  Unifying
-  the xtensa_cc user build to consume that list is a follow-up cleanup
-  in the same family as the recent kernel-source / libc-unit / signal-
-  shim dedups.  Until then most utilities (ls, cat, grep, …) are
-  missing on this target.
-- **`runtests` not built for xtensa_cc**: blocks `./scripts/run.sh
-  --test xtensa_cc`.  Falls out naturally once the user-app dedup
-  above lands.  The kernel-side hooks (`target_post_mount` runs
-  `ktest_run_all()`, `target_init_path` returns `/bin/runtests`
-  under `PPAP_TESTS`) are already in place.
-- **Stale duplicate sdkconfig under `esp_idf/`**: the active sdkconfig
-  lives at `src/target/xtensa_cc/sdkconfig{,.defaults}` (where
-  `idf.py` actually reads from); the `esp_idf/sdkconfig*` mirror
-  files are unused leftovers and should be deleted.
+- **`scripts/run.sh --test xtensa_cc` not yet wired**: the test
+  binaries now build and stage into the romfs (test_libc skipped
+  because xtensa has no setjmp.S), and the kernel-side hooks
+  (`target_post_mount` runs `ktest_run_all()`, `target_init_path`
+  returns `/bin/runtests` under `PPAP_TESTS`) are already in place.
+  What's still missing is the run-side: a non-interactive `idf.py
+  monitor` mode that flashes, watches stdout for runtests pass/fail
+  markers, and returns a CI-friendly exit status.
+
+- **xtensa_cc romfs staging is shell-coded, not unified with
+  `cmake/stage_romfs.cmake`**: `scripts/build.sh` open-codes the
+  staging directory layout, ELF install destinations, and
+  `/bin/sh→push` symlink for xtensa_cc, while every other target's
+  staging goes through `cmake/stage_romfs.cmake`.  The two lists
+  drifted at least once (xtensa_cc was missing `/home`, `/usr`,
+  `/mnt`).  Right unification: have xtensa_cc invoke
+  `cmake -P stage_romfs.cmake` too, paired with extending
+  `stage_romfs.cmake` to handle xtensa_cc's `.xip`/`.xipfix`
+  artifact ELFs (or dropping them — they're build-time analysis
+  artifacts that the runtime loader doesn't yet use).
+
+- **64-bit math helpers not available**: `calc` is currently
+  excluded from the xtensa_cc user-app build because it reaches for
+  `__udivdi3` / `__ashldi3` etc., and the ESP-IDF toolchain only
+  ships a windowed-ABI `libgcc.a` that would corrupt registers when
+  called from PPAP's call0 user-space.  Real fix: a small set of
+  call0-compatible 64-bit helpers in `src/user/lib/`.
 
 ### Guiding Principle
 

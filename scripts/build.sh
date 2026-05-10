@@ -533,7 +533,10 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     # not consume yet, so embedding them in the romfs would just
     # double the kernel image footprint.
     rm -rf "$ROMFS_STAGING"
-    mkdir -p "$ROMFS_STAGING"/{bin,sbin,etc,dev,proc,tmp}
+    # Match cmake/stage_romfs.cmake's directory layout so a process
+    # whose HOME=/home (set by /etc/profile) can chdir() there, and so
+    # the standard /usr, /mnt mount points exist for future use.
+    mkdir -p "$ROMFS_STAGING"/{bin,sbin,etc,dev,home,proc,tmp,usr/bin,usr/include,mnt/sd,mnt/ufs}
     for app in $USER_APPS; do
         if xtensa_app_skipped "$app"; then continue; fi
         case "$app" in
