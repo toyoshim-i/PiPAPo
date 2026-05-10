@@ -274,8 +274,7 @@ overlay directory baked into romfs at build time (see
 | `test_pdb.c` | `pdb` scripted smoke and command coverage (`TEST_SLOW` on m68k; use `--slow`) |
 | `test_pdb_arm_disas.c` | ARM-only `pdb disas` smoke (built in `/bin/`, not in default `runtests`) |
 | `test_h68k_dos.c` | Human68k DOS bridge integration via R-format test binaries |
-| `test_musl.c` | musl libc integration (harness); runs musl-linked child via vfork+execve |
-| `test_musl_child.c` | musl-linked child binary exercising libc exit, stdio, malloc, strings |
+| `test_libc.c` | PPAP libc surface — printf width/zero-pad, strtol/strtoul, ctype, qsort/bsearch, FILE streams, strftime, setjmp/longjmp (UNSUPPORTED on ia16/xtensa — no setjmp.S) |
 
 ### Build system
 
@@ -320,34 +319,16 @@ by the `PPAP_TESTS` CMake option. The build system:
    be skipped in CI.
 4. Build with `--test` and run
 
-### Musl-linked tests
-
-Some bugs only manifest with musl-linked binaries (e.g. double-free on
-process exit caused by musl's `_Exit()` calling `SYS_exit_group` then
-`SYS_exit` in a loop).  To cover these, the test suite includes a
-**split harness + child** pattern:
-
-- **`test_musl.c`** — bare-metal harness (uses `utest.h`, linked with
-  `crt0.o + syscall.o` like all other tests).  It `vfork+execve`s
-  `test_musl_child` with different `argv[1]` values and checks exit codes.
-- **`test_musl_child.c`** — linked against musl libc (via
-  `ppap_musl_test_program()` in `cmake/user.cmake`).  Uses standard
-  `<stdio.h>`, `<stdlib.h>`, `<string.h>`.  Dispatches on `argv[1]`:
-  `exit`, `printf`, `malloc`, `string`.
-
-To add a new musl sub-test, add a function in `test_musl_child.c` and
-a `run_subtest()` call in `test_musl.c`.
-
-To add a new musl-linked test binary:
-1. Create `tests/user/test_foo_child.c` with `#include <stdio.h>` etc.
-2. Add `test_foo_child` to `USER_MUSL_TESTS` in `cmake/user.cmake`
-3. The build system uses `ppap_musl_test_program()` which compiles with
-   musl headers and links with musl's `crt1.o + libc.a` via the specs file
-
 ### Constraints for user-space test code
 
-- **No libc.** Only `syscall.h` wrappers are available (except for
-  musl-linked tests in `USER_MUSL_TESTS`).
+- **PPAP libc is available.** Tests can `#include <stdio.h>`,
+  `<stdlib.h>`, `<string.h>`, `<setjmp.h>`, etc.  Headers come from
+  `src/user/include/`; the implementation lives under `src/user/lib/`
+  and is linked into every test binary via the same path as user
+  apps.  See `tests/user/test_libc.c` for a worked example.  Some
+  facilities are arch-conditional — `setjmp` is available on ARM /
+  m68k / RISC-V (each arch ships a `user/setjmp.S`) but not on ia16
+  or xtensa, so `test_libc` is `TEST_UNSUPPORTED` there.
 - **No division on m68k.** GCC emits `__divsi3` calls; use
   subtraction loops (see `ut_print_int` in `utest.h`).
 - **No static pointer arrays.** PIC relocation only fixes GOT entries.
@@ -402,7 +383,7 @@ coverage is not exhaustive yet.
   ramblk that rv32 does not provide; the 18 failures corrupt state and
   crash init startup.
   User: 16 tests pass (vfork, pipe, fd, poll, id, rw, iov, stat, float,
-  musl, exec, brk, fs, signal, sleep_intr, signal_float).  Seven are
+  libc, exec, brk, fs, signal, sleep_intr, signal_float).  Seven are
   still `TEST_DISABLED` on RISC-V with per-test comments in
   `tests/user/runtests.c`: `test_elf` (ELF parser rejects inputs with
   -ENOEXEC), `test_fault` (kernel trap handler terminates the whole
@@ -495,8 +476,9 @@ remaining entries fall into two buckets visible in the summary:
   kernel panic).  Both are `TEST_DISABLED`, not `TEST_UNSUPPORTED` —
   they can be lit up when the underlying features land.
 - `n/a` (12): tests that exercise features pcxt does not have — no
-  FPU, no Z80/CP/M/S-OS subsystems, no musl libc, ELF32 parser n/a
-  (pcxt uses elf16), arch-specific ptrace regsets, etc.
+  FPU, no Z80/CP/M/S-OS subsystems, no setjmp (so `test_libc` is
+  unsupported), ELF32 parser n/a (pcxt uses elf16), arch-specific
+  ptrace regsets, etc.
 
 ### `run.sh --test-extended`
 
@@ -593,7 +575,7 @@ boot → kernel init → VFS mount → target_post_mount()
                             ├── test_h68k_dos (ENABLED on m68k, DISABLED on ARM)
                             ├── test_cpm
                             ├── test_sos
-                            ├── test_musl
+                            ├── test_libc   (UNSUPPORTED on ia16/xtensa)
                             ├── test_trace  (FLAKY; run with --flaky)
                             └── test_pdb    (SLOW; run with --slow)
                                    │
