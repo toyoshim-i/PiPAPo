@@ -488,11 +488,26 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
             "$BUILD_DIR/user/$app.xipfix.elf"
     done
 
+    # Tests not building cleanly under -mabi=call0 PIC are listed here.
+    # tests/user/runtests.c independently marks the same tests
+    # TEST_UNSUPPORTED on __xtensa__ so the kernel-side runner doesn't
+    # even try to exec them; the skip here is the host-side mirror that
+    # keeps the build from failing at link time.
+    #   test_libc — uses setjmp/longjmp, which has no xtensa user.lib
+    #               implementation (same gap as ia16).
+    XTENSA_CC_TEST_SKIP="test_libc"
+
+    xtensa_test_skipped() {
+        case " $XTENSA_CC_TEST_SKIP " in *" $1 "*) return 0;; esac
+        return 1
+    }
+
     # Test binaries (RAM-only — runtests harness execs them on demand,
     # XIP variants would just inflate the romfs).
     if [[ "$TESTS" == "ON" && -n "${USER_TESTS:-}" ]]; then
         echo "[build] Compiling user-space test binaries..."
         for t in $USER_TESTS; do
+            if xtensa_test_skipped "$t"; then continue; fi
             srcvar="USER_TEST_${t}_SOURCE"
             # shellcheck disable=SC2086
             $XTENSA_CC $XTENSA_RAM_USER_FLAGS \
@@ -532,6 +547,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
 
     if [[ "$TESTS" == "ON" && -n "${USER_TESTS:-}" ]]; then
         for t in $USER_TESTS; do
+            if xtensa_test_skipped "$t"; then continue; fi
             cp "$BUILD_DIR/user/$t.elf" "$ROMFS_STAGING/bin/$t"
         done
     fi
