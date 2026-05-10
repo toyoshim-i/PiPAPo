@@ -222,8 +222,6 @@ scanning logic is straightforward once pins are known.
 
 User-space currently boots to a working `push` shell prompt over USJ;
 keystrokes are delivered, exec/vfork/signal-action paths are exercised.
-See [xtensa.md](../targets/xtensa.md) §8 for the architecture-level
-checklist.
 
 ### Known Gaps (tracked, not phase-blocking)
 
@@ -254,6 +252,20 @@ checklist.
   ships a windowed-ABI `libgcc.a` that would corrupt registers when
   called from PPAP's call0 user-space.  Real fix: a small set of
   call0-compatible 64-bit helpers in `src/user/lib/`.
+
+- **Scheduler is semi-preemptive only**: the timer ISR sets
+  `xtensa_switch_pending` but the actual context switch happens at
+  the next cooperative yield (idle loop or syscall return), not in
+  the interrupt-return path.  An earlier debug log captured the
+  second yield-to-init crashing with `IllegalInsn` at `retw.n` in
+  `xtensa_do_yield` (frame zeroed between save and restore); that
+  symptom no longer reproduces during interactive boot but the
+  underlying race may still be latent.  True preemptive switching
+  in the interrupt return path, plus a focused investigation of
+  the saved-frame race, is the Xtensa scheduler-stability work
+  tracked in
+  [`docs/proposals/context_switch_cleanup.md`](context_switch_cleanup.md)
+  Phase 4 (Migrate Xtensa).
 
 ### Guiding Principle
 
