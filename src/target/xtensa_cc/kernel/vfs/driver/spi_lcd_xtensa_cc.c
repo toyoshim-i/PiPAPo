@@ -32,6 +32,7 @@
 
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/xtensa_cc.h"
+#include "kernel/vfs/driver/lcd_geom.h"
 #include "kernel/vfs/driver/spi_lcd.h"
 
 /* ── Configuration ──────────────────────────────────────────────────────── */
@@ -96,9 +97,14 @@ uint32_t spi_lcd_read_sr(void) {
 }
 
 void spi_lcd_init(void) {
-  /* 1. DC and RST as plain GPIO outputs (CS is owned by the SPI peripheral). */
+  /* 1. DC, RST, and BL as plain GPIO outputs (CS is owned by the SPI
+   *    peripheral).  Backlight comes up off so the panel garbage
+   *    visible during reset / black-fill isn't shown to the user;
+   *    target glue (xtensa_cc_logger.c, CC-4e) flips it on after
+   *    lcd_init() finishes — same pattern as pico1calc's I2C backlight. */
   gpio_config_t io = {
-      .pin_bit_mask = (1ULL << DISPLAY_DC_PIN) | (1ULL << DISPLAY_RST_PIN),
+      .pin_bit_mask = (1ULL << DISPLAY_DC_PIN) | (1ULL << DISPLAY_RST_PIN) |
+                      (1ULL << DISPLAY_BL_PIN),
       .mode = GPIO_MODE_OUTPUT,
       .pull_up_en = GPIO_PULLUP_DISABLE,
       .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -110,6 +116,7 @@ void spi_lcd_init(void) {
   }
   gpio_set_level(DISPLAY_DC_PIN, 1);
   gpio_set_level(DISPLAY_RST_PIN, 1);
+  gpio_set_level(DISPLAY_BL_PIN, 0); /* off until panel is ready */
 
   /* 2. SPI2 bus.  No MISO (TX-only panel).  max_transfer_sz caps the
    *    largest single transaction; our chunking respects LCD_SCRATCH_BYTES. */
@@ -247,10 +254,17 @@ void spi_lcd_data16_stream(const uint16_t *buf, size_t count) {
 void spi_lcd_stream_end(void) { /* no-op */ }
 
 void spi_lcd_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
-  uint8_t col[4] = {(uint8_t)(x0 >> 8), (uint8_t)(x0 & 0xFFu),
-                    (uint8_t)(x1 >> 8), (uint8_t)(x1 & 0xFFu)};
-  uint8_t row[4] = {(uint8_t)(y0 >> 8), (uint8_t)(y0 & 0xFFu),
-                    (uint8_t)(y1 >> 8), (uint8_t)(y1 & 0xFFu)};
+  /* Callers work in visible (0,0)-origin coordinates; the ST7789V2 RAM
+   * frame puts the visible window at (LCD_COL_OFFSET, LCD_ROW_OFFSET).
+   * Translate before issuing CASET / RASET. */
+  uint16_t cx0 = (uint16_t)(x0 + LCD_COL_OFFSET);
+  uint16_t cx1 = (uint16_t)(x1 + LCD_COL_OFFSET);
+  uint16_t cy0 = (uint16_t)(y0 + LCD_ROW_OFFSET);
+  uint16_t cy1 = (uint16_t)(y1 + LCD_ROW_OFFSET);
+  uint8_t col[4] = {(uint8_t)(cx0 >> 8), (uint8_t)(cx0 & 0xFFu),
+                    (uint8_t)(cx1 >> 8), (uint8_t)(cx1 & 0xFFu)};
+  uint8_t row[4] = {(uint8_t)(cy0 >> 8), (uint8_t)(cy0 & 0xFFu),
+                    (uint8_t)(cy1 >> 8), (uint8_t)(cy1 & 0xFFu)};
   spi_lcd_cmd(0x2A); /* CASET — Column Address Set */
   spi_lcd_data(col, 4);
   spi_lcd_cmd(0x2B); /* RASET — Row Address Set */
