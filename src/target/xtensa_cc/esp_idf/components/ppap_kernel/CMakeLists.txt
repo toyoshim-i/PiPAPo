@@ -10,17 +10,21 @@ include(${PPAP_ROOT}/cmake/kernel.cmake)
 # ── Xtensa-CC target sources ─────────────────────────────────────────────────
 set(XTENSA_CC_SOURCES
     ${PPAP_ROOT}/src/arch/xtensa/kernel/vfs/driver/usj.c
+    ${PPAP_ROOT}/src/target/xtensa_cc/kernel/vfs/driver/spi_lcd_xtensa_cc.c
     ${PPAP_ROOT}/src/target/xtensa_cc/kernel/vfs/driver/xtensa_cc_logger.c
     ${PPAP_ROOT}/src/target/xtensa_cc/kernel/core/xtensa_cc_stubs.c
 )
 
+# `driver` (legacy umbrella) provides spi_master + gpio for CC-4b's
+# first-cut LCD transport.  CC-3.5e tracks the eventual lowering to
+# bare MMIO, after which this dependency goes away.
 idf_component_register(
     SRCS ${KERNEL_XTENSA_COMMON_SOURCES} ${XTENSA_CC_SOURCES}
     INCLUDE_DIRS
         "${PPAP_ROOT}/src"
         "${PPAP_ROOT}/src/arch/xtensa"
         "${PPAP_ROOT}/src/target/xtensa_cc"
-    REQUIRES esp_psram
+    REQUIRES esp_psram driver
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
