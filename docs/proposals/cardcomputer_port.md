@@ -216,12 +216,16 @@ scanning logic is straightforward once pins are known.
 | CC-3: ILL-syscall trap, exec, vfork, signals (delivery still stubbed) | DONE |
 | CC-3.1: USB Serial JTAG primary console (TX + RX) | DONE |
 | CC-3.5: runtime ownership handoff (see breakdown below) | partial |
-| CC-4: ST7789 display + framebuffer console | not started |
+| CC-4: ST7789 display + framebuffer console | DONE |
 | CC-5: GPIO-matrix keyboard + `tty1` input | not started |
 | CC-6: microSD over HSPI | not started |
 
 User-space currently boots to a working `push` shell prompt over USJ;
 keystrokes are delivered, exec/vfork/signal-action paths are exercised.
+The boot banner and klog stream also mirror to the ST7789V2 display
+via fbcon's secondary klog sink; `target_caps()` advertises
+`TARGET_CAP_SPI | TARGET_CAP_DISPLAY`.  Display input (keyboard) is
+the CC-5 work.
 
 ### Known Gaps (tracked, not phase-blocking)
 
