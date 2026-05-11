@@ -3,10 +3,15 @@
  *
  * Pin assignments and hardware constants for the CardComputer target.
  * Display, keyboard, and SD card pins are defined here for future phases.
+ *
+ * Lives under kernel/common/ — every symbol below is a board-description
+ * constant (pin numbers, clock fallback) consumed by VFS-side
+ * peripheral drivers; placing it under kernel/core/ would force VFS
+ * code to reach across the module boundary.
  */
 
-#ifndef PPAP_TARGET_XTENSA_CC_KERNEL_CORE_XTENSA_CC_H
-#define PPAP_TARGET_XTENSA_CC_KERNEL_CORE_XTENSA_CC_H
+#ifndef PPAP_TARGET_XTENSA_CC_KERNEL_COMMON_XTENSA_CC_H
+#define PPAP_TARGET_XTENSA_CC_KERNEL_COMMON_XTENSA_CC_H
 
 /* ── System clock ──────────────────────────────────────────────────────── */
 
@@ -55,4 +60,4 @@
 
 #define IR_TX_PIN           44
 
-#endif /* PPAP_TARGET_XTENSA_CC_KERNEL_CORE_XTENSA_CC_H */
+#endif /* PPAP_TARGET_XTENSA_CC_KERNEL_COMMON_XTENSA_CC_H */

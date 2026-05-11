@@ -23,7 +23,6 @@
 #include "kernel/core/trap.h"
 #include "sdkconfig.h"
 #include "target/target.h"
-#include "xtensa_cc.h"
 
 #if !defined(CONFIG_FREERTOS_UNICORE) || !CONFIG_FREERTOS_UNICORE
 #error "xtensa_cc requires CONFIG_FREERTOS_UNICORE=y"

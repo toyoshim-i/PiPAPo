@@ -31,8 +31,8 @@
 #include <string.h>
 
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/common/xtensa_cc.h"
 #include "kernel/vfs/driver/spi_lcd.h"
-#include "target/xtensa_cc/kernel/core/xtensa_cc.h"
 
 /* ── Configuration ──────────────────────────────────────────────────────── */
 
