@@ -25,9 +25,13 @@ include(${CMAKE_CURRENT_LIST_DIR}/kernel.cmake)
 # Adds standard include dirs and PPAP_TESTS support to a RISC-V target.
 # Also applies subsystem/eCPU build flags.
 function(ppap_riscv_target_common target)
+    # Include order: target-specific dirs are added by per-target
+    # CMakeLists BEFORE this call, so the resolution chain is
+    #   target overlay  ->  arch overlay  ->  primary src/
+    # (first-match-wins; target overrides arch overrides primary).
     target_include_directories(${target} PRIVATE
-        ${PPAP_ROOT}/src
         ${PPAP_ROOT}/src/arch/riscv
+        ${PPAP_ROOT}/src
     )
 
     # Warnings: treat as errors for project code (third-party is built externally)

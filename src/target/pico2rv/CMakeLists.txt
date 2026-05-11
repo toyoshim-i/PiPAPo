@@ -49,12 +49,13 @@ add_executable(ppap_pico2rv
     ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/clock_rpico.c
 )
 
-ppap_riscv_target_common(ppap_pico2rv)
-
+# Target dir is added before ppap_riscv_target_common so the overlay
+# search order ends up target -> arch -> primary src/.
 target_include_directories(ppap_pico2rv PRIVATE
-    ${PPAP_ROOT}/src/arch/riscv
     ${PPAP_ROOT}/src/target/pico2rv
 )
+
+ppap_riscv_target_common(ppap_pico2rv)
 
 target_compile_definitions(ppap_pico2rv PRIVATE
     PPAP_HAS_PROCFS=1

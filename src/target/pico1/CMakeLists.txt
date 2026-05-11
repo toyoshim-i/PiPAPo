@@ -39,12 +39,13 @@ add_executable(ppap_pico1
     ${PPAP_ROOT}/src/arch/arm_m/kernel/core/driver/clock_rpico.c
 )
 
-ppap_arm_target_common(ppap_pico1)
-
+# Target dir is added before ppap_arm_target_common so the overlay
+# search order ends up target -> arch -> primary src/.
 target_include_directories(ppap_pico1 PRIVATE
-    ${PPAP_ROOT}/src/arch/arm_m
     ${PPAP_ROOT}/src/target/pico1
 )
+
+ppap_arm_target_common(ppap_pico1)
 
 target_compile_definitions(ppap_pico1 PRIVATE
     SRAM_KERNEL_SIZE=49152u

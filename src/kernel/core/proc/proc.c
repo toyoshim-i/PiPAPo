@@ -130,9 +130,12 @@ void proc_init(void) {
 
   current_core[0] = &proc_table[0];
 
-  /* Point assembly's core_id_reg at the SIO_CPUID register on RP2040.
-   * On QEMU (no SIO), it stays pointing at core_id_zero → always 0. */
-  if (spin_have_hw()) core_id_reg = (volatile uint32_t *)0xD0000000u;
+  /* Point assembly's core_id_reg at the hardware core-ID register
+   * (SIO_CPUID on RP2040/RP2350) when the active spinlock overlay
+   * advertises one.  Otherwise it stays pointing at core_id_zero
+   * → always 0.  SPIN_CORE_ID_PTR is supplied per target via the
+   * spinlock.h overlay; the check is folded at compile time. */
+  if (SPIN_CORE_ID_PTR) core_id_reg = SPIN_CORE_ID_PTR;
 
   mod_vfs.klogf(
       "PROC: process table  slots=%u"

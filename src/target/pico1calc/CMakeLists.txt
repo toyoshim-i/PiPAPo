@@ -47,12 +47,13 @@ add_executable(ppap_pico1calc
     ${PPAP_ROOT}/src/kernel/vfs/driver/fbcon.c
 )
 
-ppap_arm_target_common(ppap_pico1calc)
-
+# Target dir is added before ppap_arm_target_common so the overlay
+# search order ends up target -> arch -> primary src/.
 target_include_directories(ppap_pico1calc PRIVATE
-    ${PPAP_ROOT}/src/arch/arm_m
     ${PPAP_ROOT}/src/target/pico1calc
 )
+
+ppap_arm_target_common(ppap_pico1calc)
 
 target_compile_definitions(ppap_pico1calc PRIVATE
     PPAP_HAS_BLKDEV=1

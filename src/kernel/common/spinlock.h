@@ -1,18 +1,19 @@
 /*
- * spinlock.h — RP2040 hardware spinlock API
+ * spinlock.h — default (single-core) spinlock implementation
  *
- * The RP2040 SIO block provides 32 hardware spinlocks at SIO_BASE+0x100.
- * Each lock is a single 32-bit register:
- *   - Read: try-acquire.  Returns non-zero on success, 0 if already held.
- *   - Write (any value): release.
+ * Used by every target that does not provide an arch or target overlay
+ * of this header.  On single-core targets there is no cross-core race,
+ * so the lock argument is ignored and IRQ disable alone provides the
+ * required exclusion against ISRs.
  *
- * Pattern: disable local IRQs before acquire, re-enable after release.
- * This prevents deadlock if an ISR tries to acquire the same lock.
+ * Targets that need hardware spinlocks (RP2040 / RP2350 SIO block)
+ * supply their own spinlock.h in arch/<arch>/kernel/common/ which
+ * overrides this file via the overlay include path.  Targets that run
+ * the same arch under emulation (qemu_arm, qemu_rv32) further override
+ * the arch overlay with a target-level no-op overlay.
  *
- * On QEMU (mps2-an500) the SIO block does not exist — reads from
- * 0xD0000000+ would return 0 or fault.  We detect QEMU via SCB.CPUID
- * (Cortex-M0+ PARTNO = 0xC60) and skip the hardware lock, relying on
- * IRQ disable alone (sufficient for single-core).
+ * The SPIN_* identifiers live in spinlock_ids.h so every implementation
+ * shares the same enum.
  */
 
 #ifndef PPAP_KERNEL_COMMON_SPINLOCK_H
@@ -21,143 +22,32 @@
 #include <stdint.h>
 
 #include "kernel/common/irq.h"
-
-#ifndef SIO_BASE
-#define SIO_BASE 0xD0000000u
-#endif
-#define SIO_CPUID (*(volatile uint32_t *)(SIO_BASE + 0x000u))
-#define SIO_SPINLOCK_BASE (SIO_BASE + 0x100u)
-
-/* SCB.CPUID — always accessible on any Cortex-M */
-#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
-#define SCB_CPUID_REG (*(volatile uint32_t *)0xE000ED00u)
-#define CPUID_PARTNO_MASK 0x0000FFF0u
-#define CPUID_PARTNO_M0P 0x0000C600u /* Cortex-M0+ (RP2040)  */
-#define CPUID_PARTNO_M33 0x0000D210u /* Cortex-M33 (RP2350)  */
-#endif
-
-enum {
-  SPIN_PAGE = 0,   /* free_stack, free_top (page allocator) */
-  SPIN_PROC = 1,   /* proc_table, next_pid, running_on_core */
-  SPIN_VFS = 2,    /* mount table, vnode pool */
-  SPIN_FS = 3,     /* sector_buf (vfat.c), ufs_buf (ufs.c) */
-  SPIN_UART = 4,   /* UART TX serialisation (klog) */
-  SPIN_TXRING = 5, /* UART TX ring buffer + IMSC (dual-core) */
-  SPIN_I2C = 6,    /* I2C1 controller (kbd, battery, backlight) */
-  SPIN_MEM = 7,    /* mem_region arena state */
-  SPIN_FBCON = 8,  /* fbcon flush serialisation across cores */
-};
-
-static inline int spin_have_hw(void) {
-#if defined(__m68k__)
-  return 0; /* no hardware spinlocks on 68k */
-#elif defined(__xtensa__)
-  return 0; /* no SIO spinlocks on ESP32-S3 — IRQ disable is sufficient */
-#elif defined(__ia16__)
-  return 0; /* no hardware spinlocks on 8086 */
-#elif defined(__riscv) && !defined(PPAP_QEMU)
-  return 1; /* RP2350 SIO spinlocks work from RISC-V cores too */
-#elif defined(__riscv) && defined(PPAP_QEMU)
-  return 0; /* QEMU virt has no SIO spinlocks */
-#else
-  uint32_t partno = SCB_CPUID_REG & CPUID_PARTNO_MASK;
-  return partno == CPUID_PARTNO_M0P || partno == CPUID_PARTNO_M33;
-#endif
-}
-
-static inline uint32_t core_id(void) {
-#if defined(__m68k__) || defined(PPAP_QEMU)
-  return 0; /* single core: m68k or QEMU ARM */
-#elif defined(__xtensa__)
-  return 0; /* single-core initial Xtensa port */
-#elif defined(__ia16__)
-  return 0; /* 8086: single core */
-#elif defined(__riscv)
-  return 0; /* single-core initial RISC-V port (Phase RV-6 will use SIO_CPUID)
-             */
-#else
-  return SIO_CPUID; /* RP2040: single MMIO read, ~1 cycle */
-#endif
-}
+#include "kernel/common/spinlock_ids.h"
 
 /*
- * Release all 32 hardware spinlocks.
- *
- * Must be called once at early boot before any spin_lock_irqsave().
- * On RP2040, the SIO block is NOT reset by a Core 0 reset (e.g. GDB
- * reload + `monitor reset halt`).  If the previous session was
- * interrupted while a spinlock was held, the lock stays claimed and
- * the first acquire in the new session hangs forever.
- *
- * The pico-sdk does the same in runtime_init → spin_locks_reset().
+ * Pointer to a hardware core-ID register, or NULL when the target has
+ * no such register.  Used by arm_m's context-switch assembly via the
+ * indirect core_id_reg pointer in proc.c.
  */
-static inline void spin_locks_reset(void) {
-#if defined(__m68k__) || defined(__ia16__) || defined(__xtensa__) || \
-    (defined(__riscv) && defined(PPAP_QEMU))
-  /* No hardware spinlocks — nothing to reset */
-#else
-  if (!spin_have_hw()) return;
-  for (uint32_t i = 0; i < 32u; i++) {
-    volatile uint32_t *lock = (volatile uint32_t *)(SIO_SPINLOCK_BASE + i * 4u);
-    *lock = 0u;
-  }
-#endif
-}
+#define SPIN_CORE_ID_PTR ((volatile uint32_t *)0)
+
+static inline uint32_t core_id(void) { return 0; }
+
+static inline void spin_locks_reset(void) {}
 
 static inline uint32_t spin_lock_irqsave(uint32_t lock_num) {
-  uint32_t saved = arch_irq_save();
-#if !defined(__m68k__) && !defined(__ia16__) && !defined(__xtensa__) && \
-    !(defined(__riscv) && defined(PPAP_QEMU))
-  if (spin_have_hw()) {
-    volatile uint32_t *lock =
-        (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
-    while (!*lock);
-  }
-#else
   (void)lock_num;
-#endif
-  return saved;
+  return arch_irq_save();
 }
 
 static inline void spin_unlock_irqrestore(uint32_t lock_num, uint32_t saved) {
-#if !defined(__m68k__) && !defined(__ia16__) && !defined(__xtensa__) && \
-    !(defined(__riscv) && defined(PPAP_QEMU))
-  if (spin_have_hw()) {
-    volatile uint32_t *lock =
-        (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
-    *lock = 0u;
-  }
-#else
   (void)lock_num;
-#endif
   arch_irq_restore(saved);
 }
 
-static inline void spin_lock(uint32_t lock_num) {
-#if !defined(__m68k__) && !defined(__ia16__) && !defined(__xtensa__) && \
-    !(defined(__riscv) && defined(PPAP_QEMU))
-  if (spin_have_hw()) {
-    volatile uint32_t *lock =
-        (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
-    while (!*lock);
-  }
-#else
-  (void)lock_num;
-#endif
-}
+static inline void spin_lock(uint32_t lock_num) { (void)lock_num; }
 
-static inline void spin_unlock(uint32_t lock_num) {
-#if !defined(__m68k__) && !defined(__ia16__) && !defined(__xtensa__) && \
-    !(defined(__riscv) && defined(PPAP_QEMU))
-  if (spin_have_hw()) {
-    volatile uint32_t *lock =
-        (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
-    *lock = 0u;
-  }
-#else
-  (void)lock_num;
-#endif
-}
+static inline void spin_unlock(uint32_t lock_num) { (void)lock_num; }
 
 /*
  * Non-blocking try-acquire.  Returns 1 if the lock was acquired (caller
@@ -165,20 +55,10 @@ static inline void spin_unlock(uint32_t lock_num) {
  * No IRQ state is touched — callers that need IRQ exclusion combine this
  * with arch_irq_save() / arch_irq_restore() themselves.
  *
- * On targets without a hardware spinlock the result is "always
- * acquired" — those targets are single-core, so there is no cross-core
- * race for the caller to lose.  Same fallback shape as spin_lock /
- * spin_unlock above.
+ * On single-core targets there is no cross-core race, so the result is
+ * always "acquired".
  */
 static inline int spin_trylock(uint32_t lock_num) {
-#if !defined(__m68k__) && !defined(__ia16__) && !defined(__xtensa__) && \
-    !(defined(__riscv) && defined(PPAP_QEMU))
-  if (spin_have_hw()) {
-    volatile uint32_t *lock =
-        (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
-    return *lock != 0u; /* SIO read returns lock_num on acquire, 0 if held */
-  }
-#endif
   (void)lock_num;
   return 1;
 }

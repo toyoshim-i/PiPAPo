@@ -59,12 +59,13 @@ else()
     )
 endif()
 
-ppap_arm_target_common(ppap_pico2)
-
+# Target dir is added before ppap_arm_target_common so the overlay
+# search order ends up target -> arch -> primary src/.
 target_include_directories(ppap_pico2 PRIVATE
-    ${PPAP_ROOT}/src/arch/arm_m
     ${PPAP_ROOT}/src/target/pico2
 )
+
+ppap_arm_target_common(ppap_pico2)
 
 target_compile_definitions(ppap_pico2 PRIVATE
     PPAP_HAS_PROCFS=1

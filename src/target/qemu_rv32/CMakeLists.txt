@@ -57,11 +57,13 @@ add_executable(ppap_qemu_rv32
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/string.c
 )
 
-# Common includes, warnings, definitions
+# Common includes, warnings, definitions.
+# Order is target -> arch -> primary src/ so target overlays override
+# arch overlays which override the primary tree (first-match-wins).
 target_include_directories(ppap_qemu_rv32 PRIVATE
-    ${PPAP_ROOT}/src
-    ${PPAP_ROOT}/src/arch/riscv
     ${PPAP_ROOT}/src/target/qemu_rv32
+    ${PPAP_ROOT}/src/arch/riscv
+    ${PPAP_ROOT}/src
 )
 target_compile_options(ppap_qemu_rv32 PRIVATE
     -Wall -Wextra -Werror -Wno-unused-parameter
