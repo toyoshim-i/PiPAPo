@@ -397,36 +397,77 @@ coverage is not exhaustive yet.
   115 errno mismatch with corrupted summary counters), `test_cpm` /
   `test_sos` (Z80 eCPU path takes a load-access fault early and
   brings the kernel down).
-- **`xtensa_cc` (CardComputer hardware): user 13/13 enabled pass; the
-  remaining tests cascade-fail with `MM: OOM: page_alloc failed`
-  because the loader is not yet XIP and the page pool is tight.**
-  Four tests are `TEST_DISABLED` with per-test comments in
-  `tests/user/runtests.c`: `test_elf` (ELF32 parser rejects inputs
-  with -ENOEXEC, same failure mode as rv32), `test_signal` and
-  `test_sleep_intr` (CC-3 signal-delivery stub — `deliver_signal()`
-  does not yet build a sigreturn frame, so SIGUSR1 handlers never
-  run), `test_iov` (returns exit status 1; root cause not yet
-  investigated).
+- **`xtensa_cc` (CardComputer hardware): 13 user tests pass cleanly
+  after the vfork user-stack-page leak fix.**
+  Ten tests are `TEST_DISABLED` / `TEST_UNSUPPORTED` on `__xtensa__`
+  with per-test comments in `tests/user/runtests.c`:
+  * `test_elf` — ELF32 parser rejects inputs with -ENOEXEC, same
+    failure mode as rv32.
+  * `test_signal`, `test_sleep_intr` — CC-3 signal-delivery stub:
+    `deliver_signal()` does not yet build a sigreturn frame, so
+    SIGUSR1 handlers never run.
+  * `test_iov` — exits 1; root cause not yet investigated.
+  * `test_float`, `test_signal_float` — `TEST_UNSUPPORTED`: xtensa
+    user-space is built with `-mabi=call0` and no coprocessor enable,
+    so any FP instruction triggers a Guru Meditation Coprocessor
+    exception that ESP-IDF's panic handler converts into a chip
+    reboot.
+  * `test_env` — `setenv` / `unsetenv` paths return -1 at
+    test_env.c:91, :93, :97; root cause not yet investigated.
+  * `test_tmpfs` — write returns 0 instead of length; ENOSPC handling
+    mismatches at multiple line offsets.
+  * `test_cpm` — 50+ internal failures, most are file-open returning
+    -1 (`/bin/hello.com` etc.); either the CP/M subsystem loader is
+    broken on xtensa or the `.com` companion binaries aren't staged
+    into the xtensa_cc romfs.
+  * `test_sos` — exit 127, binary load failing before main() runs.
 
-  All other tests stay `TEST_ENABLED` even when they currently fail
-  on hardware, because the failures are **not** independent test
-  bugs — they are downstream OOM victims of page-pool fragmentation.
-  Test binaries on xtensa_cc are built RAM-only (see
-  `scripts/build.sh` "Test binaries (RAM-only)" comment), so every
-  `exec` copies `.text` + `.rodata` + `.data` + `.bss` + stack out
-  of romfs into the page pool.  At boot `/proc/meminfo` reports
-  ~72 KB free (≈18 pages); after ~10 sequential `exec` / `exit`
-  cycles the pool fragments and subsequent `exec`s can't find a
-  contiguous run, even though total free pages remain.  Which test
-  wins the OOM race differs run-to-run.
+  Earlier passes of this document described an "OOM cascade from
+  page-pool fragmentation" as the explanation for ~10 cascade-victim
+  failures.  The actual cause was a per-vfork page leak in
+  `sys_vfork()`'s xtensa branch (allocated user-stack page never
+  recorded on the child PCB, never freed); fixed in commit
+  `6acdf23f`.  With the leak plugged, six tests that previously
+  reported `FAIL exit 127 (OOM)` now run cleanly (`test_id`,
+  `test_fs`, `test_rw`, `test_stat`, `test_time`, `test_orphan`), and
+  the remaining real failures are visible without OOM-cascade noise.
 
-  The canonical fix is to wire the experimental `user_xip.ld` /
-  `.xip` / `.xipfix` variants to the runtime loader so `.text` and
-  `.rodata` execute directly from flash/PSRAM and don't consume
-  DRAM pages.  Tracked as a followup in
-  `docs/proposals/cardcomputer_port.md`.  Disabling these tests
-  would mask automatic recovery once the XIP loader lands, so they
-  remain enabled and visibly red.
+  None of the four newly-`TEST_DISABLED` real failures (`test_env`,
+  `test_tmpfs`, `test_cpm`, `test_sos`) were observable before the
+  leak fix — all were masked by OOM-cascade exit-127s.  They are
+  recorded here as a baseline for the kernel-stack refactoring
+  tracked in `docs/proposals/context_switch_cleanup.md` Phase 4.
+
+  The user-space loader is still RAM-only.  At boot `/proc/meminfo`
+  reports ~72 KB free (≈18 pages); the experimental `user_xip.ld` /
+  `.xip` / `.xipfix` build variants exist but the runtime loader
+  does not consume them yet.  Wiring those in remains a follow-up in
+  `docs/proposals/cardcomputer_port.md` — independent of the leak
+  fix, it would still cut per-`exec` page use significantly.
+
+  **Hardware-flash troubleshooting note (host USB):** repeated
+  docker-passthrough flashes of `xtensa_cc` occasionally leave the
+  host's xHCI controller in a confused state where the device stops
+  appearing in `lsusb` and `/dev/ttyACM*` disappears.  Rebooting
+  fixes it, but a faster escape hatch is to unbind/rebind the xHCI
+  PCI device:
+
+  ```sh
+  lspci -nn | grep -iE 'usb|xhci'      # find xHCI PCI ID (e.g. 0000:05:00.3)
+  echo '0000:05:00.3' | sudo tee /sys/bus/pci/drivers/xhci_hcd/unbind
+  sleep 1
+  echo '0000:05:00.3' | sudo tee /sys/bus/pci/drivers/xhci_hcd/bind
+  ```
+
+  Anything else on that controller (keyboard, mouse, hubs) briefly
+  disappears and re-enumerates during the 1-second window.  The
+  longer-term mitigation is to move esptool out of docker entirely
+  so the host CDC-ACM handle never crosses a namespace boundary;
+  tracked in `docs/proposals/cardcomputer_port.md`.
+
+  Captured serial output is persisted to `$BUILD_DIR/test_output.log`
+  during `--test xtensa_cc` runs, so partial output survives a
+  mid-run disconnect.
 - **`pdb` scripted coverage is architecture-asymmetric.**
   `test_pdb` has 170/367 failures on m68k and is marked `TEST_DISABLED` there.
   On ARM it is `TEST_SLOW` (base runner) / `TEST_ENABLED` (extended runner).

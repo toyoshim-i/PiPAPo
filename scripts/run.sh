@@ -252,8 +252,13 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         # Hardware boot + 33 user tests typically completes well under
         # 180s; the timeout is the upper bound, not the expected duration.
         TEST_TIMEOUT_S=180
-        echo "[run] Capturing test output (up to ${TEST_TIMEOUT_S}s) ..."
-        OUTPUT=$(docker run --rm \
+        TEST_OUTPUT_LOG="$BUILD_DIR/test_output.log"
+        echo "[run] Capturing test output (up to ${TEST_TIMEOUT_S}s) -> $TEST_OUTPUT_LOG ..."
+        # tee to the log file in real time so partial output survives even if
+        # docker / the device disconnects mid-run (e.g. host xHCI confusion
+        # from CDC-ACM passthrough).  Grep the log file rather than a shell
+        # var so the comparison is against what was actually persisted.
+        docker run --rm \
             --device="$PPAP_PORT" --group-add "$DEV_GID" \
             -v "$PROJECT_DIR:/ppap" -w /ppap \
             "$DOCKER_IMAGE" bash -c "
@@ -261,9 +266,8 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
                 source /opt/ppap/src/esp-idf/export.sh >/dev/null 2>&1 && \
                 python3 /ppap/scripts/xtensa_cc_test_monitor.py \
                     --port $PPAP_PORT --timeout $TEST_TIMEOUT_S
-            " 2>&1)
-        echo "$OUTPUT"
-        if echo "$OUTPUT" | grep -q "ALL TESTS PASSED"; then
+            " 2>&1 | tee "$TEST_OUTPUT_LOG"
+        if grep -q "ALL TESTS PASSED" "$TEST_OUTPUT_LOG"; then
             echo ""
             echo "[test] PASS — all on-target tests passed"
             exit 0
