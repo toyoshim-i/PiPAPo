@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "kernel/common/spinlock.h"
 #include "kernel/vfs/driver/font.h"
 #include "kernel/vfs/driver/lcd_panel.h"
 #include "kernel/vfs/driver/spi_lcd.h"
@@ -81,7 +82,10 @@ static int saved_x, saved_y;
 static uint8_t saved_attr;
 static int saved_bold, saved_reverse;
 static volatile int flush_pending; /* set by fbcon_flush_deferred() */
-static volatile int flushing;      /* reentrant/concurrent guard */
+/* Mutual-exclusion against concurrent fbcon_flush callers uses
+ * SPIN_FBCON from kernel/common/spinlock.h — genuine cross-core sync
+ * on RP2040 (two Cortex-M0+ cores), no-op on single-core arches.
+ * No separate state variable is needed; the spinlock IS the state. */
 
 /* VT100 parser state */
 enum { ST_NORMAL, ST_ESC, ST_CSI };
@@ -578,16 +582,10 @@ void fbcon_flush(void) {
    * Skip the flush entirely to avoid burning CPU in dead loops. */
   if (!spi_lcd_ok()) return;
 
-  /* Guard against concurrent flush from two cores.  Two simultaneous
-   * SPI1 users corrupt the bus → permanent hang.
-   *
-   * This is NOT a simple volatile test — we use __atomic_test_and_set
-   * (GCC built-in, maps to LDREX/STREX on ARMv7+ or a plain byte
-   * store on ARMv6-M).  On Cortex-M0+ (no LDREX), the race window is
-   * a single instruction; combined with the fact that only Core 0's
-   * idle loop calls this, the risk of double-entry is negligible.
-   * The deferred re-arm ensures correctness even if it does happen. */
-  if (__atomic_test_and_set(&flushing, __ATOMIC_ACQUIRE)) {
+  /* Try-acquire SPIN_FBCON.  If another core (or this core, re-entrant
+   * via klog secondary flush from an ISR) is already inside fbcon_flush,
+   * bail and re-arm via flush_pending so the next idle poll retries. */
+  if (!spin_trylock(SPIN_FBCON)) {
     flush_pending = 1;
     return;
   }
@@ -632,7 +630,7 @@ void fbcon_flush(void) {
     spi_lcd_stream_end();
   }
 
-  __atomic_clear(&flushing, __ATOMIC_RELEASE);
+  spin_unlock(SPIN_FBCON);
 }
 
 void fbcon_flush_deferred(void) { flush_pending = 1; }
@@ -662,28 +660,30 @@ void fbcon_set_mode(int mode) {
   int old_cols = cols;
   int old_rows = rows;
 
+  /* Pick the font; cols/rows are derived from the panel geometry below
+   * so the same modes work across LCDs of different sizes.  pico1calc
+   * 320×320 produces the historical 40×20 / 80×40 / 40×40 grids; the
+   * 240×135 ST7789V2 produces 30×8 / 60×16 / 30×16. */
   if (mode == FBCON_MODE_COMPACT) {
-    cols = 80;
-    rows = 40;
     font_w = 4;
     font_h = 8;
     font_stride = 8;
     font_data = &font4x8[0][0];
   } else if (mode == FBCON_MODE_SQUARE) {
-    cols = 40;
-    rows = 40;
     font_w = 8;
     font_h = 8;
     font_stride = 8;
     font_data = &font8x8[0][0];
   } else {
-    cols = 40;
-    rows = 20;
     font_w = 8;
     font_h = 16;
     font_stride = 16;
     font_data = &font8x16[0][0];
   }
+  cols = LCD_WIDTH / font_w;
+  rows = LCD_HEIGHT / font_h;
+  if (cols > FBCON_MAX_COLS) cols = FBCON_MAX_COLS;
+  if (rows > FBCON_MAX_ROWS) rows = FBCON_MAX_ROWS;
   cur_attr = 0x07; /* white on black */
   bold = 0;
   reverse = 0;

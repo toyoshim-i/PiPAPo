@@ -45,6 +45,7 @@ enum {
   SPIN_TXRING = 5, /* UART TX ring buffer + IMSC (dual-core) */
   SPIN_I2C = 6,    /* I2C1 controller (kbd, battery, backlight) */
   SPIN_MEM = 7,    /* mem_region arena state */
+  SPIN_FBCON = 8,  /* fbcon flush serialisation across cores */
 };
 
 static inline int spin_have_hw(void) {
@@ -156,6 +157,30 @@ static inline void spin_unlock(uint32_t lock_num) {
 #else
   (void)lock_num;
 #endif
+}
+
+/*
+ * Non-blocking try-acquire.  Returns 1 if the lock was acquired (caller
+ * must pair with spin_unlock), 0 if it was already held by someone else.
+ * No IRQ state is touched — callers that need IRQ exclusion combine this
+ * with arch_irq_save() / arch_irq_restore() themselves.
+ *
+ * On targets without a hardware spinlock the result is "always
+ * acquired" — those targets are single-core, so there is no cross-core
+ * race for the caller to lose.  Same fallback shape as spin_lock /
+ * spin_unlock above.
+ */
+static inline int spin_trylock(uint32_t lock_num) {
+#if !defined(__m68k__) && !defined(__ia16__) && !defined(__xtensa__) && \
+    !(defined(__riscv) && defined(PPAP_QEMU))
+  if (spin_have_hw()) {
+    volatile uint32_t *lock =
+        (volatile uint32_t *)(SIO_SPINLOCK_BASE + lock_num * 4u);
+    return *lock != 0u; /* SIO read returns lock_num on acquire, 0 if held */
+  }
+#endif
+  (void)lock_num;
+  return 1;
 }
 
 #endif /* PPAP_KERNEL_COMMON_SPINLOCK_H */
