@@ -10,8 +10,10 @@
 
 #include <stdint.h>
 
-#define LCD_WIDTH 320
-#define LCD_HEIGHT 320
+/* Per-target visible-window dimensions.  Each display target ships a
+ * kernel/vfs/driver/lcd_geom.h next to its panel/fbcon consumers; the
+ * target's include path resolves to the right one. */
+#include "kernel/vfs/driver/lcd_geom.h"
 
 /* Initialize the LCD controller (reset + init sequence + black fill). */
 void lcd_init(void);

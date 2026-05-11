@@ -1,25 +1,25 @@
 /*
- * lcd.c — LCD controller driver for PicoCalc (ST7365P / ILI9488)
+ * lcd_st7365p.c — ST7365P / ILI9488 LCD controller driver (PicoCalc)
+ *
+ * Implements the generic lcd_panel.h contract (lcd_init / lcd_fill_rect)
+ * for the ST7365P silicon on the PicoCalc board (marketed as
+ * ILI9488-compatible).  Other panel families (e.g. ST7789V2 on the
+ * M5Stack CardComputer) live in sibling files behind the same header.
  *
  * Initializes the display controller via MIPI DCS and vendor-specific
- * commands, then provides basic drawing primitives.
- *
- * The PicoCalc panel is 320×320 pixels driven by a 320×480 controller;
- * we constrain the address window to the top 320 rows.
- *
- * The ST7365P is the actual silicon on the PicoCalc board (marketed as
- * ILI9488-compatible).  The vendor command unlock (0xF0 C3 / 0xF0 96)
- * enables the extended register set, which is needed for RGB565 pixel
- * format over the 4-wire SPI interface.
+ * commands, then provides basic drawing primitives.  The PicoCalc panel
+ * is 320×320 pixels driven by a 320×480 controller; we constrain the
+ * address window to the top 320 rows.  The vendor command unlock
+ * (0xF0 C3 / 0xF0 96) enables the extended register set, needed for
+ * RGB565 pixel format over the 4-wire SPI interface.
  *
  * Init sequence derived from the community PicoCalc MicroPython driver
  * (zenodante/PicoCalc-micropython-driver) and the official ClockworkPi
  * PicoCalc repository.
  */
 
-#include "kernel/vfs/driver/lcd_panel.h"
-
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/vfs/driver/lcd_panel.h"
 #include "kernel/vfs/driver/spi_lcd.h"
 
 /* ── Timing helper ─────────────────────────────────────────────────────── */

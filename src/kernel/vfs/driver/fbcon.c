@@ -27,6 +27,17 @@
 #define FBCON_MAX_ROWS 40
 #define VT_MAX_PARAMS 8
 
+/* Section attribute for the large text-grid arrays below.  Default
+ * places them in the .iobuf NOLOAD region defined by every PPAP-owned
+ * arm_m linker script (pico1, pico2, pico1calc, pico2rv, qemu_arm),
+ * keeping them outside the main BSS budget.  Targets that inherit a
+ * third-party linker script (xtensa_cc → ESP-IDF) define
+ * PPAP_IOBUF_SECTION to empty via -D, dropping the buffers into
+ * default DRAM, where they cost ~6.3 KB out of 512 KB. */
+#ifndef PPAP_IOBUF_SECTION
+#define PPAP_IOBUF_SECTION __attribute__((section(".iobuf")))
+#endif
+
 /* ANSI 16-color palette in RGB565 (standard 8 + 8 bright) */
 static const uint16_t ansi_palette[16] = {
     0x0000, /* 0  black       */
@@ -49,12 +60,12 @@ static const uint16_t ansi_palette[16] = {
 
 /* ---------- state ---------- */
 
-/* Place large buffers in IOBUF region (24KB) to avoid RAM_KERNEL overflow */
-static uint8_t cell_char[FBCON_MAX_ROWS][FBCON_MAX_COLS]
-    __attribute__((section(".iobuf"))); /* 3200 B */
-static uint8_t cell_attr[FBCON_MAX_ROWS][FBCON_MAX_COLS]
-    __attribute__((section(".iobuf"))); /* 3200 B */
-static uint8_t dirty[FBCON_MAX_ROWS];   /* 40 B   */
+/* Large buffers placed via PPAP_IOBUF_SECTION (defined above). */
+static uint8_t cell_char[FBCON_MAX_ROWS]
+                        [FBCON_MAX_COLS] PPAP_IOBUF_SECTION; /* 3200 B */
+static uint8_t cell_attr[FBCON_MAX_ROWS]
+                        [FBCON_MAX_COLS] PPAP_IOBUF_SECTION; /* 3200 B */
+static uint8_t dirty[FBCON_MAX_ROWS];                        /* 40 B   */
 
 static int cols, rows;
 static int cursor_x, cursor_y;
