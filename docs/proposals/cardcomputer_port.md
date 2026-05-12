@@ -221,15 +221,18 @@ Detailed substep breakdown is in §7's Phase CC-6.
 | CC-3.1: USB Serial JTAG primary console (TX + RX) | DONE |
 | CC-3.5: runtime ownership handoff (see breakdown below) | partial |
 | CC-4: ST7789 display + framebuffer console | DONE |
-| CC-5: keyboard scan + `tty1` input (3-bit-counter matrix) | not started — see [§5](#5-keyboard-driver-design) |
+| CC-5: keyboard scan + `tty1` input (3-bit-counter matrix) | DONE |
 | CC-6: microSD over HSPI | not started |
 
-User-space currently boots to a working `push` shell prompt over USJ;
-keystrokes are delivered, exec/vfork/signal-action paths are exercised.
-The boot banner and klog stream also mirror to the ST7789V2 display
-via fbcon's secondary klog sink; `target_caps()` advertises
-`TARGET_CAP_SPI | TARGET_CAP_DISPLAY`.  Display input (keyboard) is
-the CC-5 work.
+User-space boots to working `push` shell prompts on both USJ and the
+LCD: USJ is the secondary getty (`getty ttyS0`, wait-for-Enter) and
+the LCD is the auto-login primary (`getty -l tty1`).  Keystrokes are
+delivered on both paths — USJ via tty_poll_input on the USJ RX FIFO,
+LCD via the GPIO-matrix scanner draining into the fbcon backend's
+ring buffer.  exec / vfork / signal-action paths are exercised on
+both consoles, including Ctrl-C interrupt delivery via
+`tty_signal_intr(TTY_DISPLAY)`.  `target_caps()` advertises
+`TARGET_CAP_SPI | TARGET_CAP_DISPLAY | TARGET_CAP_KBD`.
 
 ### Known Gaps (tracked, not phase-blocking)
 

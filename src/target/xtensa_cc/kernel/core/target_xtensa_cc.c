@@ -181,8 +181,5 @@ const char *target_name(void)
 
 uint32_t target_caps(void)
 {
-    /* CC-4 done: SPI2 transport + ST7789V2 panel + fbcon are live and
-     * boot-banner-verified on hardware.  TARGET_CAP_KBD lands with
-     * CC-5; TARGET_CAP_SD lands with CC-6. */
-    return TARGET_CAP_SPI | TARGET_CAP_DISPLAY;
+    return TARGET_CAP_SPI | TARGET_CAP_DISPLAY | TARGET_CAP_KBD;
 }
