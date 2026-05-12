@@ -55,8 +55,12 @@ static const x_map_t x_map_chart[KBD_NUM_IN] = {
 
 /* ── Driver state ──────────────────────────────────────────────────────── *
  *
- * `prev_pressed`  bitmap from the most recent poll that returned a key;
- *                 newly-pressed = current AND NOT prev.
+ * `prev_pressed`  bits we have already delivered an event for and which
+ *                 are still being held down.  Cleared bit-by-bit as keys
+ *                 are released so that re-pressing the same key produces
+ *                 a fresh edge.  Updated by both kbd_poll_avail() (clears
+ *                 released bits) and kbd_poll() (sets the bit it just
+ *                 emitted an event for).
  * `seq_buf`       output byte queue.  Single-byte resolutions land in
  *                 seq_buf[0]; multi-byte escape sequences are copied in
  *                 whole.  Always NUL-terminated.
@@ -135,8 +139,15 @@ int kbd_poll_avail(void) {
   if (seq_buf[seq_pos] != '\0') return 1;
 
   /* Otherwise scan the matrix and see if any non-modifier key is
-   * newly pressed compared to the last successful poll. */
+   * newly pressed.  Crucially, clear released bits from prev_pressed
+   * here too — without this step, a phantom press at kbd_init (while
+   * INPUT_PULLUP lines settle) gets latched into prev_pressed and the
+   * key "never works" because every subsequent press is suppressed
+   * as already-delivered.  kbd_poll only runs when avail returns 1,
+   * so if avail does not maintain the release bookkeeping nothing
+   * else will. */
   uint64_t cur = scan_matrix();
+  prev_pressed &= cur;
   uint64_t newly = (cur & ~prev_pressed) & ~MOD_ALL_BITS;
   return newly != 0;
 }
@@ -150,13 +161,16 @@ int kbd_poll(void) {
   /* 2. Scan the matrix; isolate newly-pressed non-modifier keys. */
   uint64_t cur = scan_matrix();
   uint64_t mods = cur & MOD_ALL_BITS;
+  prev_pressed &= cur; /* release bookkeeping */
   uint64_t newly = (cur & ~prev_pressed) & ~MOD_ALL_BITS;
-  prev_pressed = cur;
   if (newly == 0) return -1;
 
   /* 3. Pick the lowest-numbered newly-pressed key (deterministic when
-   *    multiple keys edge in the same scan cycle). */
+   *    multiple keys edge in the same scan cycle).  Mark only that
+   *    one bit as delivered — other simultaneously-pressed keys stay
+   *    out of prev_pressed and will fire on the next poll cycle. */
   unsigned bit = (unsigned)__builtin_ctzll(newly);
+  prev_pressed |= ((uint64_t)1 << bit);
   unsigned y = bit / 14u;
   unsigned x = bit % 14u;
 
