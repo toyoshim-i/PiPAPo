@@ -51,8 +51,16 @@ int usj_putc(char c, void (*notify)(void)) {
       return 1;
     }
   }
-  /* Drop on host-disconnected timeout — keep the kernel running. */
-  return 0;
+  /* Drop on host-disconnected timeout and report success.  USJ is
+   * unlike a real UART: with no USB host polling the IN endpoint
+   * the TX FIFO never drains, and there is no ISR to wake a waiting
+   * caller via `notify`.  Returning 0 here would loop the consumer
+   * forever — klog_putc and tty's dev_echo both spin
+   * `while (!putc(...))`, so a single byte would wedge the kernel
+   * before it ever reached target_late_init / fbcon.  Pretending
+   * success keeps the kernel booting through; once a host attaches
+   * the FIFO drains and subsequent bytes are sent normally. */
+  return 1;
 }
 
 int usj_getc(void) {
