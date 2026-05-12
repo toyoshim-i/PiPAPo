@@ -301,8 +301,9 @@ void xtensa_trap_reassert(void) { xtensa_install_exception_handlers(); }
  * switch.S detects exit != 0, loads entry/PS/user_sp/a0, and does jx.
  * This avoids the base-save-area overlap that would corrupt a1 with the PC.
  *
- * The 'sp' parameter points to the argc/argv area on the user stack.
- * We build the frame below it and store the original sp as user_sp.
+ * When 'sp' points to the argc/argv area on the user stack, this stores it as
+ * user_sp.  Callers that build the frame on a fixed kstack patch SOL_SP after
+ * this helper returns.
  */
 uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
   uint32_t user_sp = (uint32_t)(uintptr_t)sp;

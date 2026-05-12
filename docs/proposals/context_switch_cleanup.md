@@ -279,6 +279,8 @@ convention if the broader cleanup is deferred.
    the region is aligned arch-owned BSS rather than a target `.ld` section.
 5. Move syscall continuation and solicited yield frames onto fixed kstack
    slots, keeping register-window spilling hidden inside the arch helper.
+   DONE for manufactured new-process frames (`exec` initial frames and
+   `vfork` child frames); live cooperative yield frames still remain.
 6. Make timer/fault return paths restore either normal user state or suspended
    kernel continuations from the fixed kstack.
 7. Add or enable a userland blocking-continuation test for Xtensa.
@@ -437,8 +439,9 @@ Current state:
   from the common fixed-region helper, backed by aligned Xtensa BSS because
   ESP-IDF owns the target linker script.  The live solicited frames have not
   moved to that region yet.
-- The current process stack carries user frames, kernel call frames, and
-  solicited switch frames.
+- The current process stack still carries user frames, kernel call frames, and
+  live solicited switch frames.  Manufactured new-process frames are now built
+  on the fixed kstack slot.
 - The solicited frame lives below the active `sched_switch()` caller.  The low
   16 bytes are left as ABI scratch.  Offsets are: `+16` exit marker,
   `+20` PC, `+24` PS, `+28` user SP for new-process frames, `+32` saved `a0`,
@@ -446,9 +449,9 @@ Current state:
 - Exit marker `0` means a normal solicited frame and restores through `retw`.
   Exit marker `1` means an exec/vfork child frame and restores by loading
   entry, PS, `a0`, `a3`, and user SP, then jumping directly with `jx`.
-- `arch_build_initial_frame()` builds the marked new-process frame below the
-  argc/argv area and records the original stack pointer in the frame's user-SP
-  slot.
+- `arch_build_initial_frame()` builds the marked new-process frame.  Exec and
+  vfork child paths place that frame on the fixed kstack slot and record the
+  user argc/argv or copied vfork stack pointer in the frame's user-SP slot.
 - `xtensa_do_switch(current_sp)` stores the outgoing frame pointer in
   `current->sp`, picks `sched_next()`, installs `current_core[0]`, and returns
   the incoming process's saved frame pointer.
@@ -475,7 +478,8 @@ Plan:
 6. DONE: initialize `pcb_t.kernel_sp` from a target-reserved fixed kstack
    region.  `xtensa_cc` uses 2 KB user-process slots for the staging region.
 7. Move solicited yield frames and syscall continuations onto the fixed kstack
-   while preserving the window-spill discipline.
+   while preserving the window-spill discipline.  DONE for manufactured
+   new-process frames; remaining work is the live cooperative yield frame.
 8. Make exception return restore either a normal user frame or a suspended
    kernel continuation from the fixed kstack.
 9. Rename `xtensa_do_yield()` / `xtensa_do_switch()` only after deciding the

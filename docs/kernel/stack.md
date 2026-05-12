@@ -160,10 +160,11 @@ runtime margin is safe.
 Xtensa has a fixed kstack region reserved and initialized through
 `pcb_t.kernel_sp`.  Because ESP-IDF owns the final linker script for
 `xtensa_cc`, the region is aligned arch-owned BSS instead of a target `.ld`
-section.  The live switch path has not moved yet: `pcb_t.sp` still points at a
-solicited switch frame on the process stack.  Because the ESP32-S3 uses the
-windowed ABI, a cooperative switch must spill all register windows before
-saving SP.
+section.  Manufactured new-process frames (`exec` initial frames and `vfork`
+child frames) are built on the fixed kstack slot.  The live cooperative switch
+path has not moved yet: `pcb_t.sp` can still point at a solicited switch frame
+on the process stack.  Because the ESP32-S3 uses the windowed ABI, a
+cooperative switch must spill all register windows before saving SP.
 
 `xtensa_cc` currently reserves 2 KB user-process slots:
 

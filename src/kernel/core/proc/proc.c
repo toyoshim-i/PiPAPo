@@ -382,6 +382,12 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
     sp = (uint32_t *)(uintptr_t)p->kernel_sp;
     sp = arch_build_initial_frame(sp, entry);
     p->sp = (uint32_t)(uintptr_t)sp;
+#elif defined(__xtensa__)
+    sp = (uint32_t *)(uintptr_t)p->kernel_sp;
+    sp = arch_build_initial_frame(sp, entry);
+    /* SOL_SP at word offset 7 (byte offset 28). */
+    sp[7] = user_sp ? (uint32_t)user_sp : 0u;
+    p->sp = (uint32_t)(uintptr_t)sp;
 #else
     uint8_t *stack_base = (uint8_t *)mem_region_page_to_ptr(p->stack_page_id);
     if (user_sp)

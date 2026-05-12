@@ -1662,8 +1662,9 @@ long sys_vfork(uint32_t *frame) {
   if (!child) return -(long)ENOMEM;
 
 #if !defined(__ia16__)
-    /* 2. Allocate stack page for child */
-#if !defined(__riscv) && !defined(__m68k__)
+    /* 2. Allocate a child stack page for arches whose live child frame still
+     * lives there.  Split-kstack arches build child frames on kernel_sp. */
+#if !defined(__riscv) && !defined(__m68k__) && !defined(__xtensa__)
   proc_image_segment_t stack_region = {0};
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                        PROC_IMAGE_SEG_WRITABLE) < 0) {
@@ -1673,7 +1674,7 @@ long sys_vfork(uint32_t *frame) {
   void *stack = stack_region.base;
   child->stack_page_id = mem_region_ptr_to_page(stack);
 #endif
-#if !defined(__m68k__)
+#if !defined(__m68k__) && !defined(__xtensa__)
   uint32_t *child_frame = NULL;
 #endif
 #endif
@@ -1753,7 +1754,7 @@ long sys_vfork(uint32_t *frame) {
     uint16_t ax_off = ax_rel % PAGE_SIZE;
     mem_region_page_write(ax_page, ax_off, &zero, 2);
   }
-#elif !defined(__riscv) && !defined(__m68k__)
+#elif !defined(__riscv) && !defined(__m68k__) && !defined(__xtensa__)
   memcpy(stack, mem_region_page_to_ptr(current->stack_page_id), PAGE_SIZE);
 
   /* Calculate child's frame position at the same offset as parent's */
@@ -1864,9 +1865,10 @@ long sys_vfork(uint32_t *frame) {
    * The child resumes at the instruction after the ILL trap (pc already +3)
    * with a2 = 0 (switch.S .Lnew_process clears a2 before jx).
    *
-   * Xtensa shares user/kernel on one stack page.  Allocate a separate
-   * user stack page via the shared vfork_copy_user_stack helper so the
-   * child's pre-execve writes don't corrupt the parent's saved frames. */
+   * Xtensa now builds the child switch frame on the fixed kstack slot.
+   * Allocate a separate user stack page via the shared vfork_copy_user_stack
+   * helper so the child's pre-execve writes don't corrupt the parent's saved
+   * frames. */
   {
     uint32_t child_pc = frame[-4];      /* pc (already advanced +3) */
     uint32_t child_user_sp = frame[-1]; /* a1 = user SP at syscall */
@@ -1877,8 +1879,6 @@ long sys_vfork(uint32_t *frame) {
     uint32_t remapped_sp = 0;
     if (vfork_copy_user_stack(mem_region_page_to_ptr(current->stack_page_id),
                               child_user_sp, &child_ustack, &remapped_sp) < 0) {
-      proc_release_stack_page(&stack);
-      child->stack_page_id = PAGE_ID_INVALID;
       proc_free(child);
       return -(long)ENOMEM;
     }
@@ -1903,8 +1903,8 @@ long sys_vfork(uint32_t *frame) {
         child_a3 = cbase + (child_a3 - pbase);
     }
 
-    /* Build new-process frame at top of child's kernel stack page. */
-    uint32_t *sp = (uint32_t *)((uint8_t *)stack + PAGE_SIZE);
+    /* Build new-process frame on the child's fixed kernel stack slot. */
+    uint32_t *sp = (uint32_t *)(uintptr_t)child->kernel_sp;
     sp = (uint32_t *)((uintptr_t)sp & ~0xFu);
     *--sp = child_a3;      /* [SP+36] a3 = preserved reg */
     *--sp = child_a0;      /* [SP+32] a0 = return addr */
