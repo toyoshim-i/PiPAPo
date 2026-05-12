@@ -1,61 +1,31 @@
 # M5Stack CardComputer Target Support
 
-Device-specific plan for the M5Stack CardComputer (`xtensa_cc`) target.
-For Xtensa architecture details (ISA, toolchains, memory model, trap handling,
-ELF loading), see [`docs/targets/xtensa.md`](../targets/xtensa.md).
+Device-specific PPAP porting plan for the M5Stack CardComputer
+(`xtensa_cc`) target.  Pure hardware facts — block diagram, pin
+assignments, ST7789V2 datasheet info, keyboard matrix topology and
+keymap, microSD pinout, memory map — live in
+[`docs/reference/cardcomputer.md`](../reference/cardcomputer.md).
+For Xtensa architecture details (ISA, toolchains, memory model, trap
+handling, ELF loading), see [`docs/targets/xtensa.md`](../targets/xtensa.md).
 
----
+This file holds: PPAP-side design choices (driver placement, init
+order, modifier-key behavior we picked), the implementation plan
+(phases CC-1 .. CC-6 with substeps), and the open questions specific
+to the port.
 
-## 1. Hardware Overview
+## 1. Console Strategy (PPAP design)
 
-### 1.1 Block Diagram
-
-```
-+-----------------------------------------------+
-|  M5Stack CardComputer                          |
-|                                                |
-|  +------------------+   +------------------+   |
-|  | STAMP S3 Module  |   | ST7789V2 Display |   |
-|  | (ESP32-S3-FN8)   |-->| 240x135 IPS      |   |
-|  | 8 MB Flash (QIO) |   | SPI interface     |   |
-|  | 512 KB SRAM      |   +------------------+   |
-|  | Wi-Fi + BLE 5.0  |                          |
-|  +------------------+   +------------------+   |
-|         |               | 56-key Keyboard  |   |
-|         +-------------->| GPIO matrix scan |   |
-|         |               +------------------+   |
-|         |                                      |
-|         +---> microSD slot (SPI)               |
-|         +---> I2S speaker (NS4168)             |
-|         +---> IR transmitter (GPIO44)          |
-|         +---> USB-C (native USB + UART)        |
-|         +---> Grove port (I2C)                 |
-+-----------------------------------------------+
-```
-
-### 1.2 Peripherals and Pin Assignments
-
-| Peripheral | Interface | Pins | Notes |
-|-----------|-----------|------|-------|
-| ST7789V2 display | SPI2 | MOSI=35, SCK=36, CS=37, DC=34, RST=33, BL=38 | 240x135, 65K colors |
-| Keyboard | GPIO matrix | Directly from ESP32-S3 GPIOs | 7 rows x 8 columns |
-| microSD | SPI (HSPI) | MISO=39, MOSI=14, SCK=40, CS=12 | FAT32 |
-| Speaker | I2S | BCLK=41, LRCK=43, DIN=42 | NS4168 amplifier |
-| IR TX | GPIO | GPIO44 | 38 kHz modulation |
-| USB | Native USB | GPIO19 (D-), GPIO20 (D+) | USB Serial JTAG |
-| UART0 | UART | TX=43, RX=44 | **Unusable as console** — pins shared with I2S/IR |
-
-### 1.3 Console Strategy
-
-- **Primary console (`ttyS0`)**: USB Serial JTAG via ESP32-S3's native
-  USB (appears as `/dev/ttyACM0` on host).  Used for development and
-  flashing.  USJ is the only practical console interface because
-  UART0's TX/RX pins are reused for I2S and IR on this board.
-- **Display console (`tty1`)** *(future)*: ST7789 + keyboard — joins
-  as `KLOG_LOGGER_SECONDARY` on top of the existing USJ primary,
-  matching the pico1calc UART+FBCON pattern.
-- Default console: `ttyS0` today; flips to `tty1` once display +
-  keyboard land and the kernel auto-detects them via target caps.
+- **Primary console (`ttyS0`)**: USB Serial JTAG via ESP32-S3's
+  native USB.  USJ is the only practical console because UART0's
+  TX/RX (GPIO43/44) are physically shared with I²S LRCK and the IR
+  TX line — see
+  [reference §Peripheral Pin Assignments](../reference/cardcomputer.md#peripheral-pin-assignments).
+- **Display console (`tty1`)**: ST7789V2 + keyboard.  Joins as
+  `KLOG_LOGGER_SECONDARY` on top of the USJ primary, matching the
+  pico1calc UART+FBCON pattern.
+- Default console: `ttyS0` (USJ).  `tty1` is the auto-login primary
+  in `/etc/inittab` (per pico1calc convention) once CC-5 makes it
+  interactive.
 
 ---
 
@@ -110,98 +80,132 @@ uint32_t target_caps(void) {
 
 ---
 
-## 4. Display Driver (ST7789V2)
+## 4. Display Driver Design
 
-The ST7789V2 is driven over SPI2 at up to 80 MHz:
+Hardware reference: [reference §Display: ST7789V2](../reference/cardcomputer.md#display-st7789v2).
 
-- **Resolution**: 240x135 pixels, 16-bit RGB565
-- **Framebuffer size**: 240 x 135 x 2 = 64,800 bytes (~63 KB)
-- **Strategy**: maintain a text-mode buffer (similar to pico1calc),
-  render glyphs to the SPI framebuffer, flush dirty regions every 20 ms
-  via `sched_set_display_poll()`.
-- **Initialization**: SPI2 setup → ST7789 reset sequence → set rotation
-  → clear screen → backlight on.
-- **TTY backend**: register `tty_backend_t` with putc (glyph render) and
-  flush (SPI DMA transfer) callbacks.
+PPAP-side design choices for the display driver:
 
-With an 8x8 font, the 240x135 display provides a **30x16 character**
-terminal — small but usable for a UNIX shell.
+- **Strategy**: text-mode cell buffer + scanline-streaming SPI flush
+  (no full 63 KB RGB565 framebuffer in SRAM).  Reuse pico1calc's
+  fbcon pipeline verbatim — ~960 B for 30×16 cell+attr, plus a
+  480-byte stack scanline buffer during flush.
+- **Driver placement**:
+  - Generic ST7789V2 controller init at
+    `src/kernel/vfs/driver/lcd_st7789.c` (sibling to `lcd_st7365p.c`).
+  - Target-specific SPI2 transport at
+    `src/target/xtensa_cc/kernel/vfs/driver/spi_lcd_xtensa_cc.c`.
+  - Per-target geometry / panel-frame offsets at
+    `src/target/xtensa_cc/kernel/vfs/driver/lcd_geom.h`.
+- **Orientation**: landscape with USB-C on the right (MADCTL =
+  MV|MX, panel-frame offsets 40 col / 53 row).
+- **Backlight**: plain GPIO output, asserted by target glue
+  (`xtensa_cc_logger.c`) after `lcd_init()` returns so the
+  post-reset garbage is not visible to the user.  PWM via `ledc`
+  is a future option if brightness control is needed.
+- **TTY grid**: 8×8 IchigoJam font → 30×16 character terminal
+  (240 / 8 = 30, 128 / 8 = 16, with 7 px vertical slack).
 
-### 4.1 SPI Configuration
-
-| Parameter | Value |
-|-----------|-------|
-| SPI host | SPI2_HOST |
-| Clock | 80 MHz |
-| MOSI | GPIO35 |
-| SCK | GPIO36 |
-| CS | GPIO37 |
-| DC | GPIO34 |
-| RST | GPIO33 |
-| Backlight | GPIO38 |
-
-### 4.2 Init Sequence
-
-1. Assert RST low (10 ms), release
-2. Send `SLPOUT` (0x11), wait 120 ms
-3. `COLMOD` (0x3A) = 0x55 (16-bit RGB565)
-4. `MADCTL` (0x36) = rotation setting for landscape
-5. `CASET` / `RASET` to set window (0,0)-(239,134)
-6. `DISPON` (0x29)
-7. Backlight PWM on GPIO38
-
-### 4.3 SRAM Budget
-
-With 512 KB total SRAM, the 63 KB framebuffer is significant (~12%).
-Mitigation strategies:
-
-- **Text-mode buffer only** (~2 KB): store character+attribute grid,
-  render glyphs on-the-fly during SPI flush. Avoids the 63 KB
-  framebuffer entirely.
-- **Dirty-rect flushing**: only transfer changed character cells via SPI
-  DMA. Reduces SPI bus time from ~6.5 ms (full frame) to typically
-  <1 ms.
-- **IRAM vs DRAM tradeoff**: framebuffer (if used) goes in DRAM; user
-  code goes in IRAM. These don't compete since they're on different
-  buses (see [xtensa.md](../targets/xtensa.md) §4).
+Detailed substep breakdown is in §7's Phase CC-4.
 
 ---
 
-## 5. Keyboard Driver
+## 5. Keyboard Driver Design
 
-The CardComputer's keyboard is a 7x8 GPIO matrix:
+Hardware reference: [reference §Keyboard](../reference/cardcomputer.md#keyboard).
+The keyboard is **not** a direct GPIO matrix — it uses a 3-bit
+counter feeding an external 1-of-8 demux plus 7 INPUT_PULLUP lines
+(10 GPIOs) decoded into a 4×14 logical keymap.  Pin sets, scan
+algorithm, `X_map_chart` decode, full base+Shift keymap, modifier
+key positions, and the silkscreen icons all live in the reference
+doc.
 
-- **Scan**: drive each row low in sequence, read column GPIOs to detect
-  key presses. Debounce with 10 ms delay.
-- **Keymap**: ASCII mapping with Fn/Shift modifiers for symbols and
-  control characters.
-- **Integration**: polled from the display poll callback (every 20 ms),
-  feeds characters into the TTY1 input ring buffer via
-  `tty_backend_t.getc`.
-- **Special keys**: Fn+key combos for Ctrl-C, Ctrl-D, Ctrl-Z, arrow
-  keys (VT100 escape sequences).
+PPAP-side design choices for the keyboard driver:
 
-### 5.1 GPIO Matrix Pinout
+- **Driver placement**: target-specific
+  `src/target/xtensa_cc/kernel/vfs/driver/cc_kbd.c` (matrix scan +
+  decode is bound to ESP32-S3 GPIO and the M5Cardputer-specific
+  topology — no other target shares it).  Keymap data in
+  `cc_keymap.h` next to the driver.
+- **Driver API**: same minimal contract as pico1calc's `i2c_kbd.h`:
+  ```c
+  void kbd_init(void);
+  int  kbd_poll(void);       /* one byte, or -1 if none */
+  int  kbd_poll_avail(void); /* non-zero if a byte is available */
+  ```
+- **Polling**: at the existing display flush cadence (~20 ms via
+  `vfs_notify(VFS_EVENT_IDLE)`).  Edge-only delivery via a
+  previous-poll bitmap snapshot.  Upstream has no debounce; the
+  20 ms cadence is well above typical 1–5 ms key bounce.
+- **Ctrl-C hoist**: bytes equal to 0x03 are routed to
+  `tty_signal_intr(TTY_DISPLAY)` before being queued, so a
+  compute-bound foreground task does not need to be blocked in
+  `read()` to receive SIGINT.  Mirrors pico1calc.
+- **Multi-byte escapes**: arrow keys, F-keys, Esc, Delete all emit
+  VT100 escape sequences.  `cc_kbd.c` stores them as null-terminated
+  strings and `kbd_poll()` returns one byte at a time via an
+  internal sequence cursor (mirrors `i2c_kbd.c`).
 
-The exact row/column pin assignments need to be determined from the
-M5Stack Arduino library source (`Cardputer.h` / `Keyboard.cpp`). The
-scanning logic is straightforward once pins are known.
+### 5.1 PPAP Fn-Layer (matches the silkscreen)
+
+The upstream M5Cardputer library tracks Fn as a state flag and
+defines no Fn-layer keymap; applications choose.  PPAP's choice
+matches the icons silkscreened on the keys (see [reference
+§Silkscreen Icons](../reference/cardcomputer.md#silkscreen-icons-fn-combo-glyphs)):
+
+| Combo | Output | Notes |
+|-------|--------|-------|
+| Fn+`;` | `\033[D` (←) | Arrow left |
+| Fn+`/` | `\033[C` (→) | Arrow right |
+| Fn+`.` | `\033[A` (↑) | Arrow up |
+| Fn+`,` | `\033[B` (↓) | Arrow down |
+| Fn+`` ` `` | `\033` (Esc) | Cardputer has no dedicated Esc key |
+| Fn+1..0 | `\033OP`..`\033OY` (F1–F10) | Standard VT100 PF / F-key codes |
+| Fn+Backspace | `\033[3~` (Delete) | Forward-delete |
+
+Other modifiers:
+
+| Key | PPAP behavior |
+|-----|---------------|
+| Shift | Selects the `shift` row of the keymap for the next non-modifier key. |
+| Ctrl  | Combines with letters → control codes (Ctrl-A=0x01 .. Ctrl-Z=0x1A).  Ctrl-C is hoisted to `tty_signal_intr(TTY_DISPLAY)` before being delivered. |
+| Opt   | Tracked only; reserved for application use.  No character transformation in CC-5. |
+| Alt   | Tracked only; reserved.  Future M-prefix VT escape support is possible but not in CC-5 scope. |
+
+### 5.2 Integration with `xtensa_cc_logger.c`
+
+CC-4 left `fbcon_backend.getc` / `.rx_avail` NULL.  CC-5 fills them
+by mirroring pico1calc's pattern:
+
+1. Add a 16-byte ring buffer in `xtensa_cc_logger.c`
+   (head/tail volatile, power-of-two for mask wrap).
+2. Add `fbcon_getc_wrapper` / `fbcon_avail_wrapper` that consume
+   from the ring buffer; `_avail_wrapper` drains up to 8 events from
+   `kbd_poll()` per call (bounded loop) and feeds the ring.
+3. Hoist Ctrl-C as above.
+4. Fill the NULL backend slots and call `kbd_init()` from
+   `vfs_notify(VFS_EVENT_LATE_INIT)` after the existing
+   `tty_set_backend(TTY_DISPLAY, &fbcon_backend)`.
+
+The pin-defs prerequisite (the broken `KBD_ROW_PINS`/`KBD_COL_PINS`
+in `xtensa_cc.h`) is captured in §7's CC-5a.
 
 ---
 
-## 6. microSD Card
+## 6. microSD Card Design
 
-| Parameter | Value |
-|-----------|-------|
-| SPI host | HSPI (SPI3_HOST) |
-| MISO | GPIO39 |
-| MOSI | GPIO14 |
-| SCK | GPIO40 |
-| CS | GPIO12 |
+Hardware reference: [reference §microSD](../reference/cardcomputer.md#microsd).
+HSPI (SPI3_HOST), MISO=39, MOSI=14, SCK=40, CS=12.
 
-- Reuse PPAP's existing SD SPI driver pattern (from pico1calc).
-- FAT32 read support for loading programs from SD.
-- Mount as `/mnt/sd`, set `TARGET_CAP_SD`.
+PPAP-side plan:
+
+- Reuse PPAP's existing `spi_sd.c` driver.  An xtensa_cc-specific
+  HSPI transport wrapper similar to `spi_lcd_xtensa_cc.c` will host
+  the ESP-IDF `spi_master` glue for SPI3.
+- FAT32 read support via the existing `vfat.c` mount path.
+- Mount as `/mnt/sd`, set `TARGET_CAP_SD` in `target_caps()`.
+
+Detailed substep breakdown is in §7's Phase CC-6.
 
 ---
 
@@ -217,7 +221,7 @@ scanning logic is straightforward once pins are known.
 | CC-3.1: USB Serial JTAG primary console (TX + RX) | DONE |
 | CC-3.5: runtime ownership handoff (see breakdown below) | partial |
 | CC-4: ST7789 display + framebuffer console | DONE |
-| CC-5: GPIO-matrix keyboard + `tty1` input | not started |
+| CC-5: keyboard scan + `tty1` input (3-bit-counter matrix) | not started — see [§5](#5-keyboard-driver-design) |
 | CC-6: microSD over HSPI | not started |
 
 User-space currently boots to a working `push` shell prompt over USJ;
@@ -228,6 +232,13 @@ via fbcon's secondary klog sink; `target_caps()` advertises
 the CC-5 work.
 
 ### Known Gaps (tracked, not phase-blocking)
+
+- **Keyboard pin defs in `xtensa_cc.h` are wrong** (CC-5a fixes
+  this).  The current `KBD_ROW_PINS` / `KBD_COL_PINS` describe a
+  fictional 7×8 direct-GPIO matrix; the real hardware is a 3-bit
+  counter feeding an external 1-of-8 demux plus 7 INPUT_PULLUP
+  lines.  No code currently consumes the broken defines, so this
+  is dormant until CC-5 starts.  See [reference §Keyboard](../reference/cardcomputer.md#keyboard) for the correct pin layout.
 
 - **xtensa_cc romfs staging is shell-coded, not unified with
   `cmake/stage_romfs.cmake`**: `scripts/build.sh` open-codes the
@@ -450,11 +461,72 @@ addressed for the build to succeed):**
 
 ### Phase CC-5: Keyboard
 
+CC-4 already left `fbcon_backend.getc` / `fbcon_backend.rx_avail`
+NULL; CC-5 fills those in so the LCD shell prompt becomes
+interactive.  Hardware (matrix topology, scan algorithm, keymap,
+silkscreen icons) is in [reference §Keyboard](../reference/cardcomputer.md#keyboard);
+PPAP design (driver placement, Fn-layer mapping, integration with
+fbcon backend) is in [§5](#5-keyboard-driver-design) above.
+
+**Reuse map (pico1calc → xtensa_cc):**
+
+| Layer | pico1calc artifact | xtensa_cc plan |
+|-------|--------------------|----------------|
+| Ring buffer + drain wrapper + Ctrl-C hoist | `pico1calc_logger.c:25-73` | mirror in `xtensa_cc_logger.c` |
+| Backend slot wiring | `fbcon_backend.{getc,rx_avail}` set in `pico1calc_logger.c:127-128` | fill the NULL slots in `xtensa_cc_logger.c::fbcon_backend` |
+| Bounded poll loop | "drain up to 8 key events per poll cycle" | reuse the same 8-events bound |
+| Multi-byte escape buffering | `i2c_kbd.c` returns one byte per `kbd_poll()` call (escape-sequence FIFO inside the driver) | same pattern in `cc_kbd.c` for arrow / F-key escapes |
+| Driver itself | `i2c_kbd.c` (I2C protocol, generic) | new `target/xtensa_cc/kernel/vfs/driver/cc_kbd.c` (3-bit-counter matrix scan, target-specific) |
+
+**Prerequisites (must land before any scan code is written):**
+
+1. **Fix the keyboard pin defs in `xtensa_cc.h`.**  Replace the
+   incorrect `KBD_ROW_PINS` / `KBD_COL_PINS` (which conflate output
+   drives with input lines and re-use GPIOs 5/6/7 in both lists)
+   with the actual hardware pin sets:
+   ```c
+   #define KBD_OUT_PINS  { 8, 9, 11 }            /* 3-bit counter LSB->MSB */
+   #define KBD_IN_PINS   { 13, 15, 3, 4, 5, 6, 7 } /* INPUT_PULLUP, active low */
+   #define KBD_NUM_OUT   3
+   #define KBD_NUM_IN    7
+   ```
+   Old `KBD_NUM_ROWS` / `KBD_NUM_COLS` go away.  No other code
+   currently references the old defines, so the rename is mechanical.
+
+2. **No new arch primitives required.**  Unlike CC-4b's
+   `spi_master`, the matrix scan only needs `gpio_set_direction`,
+   `gpio_set_level`, and `gpio_get_level` — all already pulled in
+   via the existing `driver` ESP-IDF component dependency.
+
+**Substeps:**
+
 | Step | Description |
 |------|-------------|
-| CC-5a | GPIO matrix scan, debounce, ASCII keymap |
-| CC-5b | Wire to `tty1` input ring buffer |
-| CC-5c | Interactive shell on the CardComputer display |
+| CC-5a | Pin-fix prerequisite: rewrite the keyboard section of `xtensa_cc.h` (`KBD_OUT_PINS` + `KBD_IN_PINS`).  No-op build-wise until CC-5b consumes them. |
+| CC-5b | Implement `target/xtensa_cc/kernel/vfs/driver/cc_kbd.c`: configure 3 OUTPUT + 7 INPUT_PULLUP pins; `kbd_poll()` runs the 8-step counter sweep, decodes `(counter, input)` to `(logical_x, logical_y)` via the `X_map_chart` lookup, and looks up the keymap.  Edge-only delivery via a previous-poll bitmap snapshot. |
+| CC-5c | Add the keymap header `target/xtensa_cc/kernel/vfs/driver/cc_keymap.h`: the 4×14 base + shift table (transcribed from [reference §Keymap](../reference/cardcomputer.md#keymap-base--shift)), plus the PPAP Fn-layer table (silkscreen mapping per [§5.1](#51-ppap-fn-layer-matches-the-silkscreen)).  Multi-byte escapes (arrows, F-keys) are stored as null-terminated strings; `kbd_poll()` returns them one byte at a time via an internal sequence cursor. |
+| CC-5d | Add the kbd ring buffer + drain wrappers in `xtensa_cc_logger.c` (mirror `pico1calc_logger.c:25-73`).  Fill in `fbcon_backend.getc` / `.rx_avail`.  Hoist Ctrl-C via `tty_signal_intr(TTY_DISPLAY)`.  Call `kbd_init()` from `vfs_notify(VFS_EVENT_LATE_INIT)` after `tty_set_backend(TTY_DISPLAY, &fbcon_backend)`. |
+| CC-5e | Update `target_caps()` in `target_xtensa_cc.c` to include `TARGET_CAP_KBD`.  On hardware, verify: shell prompt accepts typed characters; arrow keys move within line editor; Ctrl-C interrupts a foreground task; Esc emits via Fn+`` ` ``. |
+
+**Open questions / risks specific to CC-5:**
+
+- **Polling cadence vs key-repeat.**  The fbcon idle-flush poll runs
+  at ~20 ms.  Holding a key produces one event per scan cycle, so
+  the natural repeat rate is ~50 Hz.  That's faster than typical
+  shell autorepeat (~25 Hz) — may need a per-key timestamp to
+  throttle.  Defer until visible on hardware.
+- **Ghost keys.**  3-key combinations on the same column can
+  produce a phantom press at the matrix intersection.  Upstream
+  M5Cardputer doesn't filter for it; PPAP can adopt the same "first
+  press wins" stance and revisit only if it bites.
+- **Modifier-state race.**  Shift / Fn / Ctrl pressed and released
+  between two scan cycles is observable; pressed and released
+  *within* a single scan cycle is lost.  At 20 ms cycle this is a
+  ~50 ms minimum hold time, which is below typical human latency
+  but above competitive-typing teardown times.  Acceptable.
+- **No Esc key.**  Ships as Fn+`` ` ``.  Apps that grew up assuming
+  a dedicated Esc key (vi, nano, less) need to learn the combo.
+  Documented in §5.1 (Fn-layer); no kernel-side mitigation needed.
 
 ### Phase CC-6: SD Card
 
@@ -468,19 +540,26 @@ addressed for the build to succeed):**
 
 ## 8. Risks and Open Questions
 
+Per-phase risks are captured under each Phase CC-X section in §7.
+This table covers cross-cutting concerns:
+
 | Risk | Mitigation |
 |------|-----------|
-| 512 KB SRAM is tight with 63 KB framebuffer | Text-mode-only buffer (~2 KB) with on-demand glyph rendering |
-| SPI display + keyboard + SD share the SPI bus | Use separate SPI hosts (SPI2 for display, SPI3/HSPI for SD) |
-| Keyboard matrix pin assignments not fully documented | Reverse-engineer from M5Stack Arduino library source |
-| Display refresh rate with text-mode rendering | Dirty-rect flushing keeps SPI transfers small; 80 MHz SPI is fast enough |
+| 512 KB SRAM is tight if anything ever wants a full RGB565 framebuffer (63 KB) | Text-mode cell buffer + scanline streaming keeps fbcon under 1 KB SRAM; never allocate the full framebuffer. |
+| Display SPI (SPI2) and microSD SPI (SPI3) on different controllers | Already separate hosts per [reference §Peripheral Pin Assignments](../reference/cardcomputer.md#peripheral-pin-assignments); no bus contention possible. |
+| Display refresh latency with text-mode rendering | Dirty-row flushing keeps each SPI transfer to ≤ 1 row; at 40 MHz SPI a worst-case 30×16 grid flush is ≈ 1 ms. |
 
 ---
 
 ## 9. References
 
-- [M5Stack CardComputer product page](https://docs.m5stack.com/en/core/CardComputer)
-- [M5Stack CardComputer schematic](https://docs.m5stack.com/en/core/CardComputer) (pinout section)
-- [ST7789V2 datasheet](https://www.newhavendisplay.com/appnotes/datasheets/LCDs/ST7789V2.pdf)
-- [ESP-IDF SPI Master Driver](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-reference/peripherals/spi_master.html)
+- [Hardware reference: docs/reference/cardcomputer.md](../reference/cardcomputer.md)
+  — block diagram, pinout, ST7789V2 datasheet info, full keymap,
+  external upstream links (M5Cardputer Arduino library, ST7789V2
+  datasheet, ESP32-S3 TRM).
 - [Xtensa architecture details](../targets/xtensa.md)
+- [ESP-IDF SPI Master Driver](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-reference/peripherals/spi_master.html)
+  — used by CC-4b's first-cut SPI2 transport.
+- [Context-switch cleanup proposal](context_switch_cleanup.md)
+  Phase 4 — tracks the Xtensa scheduler-stability work referenced
+  under Known Gaps.
