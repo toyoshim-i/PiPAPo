@@ -6,27 +6,63 @@
  *
  * Secondary console: ST7789V2 LCD via fbcon, brought up at
  * VFS_EVENT_LATE_INIT — the order matches pico1calc's pattern
- * (spi → lcd → fbcon → klog secondary → tty backend → backlight on).
- * The display console becomes the secondary klog sink and the
- * TTY_DISPLAY backend; input getc/rx_avail land with the keyboard in
- * CC-5.  Backlight (GPIO38) is asserted last so the post-reset garbage
- * never reaches the user.
+ * (spi → lcd → fbcon → klog secondary → tty backend → kbd → backlight on).
+ * Backlight (GPIO38) is asserted last so the post-reset garbage never
+ * reaches the user.  The TTY backend's getc / rx_avail are served by a
+ * 16-byte ring buffer that the idle-loop drain wrapper feeds from
+ * cc_kbd's matrix scanner.
  *
  * Idle hook: USJ RX needs tty_poll_input() and fbcon needs
  * fbcon_poll_flush() to push deferred dirty rows down the SPI bus.
  */
 
 #include <driver/gpio.h>
+#include <stdint.h>
 
 #include "kernel/common/config.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/xtensa_cc.h"
+#include "kernel/vfs/driver/cc_kbd.h"
 #include "kernel/vfs/driver/fbcon.h"
 #include "kernel/vfs/driver/lcd_panel.h"
 #include "kernel/vfs/driver/spi_lcd.h"
 #include "kernel/vfs/driver/usj.h"
 #include "kernel/vfs/klog.h"
 #include "kernel/vfs/tty.h"
+
+/* ── Keyboard input ring buffer ──────────────────────────────────────────
+ *
+ * Same pattern as pico1calc_logger.c:25-73.  cc_kbd's poll path holds
+ * non-thread-safe state (the escape-sequence cursor); we keep all calls
+ * to it on the idle loop via fbcon_avail_wrapper, and serve process-
+ * context reads (fbcon_getc_wrapper) from this ring buffer only.
+ *
+ * KBD_RING_SIZE is a power of two so the index advance can use a mask
+ * instead of a modulo.  Volatile head/tail give cross-context ordering
+ * without needing the spinlock infrastructure (single core, no SMP). */
+
+#define KBD_RING_SIZE 16u
+static volatile char kbd_ring[KBD_RING_SIZE];
+static volatile uint8_t kbd_ring_head; /* written by idle drain */
+static volatile uint8_t kbd_ring_tail; /* read by process context */
+
+static inline int kbd_ring_empty(void) {
+  return kbd_ring_head == kbd_ring_tail;
+}
+
+static inline void kbd_ring_put(char c) {
+  uint8_t next = (kbd_ring_head + 1u) & (KBD_RING_SIZE - 1u);
+  if (next == kbd_ring_tail) return; /* full — drop character */
+  kbd_ring[kbd_ring_head] = c;
+  kbd_ring_head = next;
+}
+
+static inline int kbd_ring_get(void) {
+  if (kbd_ring_empty()) return -1;
+  int c = (unsigned char)kbd_ring[kbd_ring_tail];
+  kbd_ring_tail = (kbd_ring_tail + 1u) & (KBD_RING_SIZE - 1u);
+  return c;
+}
 
 /* ── TTY backend wrappers ─────────────────────────────────────────────────
  *
@@ -38,10 +74,30 @@
 static int fbcon_get_cols_wrapper(void) { return fbcon_cols(); }
 static int fbcon_get_rows_wrapper(void) { return fbcon_rows(); }
 
+static int fbcon_getc_wrapper(void) { return kbd_ring_get(); }
+
+static int fbcon_avail_wrapper(void) {
+  if (!kbd_ring_empty()) return 1;
+  /* Drain up to 8 bytes per poll cycle.  Bound is mandatory: this runs
+   * on the idle loop, an unbounded loop would freeze user-space if the
+   * scan path ever returned successive bytes without progress. */
+  for (int tries = 0; tries < 8 && kbd_poll_avail(); tries++) {
+    int ch = kbd_poll();
+    if (ch < 0) break;
+    /* Hoist Ctrl-C to the line discipline so a foreground task that
+     * is not blocked in read() still sees SIGINT — same rationale as
+     * pico1calc's tty_signal_intr fast path. */
+    if (ch == 0x03 && tty_signal_intr(TTY_DISPLAY)) continue;
+    kbd_ring_put((char)ch);
+  }
+  return !kbd_ring_empty();
+}
+
 static const tty_backend_t fbcon_backend = {
     .putc = fbcon_putc,
     .flush = fbcon_flush_deferred,
-    /* .getc / .rx_avail — CC-5 wires the keyboard here */
+    .getc = fbcon_getc_wrapper,
+    .rx_avail = fbcon_avail_wrapper,
     .get_cols = fbcon_get_cols_wrapper,
     .get_rows = fbcon_get_rows_wrapper,
     /* .set_winsize — xtensa_cc uses a single mode (SQUARE → 30×16) */
@@ -89,6 +145,14 @@ void vfs_notify(int event) {
       tty_set_backend(TTY_DISPLAY, &fbcon_backend);
       gpio_set_level(DISPLAY_BL_PIN, 1); /* backlight on, suppress garbage */
       klogf("LCD: console mirrored to display, backlight on\n");
+
+      /* Keyboard.  Safe to bring up after tty_set_backend even though
+       * fbcon_backend.getc/.rx_avail already point at the kbd drain
+       * wrappers — no process can read /dev/tty1 yet (init hasn't
+       * started).  Keeping LCD and KBD as separate setup blocks makes
+       * the boot log read in the obvious order. */
+      kbd_init();
+      klogf("KBD: matrix scan enabled (30x16 console accepts input)\n");
       break;
 
     case VFS_EVENT_IDLE:
