@@ -487,14 +487,18 @@ coverage is not exhaustive yet.
 6. Add CPUTEST (another Z80 exerciser) for additional coverage beyond
    ZEXALL.
 
-## Automated QEMU testing
+## Automated on-target testing
 
 ### `run.sh --test`
 
-Builds with `PPAP_TESTS=ON`, runs under QEMU, and greps output for the
-exact marker `ALL TESTS PASSED`.
+Builds with `PPAP_TESTS=ON`, boots the selected target, and captures
+console output until the harness can decide whether the run passed.  QEMU
+targets terminate themselves after the test summary; hardware targets use
+a host-side serial monitor.
 
-**QEMU self-termination:** After printing the test summary, `runtests`
+The pass marker is the exact string `ALL TESTS PASSED`.
+
+**QEMU backends:** After printing the test summary, `runtests`
 calls `poweroff()` which invokes `SYS_POWEROFF` (0x0B00).  The kernel
 routes this to `target_qemu_poweroff()`, which writes to an
 architecture-specific QEMU exit device:
@@ -510,6 +514,12 @@ Kernel panics and unhandled faults also trigger the same exit path via
 `kernel_panic_halt(1)`, so QEMU exits immediately on fatal errors
 instead of spinning until the external timeout.
 
+**Xtensa hardware backend:** `xtensa_cc` flashes the ESP32-S3, starts a
+serial monitor, and stops the host-side test process as soon as it sees
+either `ALL TESTS PASSED` or `SOME TESTS FAILED`.  The target does not
+need a guest-side quit path; after the marker appears, the board may keep
+running while `run.sh` exits based on the captured log.
+
 The external `timeout` in `run.sh` remains as a safety net but should
 rarely fire.
 
@@ -518,21 +528,24 @@ rarely fire.
 - m68k default timeout: 90 seconds
 - m68k with `--slow`: 150 seconds
 - pcxt default timeout: 180 seconds
+- xtensa_cc default timeout: 180 seconds
 
-**Current test results (as of 2026-04-18):**
+**Current test results:**
 
-| Target | Kernel tests | User tests | Total |
-|--------|-------------|------------|-------|
-| `qemu_arm` | 69 pass | 23/23 pass | All pass |
-| `qemu_m68k` | 69 pass | 23/23 pass | All pass |
-| `qemu_rv32` | Disabled (pre-existing blkdev crash) | 16/16 pass | User pass |
-| `pcxt` | N/A (no ktest) | 17/17 pass | All pass |
+| Target | Date | Kernel tests | User tests | Total |
+|--------|------|--------------|------------|-------|
+| `qemu_arm` | 2026-04-18 | 69 pass | 23/23 pass | All pass |
+| `qemu_m68k` | 2026-04-18 | 69 pass | 23/23 pass | All pass |
+| `qemu_rv32` | 2026-04-18 | Disabled (pre-existing blkdev crash) | 16/16 pass | User pass |
+| `pcxt` | 2026-04-18 | N/A (no ktest) | 17/17 pass | All pass |
+| `xtensa_cc` | 2026-05-12 | 62 pass, 7 fail | 13/13 pass | User pass |
 
 ```bash
 ./scripts/run.sh --test              # ARM (default)
 ./scripts/run.sh --test qemu_rv32    # RISC-V
 ./scripts/run.sh --test qemu_m68k    # m68k
 ./scripts/run.sh --test pcxt         # PC/XT (i16)
+./scripts/run.sh --test xtensa_cc    # Xtensa hardware
 ```
 
 ### pcxt notes
@@ -653,10 +666,10 @@ boot → kernel init → VFS mount → target_post_mount()
                             ├── test_trace  (FLAKY; run with --flaky)
                             └── test_pdb    (SLOW; run with --slow)
                                    │
-                        "ALL TESTS PASSED"
+               "ALL TESTS PASSED" or "SOME TESTS FAILED"
                                    │
-                             poweroff()
-                         (SYS_POWEROFF → QEMU exits)
+                    target-specific harness exit
+                  (QEMU poweroff or serial monitor)
                                    │
                    run.sh --test checks output
 ```
