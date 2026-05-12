@@ -157,16 +157,31 @@ runtime margin is safe.
 
 ## Xtensa
 
-Xtensa does not have a separate per-process kernel stack field.  `pcb_t.sp`
-points at a solicited switch frame on the process stack.  Because the ESP32-S3
-uses the windowed ABI, a cooperative switch must spill all register windows
-before saving SP.
+Xtensa has a `pcb_t.kernel_sp` migration field, but fixed kstacks are not
+enabled yet.  `pcb_t.sp` still points at a solicited switch frame on the
+process stack.  Because the ESP32-S3 uses the windowed ABI, a cooperative
+switch must spill all register windows before saving SP.
 
 `xtensa_do_yield()` builds a solicited frame, saves return PC and PS, spills
 windows via the Xtensa HAL, disables interrupts for the SP handoff, calls
 `xtensa_do_switch(current_sp)`, and restores the incoming frame.  A fresh
 process uses a marked "new-process" frame so the restore path can jump to the
 entry point directly instead of using `retw`.
+
+The solicited-frame metadata begins after the 16-byte ABI scratch area:
+
+| Offset | Meaning |
+|--------|---------|
+| `+16` | exit marker: `0` for solicited frame, `1` for new-process frame |
+| `+20` | saved return PC for solicited frames, entry address for new-process frames |
+| `+24` | saved PS |
+| `+28` | user SP for new-process frames |
+| `+32` | saved `a0` for vfork child/new-process restore |
+| `+36` | saved `a3` for vfork child restore |
+
+The exit marker selects the restore path.  Solicited frames restore PS and PC
+and return with `retw`; new-process frames load entry, PS, `a0`, `a3`, and user
+SP, then jump directly with `jx`.
 
 Syscalls are dispatched from the Xtensa illegal-instruction exception handler.
 If the syscall blocks or a preemption is pending, the handler calls

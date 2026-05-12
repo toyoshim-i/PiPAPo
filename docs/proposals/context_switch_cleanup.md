@@ -125,8 +125,9 @@ Done:
 Remaining:
 
 - Xtensa still carries user, kernel, and solicited switch frames on one process
-  stack.  It needs a fixed-kstack migration design after `xtensa_cc` builds
-  again.
+  stack.  The `xtensa_cc` build is reliable again and now uses the shared
+  Xtensa kernel source list; the remaining work is the functional fixed-kstack
+  migration.
 - Optional naming cleanup remains for arch switch helpers (`*_ctx_switch`).
 - ARM stack-size reduction is deferred until measurements are useful after, or
   independent of, userland subsystem migration.
@@ -136,8 +137,8 @@ Remaining:
 1. DONE: audit ARM-M, ia16, m68k, RISC-V, and Xtensa against the target
    contract in this proposal and the stack/context-switch docs.
 2. PARTIAL: move every architecture to the fixed per-process kstack model.
-   ARM-M, ia16, m68k, and RISC-V already use fixed kstack slots.  Xtensa needs
-   the same migration after `xtensa_cc` builds reliably again.
+   ARM-M, ia16, m68k, and RISC-V already use fixed kstack slots.  Xtensa is
+   now buildable again and remains the only functional migration target.
 3. DONE: rename shared restart symbols from ARM-flavored `svc_*` names to
    syscall names:
    - `svc_restart[]` -> `syscall_restart[]`
@@ -179,7 +180,7 @@ measurement-driven sizing.
 6. DONE: set m68k fixed-kstack user-process slots to 2 KB on `qemu_m68k` and
    `x68k`; TODO: measure high-water marks and shrink to 1 KB if safe.
 7. REMAINING: migrate Xtensa solicited switch frames to a fixed per-process
-   kernel stack after the target builds reliably again.
+   kernel stack.  The build prerequisite is done.
 8. DEFERRED: measure pico1calc stack usage with CP/M and other deep subsystem
    paths.  See [`kernel_stack_use.md`](kernel_stack_use.md).
 9. DEFERRED: shrink pico1calc `PROC_KSTACK_SIZE` from 2 KB only if
@@ -270,11 +271,12 @@ convention if the broader cleanup is deferred.
 
 ### Phase 4: Migrate Xtensa
 
-1. Restore a reliable `xtensa_cc` build before functional migration.
-2. Document the current solicited-frame layout and all places where user,
-   kernel, and switch frames share the process stack.
-3. Add `pcb_t.kernel_sp` for Xtensa if it is not already present.
-4. Reserve a fixed kstack region in the Xtensa target memory map.
+1. DONE: restore a reliable `xtensa_cc` build before functional migration.
+2. DONE: document the current solicited-frame layout and all places where
+   user, kernel, and switch frames share the process stack.
+3. DONE: add `pcb_t.kernel_sp` for Xtensa.
+4. Reserve a fixed kstack region in the Xtensa target memory map and
+   initialize the Xtensa `kernel_sp` field from it.
 5. Move syscall continuation and solicited yield frames onto fixed kstack
    slots, keeping register-window spilling hidden inside the arch helper.
 6. Make timer/fault return paths restore either normal user state or suspended
@@ -431,32 +433,52 @@ Current state:
 - Xtensa uses the windowed ABI.  `xtensa_do_yield()` builds a solicited frame,
   spills register windows, disables interrupts for the SP handoff, and calls
   `xtensa_do_switch(current_sp)`.
-- `pcb_t.sp` is the saved solicited-frame SP.  There is no separate
-  `pcb_t.kernel_sp` field on Xtensa today.
+- `pcb_t.sp` is the saved solicited-frame SP.  `pcb_t.kernel_sp` exists as the
+  fixed-kstack migration field but is not populated or used yet because
+  `PROC_HAS_FIXED_REGION_KSTACK` still excludes Xtensa.
 - The current process stack carries user frames, kernel call frames, and
   solicited switch frames.
+- The solicited frame lives below the active `sched_switch()` caller.  The low
+  16 bytes are left as ABI scratch.  Offsets are: `+16` exit marker,
+  `+20` PC, `+24` PS, `+28` user SP for new-process frames, `+32` saved `a0`,
+  and `+36` saved `a3`.
+- Exit marker `0` means a normal solicited frame and restores through `retw`.
+  Exit marker `1` means an exec/vfork child frame and restores by loading
+  entry, PS, `a0`, `a3`, and user SP, then jumping directly with `jx`.
+- `arch_build_initial_frame()` builds the marked new-process frame below the
+  argc/argv area and records the original stack pointer in the frame's user-SP
+  slot.
+- `xtensa_do_switch(current_sp)` stores the outgoing frame pointer in
+  `current->sp`, picks `sched_next()`, installs `current_core[0]`, and returns
+  the incoming process's saved frame pointer.
 - Syscalls enter through the illegal-instruction exception path.  When a
   syscall blocks or a preemption is pending, the handler calls
   `sched_switch()`, which performs a real `xtensa_do_yield()`.
 - Timer ISR currently sets the shared pending flag through
   `sched_timer_tick()`, but the real switch occurs when code reaches the
   cooperative yield path.
+- The ESP-IDF `ppap_kernel` component consumes `KERNEL_XTENSA_COMMON_SOURCES`
+  from `cmake/kernel.cmake`; target-local sources are limited to ESP32-S3
+  device glue and Xtensa-CC stubs.  This avoids repeating the common kernel
+  source list in the target component.
 
 Plan:
 
-1. Restore a reliable `xtensa_cc` build before changing stack semantics.
-2. Keep register-window spilling hidden inside the architecture helper.
-3. Document the current solicited-frame layout and the invariants that keep
-   user frames, kernel frames, and switch frames recoverable.
-4. Add `pcb_t.kernel_sp` for Xtensa and initialize it from a target-reserved
-   fixed kstack region.
-5. Move solicited yield frames and syscall continuations onto the fixed kstack
+1. DONE: restore a reliable `xtensa_cc` build before changing stack semantics.
+2. DONE: keep the ESP-IDF kernel component on the shared Xtensa/common source
+   list so future core sources are not missed.
+3. DONE: document the current solicited-frame layout and the invariants that
+   keep user frames, kernel frames, and switch frames recoverable.
+4. Keep register-window spilling hidden inside the architecture helper.
+5. DONE: add `pcb_t.kernel_sp` for Xtensa.
+6. Initialize `pcb_t.kernel_sp` from a target-reserved fixed kstack region.
+7. Move solicited yield frames and syscall continuations onto the fixed kstack
    while preserving the window-spill discipline.
-6. Make exception return restore either a normal user frame or a suspended
+8. Make exception return restore either a normal user frame or a suspended
    kernel continuation from the fixed kstack.
-7. Rename `xtensa_do_yield()` / `xtensa_do_switch()` only after deciding the
+9. Rename `xtensa_do_yield()` / `xtensa_do_switch()` only after deciding the
    shared helper naming convention.
-8. Add a test that blocks inside the syscall handler and resumes through the
+10. Add a test that blocks inside the syscall handler and resumes through the
    same windowed call chain, because this is the Xtensa-specific risk.
 
 ## Constraints

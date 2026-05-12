@@ -41,6 +41,7 @@ typedef void (*sighandler_t)(int);
 #define PCB_SP_OFFSET 48u
 #elif defined(__xtensa__)
 #define PCB_SP_OFFSET 0u
+#define PCB_KERNEL_SP_OFFSET 4u
 #elif defined(__ia16__)
 #define PCB_SP_OFFSET 0u
 #else
@@ -115,7 +116,8 @@ typedef struct pcb {
   uint32_t sp;             /* saved stack pointer     (offset 48)      */
   uint32_t kernel_sp;      /* kernel stack top for mscratch (offset 52) */
 #elif defined(__xtensa__)
-  uint32_t sp; /* saved stack pointer     (offset 0)       */
+  uint32_t sp;        /* saved solicited-frame SP (offset 0)      */
+  uint32_t kernel_sp; /* fixed kernel-stack top   (offset 4)      */
 #elif defined(__ia16__)
   uint32_t sp;           /* saved kernel-stack SP (offset 0)          */
   uint16_t kernel_sp;    /* top of this process's kernel stack slot   */

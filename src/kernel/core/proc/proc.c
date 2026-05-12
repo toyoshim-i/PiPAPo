@@ -86,6 +86,11 @@ _Static_assert(offsetof(pcb_t, kernel_sp) == PCB_KERNEL_SP_OFFSET,
                "PCB_KERNEL_SP_OFFSET must match proc_info.h");
 #endif
 
+#if defined(__xtensa__)
+_Static_assert(offsetof(pcb_t, kernel_sp) == PCB_KERNEL_SP_OFFSET,
+               "PCB_KERNEL_SP_OFFSET must match proc_info.h");
+#endif
+
 /* ── Globals ─────────────────────────────────────────────────────────────── */
 
 pcb_t proc_table[PROC_MAX];

@@ -64,8 +64,9 @@
 /* PROC_HAS_FIXED_REGION_KSTACK selects the linker-reserved fixed-region
  * per-process kernel stack mechanism implemented in kstack.c.  Targets
  * must reserve __kstack_region_base in the linker script and provide a
- * kernel_sp field in the arch's PCB.  Xtensa stays excluded until it has a
- * fixed kstack region and pcb_t.kernel_sp.  The kstack.c functions are weak;
+ * kernel_sp field in the arch's PCB.  Xtensa has the PCB field now, but stays
+ * excluded until it has a fixed kstack region and switch path.  The kstack.c
+ * functions are weak;
  * per-arch overlays in src/arch/<arch>/kernel/core/kstack.c may
  * strong-override any individual function without touching the others. */
 #if !defined(__xtensa__)

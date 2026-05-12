@@ -117,6 +117,12 @@ directly.  That assembly builds a solicited frame, saves return PC and PS,
 spills windows, disables interrupts around the SP handoff, calls
 `xtensa_do_switch(current_sp)`, and restores the incoming frame.
 
+`pcb_t.sp` points at this solicited frame.  The frame keeps the first 16 bytes
+for ABI scratch, then stores an exit marker, PC, PS, optional user SP, saved
+`a0`, and saved `a3`.  Exit marker `0` restores with `retw`; exit marker `1`
+is the exec/vfork-child path and jumps directly to the entry PC after loading
+the user SP.
+
 Syscalls are handled from the illegal-instruction exception path.  If a
 syscall blocks or a preemption is pending, the handler calls `sched_switch()`
 before returning through the Xtensa exception dispatcher.
