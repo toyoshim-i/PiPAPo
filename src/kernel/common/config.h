@@ -51,9 +51,10 @@
  * 1..PROC_MAX-1 are user procs (full budget).  Total carved bytes are
  * PROC_KSTACK_IDLE_SIZE + (PROC_MAX-1) * PROC_KSTACK_SIZE.
  *
- * Fixed-region kstacks are the default kernel model.  Xtensa is the remaining
- * exception until it is migrated away from shared solicited stack frames.
- * Defaults below match ia16's mature numbers; targets may override them.
+ * Fixed-region kstacks are the default kernel model.  Xtensa currently
+ * reserves and initializes this region as migration staging, while its live
+ * switch frames are still moved in a later cleanup step.  Defaults below
+ * match ia16's mature numbers; targets may override them.
  * ────────────────────────────────────────────────────────────────────────── */
 #ifndef PROC_KSTACK_SIZE
 #define PROC_KSTACK_SIZE 1024u /* per-proc kernel stack (slots 1+)     */
@@ -61,17 +62,10 @@
 #ifndef PROC_KSTACK_IDLE_SIZE
 #define PROC_KSTACK_IDLE_SIZE 128u /* slot 0 (idle loop only)          */
 #endif
-/* PROC_HAS_FIXED_REGION_KSTACK selects the linker-reserved fixed-region
- * per-process kernel stack mechanism implemented in kstack.c.  Targets
- * must reserve __kstack_region_base in the linker script and provide a
- * kernel_sp field in the arch's PCB.  Xtensa has the PCB field now, but stays
- * excluded until it has a fixed kstack region and switch path.  The kstack.c
- * functions are weak;
- * per-arch overlays in src/arch/<arch>/kernel/core/kstack.c may
- * strong-override any individual function without touching the others. */
-#if !defined(__xtensa__)
-#define PROC_HAS_FIXED_REGION_KSTACK 1
-#endif
+/* Targets must reserve __kstack_region_base and provide a kernel_sp field in
+ * the arch's PCB.  The kstack.c functions are weak; per-arch overlays in
+ * src/arch/<arch>/kernel/core/kstack.c may strong-override any individual
+ * function without touching the others. */
 
 #ifndef PROC_KSTACK_GUARD_BYTES
 /* Reserved bytes at the top of every slot for the overflow sentinel
@@ -79,11 +73,7 @@
  * true top when initialising kernel_sp so the active stack never
  * overwrites the guard.  4 B (one uint32_t) is enough to detect
  * adjacent-slot underflow. */
-#ifdef PROC_HAS_FIXED_REGION_KSTACK
 #define PROC_KSTACK_GUARD_BYTES 4u
-#else
-#define PROC_KSTACK_GUARD_BYTES 0u
-#endif
 #endif
 
 /* ── execve args byte budgets ──────────────────────────────────────────────

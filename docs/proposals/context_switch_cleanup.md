@@ -245,8 +245,7 @@ convention if the broader cleanup is deferred.
 
 1. DONE: migrate m68k first because its SSP model already cleanly separates
    user USP from kernel SSP.
-2. DONE: add fixed kstack reservations for m68k targets and enable
-   `PROC_HAS_FIXED_REGION_KSTACK`.
+2. DONE: add fixed kstack reservations for m68k targets.
 3. DONE: initialize m68k `pcb_t.kernel_sp` via `proc_kstack_init_slot()`.
 4. DONE: build initial m68k frames on the fixed kstack slot and keep
    `pcb_t.usp` / `user_stack_page` as user stack storage.
@@ -275,8 +274,9 @@ convention if the broader cleanup is deferred.
 2. DONE: document the current solicited-frame layout and all places where
    user, kernel, and switch frames share the process stack.
 3. DONE: add `pcb_t.kernel_sp` for Xtensa.
-4. Reserve a fixed kstack region in the Xtensa target memory map and
-   initialize the Xtensa `kernel_sp` field from it.
+4. DONE: reserve a fixed kstack region for Xtensa and initialize the Xtensa
+   `kernel_sp` field from it.  Because ESP-IDF owns the final linker script,
+   the region is aligned arch-owned BSS rather than a target `.ld` section.
 5. Move syscall continuation and solicited yield frames onto fixed kstack
    slots, keeping register-window spilling hidden inside the arch helper.
 6. Make timer/fault return paths restore either normal user state or suspended
@@ -433,9 +433,10 @@ Current state:
 - Xtensa uses the windowed ABI.  `xtensa_do_yield()` builds a solicited frame,
   spills register windows, disables interrupts for the SP handoff, and calls
   `xtensa_do_switch(current_sp)`.
-- `pcb_t.sp` is the saved solicited-frame SP.  `pcb_t.kernel_sp` exists as the
-  fixed-kstack migration field but is not populated or used yet because
-  `PROC_HAS_FIXED_REGION_KSTACK` still excludes Xtensa.
+- `pcb_t.sp` is the saved solicited-frame SP.  `pcb_t.kernel_sp` is populated
+  from the common fixed-region helper, backed by aligned Xtensa BSS because
+  ESP-IDF owns the target linker script.  The live solicited frames have not
+  moved to that region yet.
 - The current process stack carries user frames, kernel call frames, and
   solicited switch frames.
 - The solicited frame lives below the active `sched_switch()` caller.  The low
@@ -471,7 +472,8 @@ Plan:
    keep user frames, kernel frames, and switch frames recoverable.
 4. Keep register-window spilling hidden inside the architecture helper.
 5. DONE: add `pcb_t.kernel_sp` for Xtensa.
-6. Initialize `pcb_t.kernel_sp` from a target-reserved fixed kstack region.
+6. DONE: initialize `pcb_t.kernel_sp` from a target-reserved fixed kstack
+   region.  `xtensa_cc` uses 2 KB user-process slots for the staging region.
 7. Move solicited yield frames and syscall continuations onto the fixed kstack
    while preserving the window-spill discipline.
 8. Make exception return restore either a normal user frame or a suspended

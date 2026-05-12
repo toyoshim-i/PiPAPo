@@ -246,11 +246,12 @@ Each process owns:
   continuations; those use fixed kstack slots instead.
 - **User stack page** (m68k and RISC-V) — `user_stack_page` (m68k) or a
   dedicated page in `user_pages[]` (RISC-V), one 4 KB page.
-- **Fixed kernel-stack slot** (ARM, ia16, m68k, and RISC-V) — a per-process
-  slot in the target linker script's `__kstack_region_base` region,
+- **Fixed kernel-stack slot** (ARM, ia16, m68k, RISC-V, and staged Xtensa) —
+  a per-process slot in the target-reserved `__kstack_region_base` region,
   initialized into `pcb_t.kernel_sp`.  These slots are reserved outside the
   page pool and are not included in `/proc/meminfo` or `/proc/<pid>/stat`
-  vsize/rss.
+  vsize/rss.  Xtensa reserves the slots as migration staging; its live
+  syscall/switch frames still move in a later cleanup step.
 
 All page-backed entries above come from the same global page pool.
 

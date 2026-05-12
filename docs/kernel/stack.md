@@ -14,9 +14,9 @@ it points at a kernel stack frame; on others it points at a trap frame or a
 solicited switch frame.  Architectures with a separate kernel stack also store
 a top or live kernel-stack pointer in `pcb_t.kernel_sp`.
 
-The fixed-region kernel-stack helper in `src/kernel/core/proc/kstack.c` is
-used when `PROC_HAS_FIXED_REGION_KSTACK` is defined.  It expects the target
-linker script to reserve `__kstack_region_base` and splits that region into:
+The fixed-region kernel-stack helper in `src/kernel/core/proc/kstack.c` is the
+kernel-stack model for every supported architecture.  It expects the target
+memory map to reserve `__kstack_region_base` and splits that region into:
 
 | Slot | Owner | Size |
 |------|-------|------|
@@ -43,7 +43,7 @@ The common defaults are:
 | `ia16` | Fixed region per process, SS=0 kernel stack | `sp` = saved kernel-stack SP, `kernel_sp` = slot top, plus entry-stub shadows | Timer INT 08h and `i16_ctx_switch()` save `SS:SP` on the kernel stack and restore through a shared IRET tail |
 | `m68k` | Fixed region per process, SSP kernel stack | `sp` = saved SSP frame, `usp` = user stack pointer, `kernel_sp` = slot top | TRAP/timer paths save full frames on SSP, call `sched_next()`, then restore incoming SSP/USP |
 | `riscv` | Fixed region per process, `mscratch` kernel stack | `sp` = trap-frame SP, `kernel_sp` = `mscratch` kernel-stack top | Trap entry swaps `sp` with `mscratch`; `riscv_ctx_switch()` swaps trap-frame SPs and trap return refreshes `mscratch` |
-| `xtensa` | One process stack carries user and kernel/switch frames | `sp` = solicited switch frame | `xtensa_do_yield()` spills register windows, saves SP, calls `sched_next()`, and restores the incoming solicited frame |
+| `xtensa` | Fixed region reserved and initialized, but live switch frames still use the process stack | `sp` = solicited switch frame, `kernel_sp` = fixed slot top | `xtensa_do_yield()` spills register windows, saves SP, calls `sched_next()`, and restores the incoming solicited frame |
 
 ## ARM Cortex-M
 
@@ -157,10 +157,19 @@ runtime margin is safe.
 
 ## Xtensa
 
-Xtensa has a `pcb_t.kernel_sp` migration field, but fixed kstacks are not
-enabled yet.  `pcb_t.sp` still points at a solicited switch frame on the
-process stack.  Because the ESP32-S3 uses the windowed ABI, a cooperative
-switch must spill all register windows before saving SP.
+Xtensa has a fixed kstack region reserved and initialized through
+`pcb_t.kernel_sp`.  Because ESP-IDF owns the final linker script for
+`xtensa_cc`, the region is aligned arch-owned BSS instead of a target `.ld`
+section.  The live switch path has not moved yet: `pcb_t.sp` still points at a
+solicited switch frame on the process stack.  Because the ESP32-S3 uses the
+windowed ABI, a cooperative switch must spill all register windows before
+saving SP.
+
+`xtensa_cc` currently reserves 2 KB user-process slots:
+
+```cmake
+PROC_KSTACK_SIZE=2048u
+```
 
 `xtensa_do_yield()` builds a solicited frame, saves return PC and PS, spills
 windows via the Xtensa HAL, disables interrupts for the SP handoff, calls

@@ -47,6 +47,7 @@ set(ARCH_XTENSA_SOURCES
     ${_KS_ROOT}/src/arch/xtensa/boot/boot.S
     ${_KS_ROOT}/src/arch/xtensa/kernel/core/trap.S
     ${_KS_ROOT}/src/arch/xtensa/kernel/core/switch.S
+    ${_KS_ROOT}/src/arch/xtensa/kernel/core/kstack_region.c
     ${_KS_ROOT}/src/arch/xtensa/kernel/core/xtensa_common.c
     ${_KS_ROOT}/src/arch/xtensa/kernel/core/smp.c
 )

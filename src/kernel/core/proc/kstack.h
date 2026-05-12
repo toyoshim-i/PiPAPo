@@ -7,9 +7,8 @@
  * sentinel.  proc_check_kstack_canary_panic() walks every slot's
  * sentinel from end-of-syscall paths; on mismatch it logs and halts.
  *
- * Implementation in kstack.c is selected at compile time by
- * PROC_HAS_FIXED_REGION_KSTACK (config.h): fixed-region for targets that own a
- * linker-reserved __kstack_region_base, no-op otherwise.
+ * Implementation in kstack.c uses the fixed-region model for every supported
+ * architecture.
  */
 
 #ifndef PPAP_KERNEL_CORE_PROC_KSTACK_H
@@ -19,9 +18,9 @@
 
 #include "kernel/common/core/proc_info.h"
 
-/* Linker-provided base of the per-process kernel-stack region.
- * Defined by target linker scripts (e.g. pcxt_kernel.ld, qemu.ld) on
- * targets whose per-arch overlay implements the fixed-region scheme.
+/* Base of the per-process kernel-stack region.
+ * Defined by target linker scripts (e.g. pcxt_kernel.ld, qemu.ld) or by
+ * arch-owned storage on targets whose final linker script is external.
  * Declared here so the overlays do not need an `extern` in their .c. */
 extern char __kstack_region_base[];
 

@@ -1,8 +1,8 @@
 /*
  * kstack.c — per-process kernel-stack init + overflow sentinels.
  *
- * PROC_HAS_FIXED_REGION_KSTACK selects targets whose linker carves a single
- * __kstack_region_base region into PROC_MAX consecutive slots:
+ * Targets reserve a single __kstack_region_base region into PROC_MAX
+ * consecutive slots:
  *
  *   slot 0             : PROC_KSTACK_IDLE_SIZE bytes (idle thread)
  *   slot 1..PROC_MAX-1 : PROC_KSTACK_SIZE bytes each (user procs)
@@ -10,9 +10,6 @@
  * Each slot reserves a uintptr_t base canary and a PROC_KSTACK_GUARD_BYTES
  * top guard.  kernel_sp points at the payload top so normal stack growth does
  * not overwrite the guard.
- *
- * Targets without the fixed region use empty helpers.  The public functions
- * stay available so proc_init/proc_alloc call sites remain arch-agnostic.
  *
  * Public functions are weak so a per-arch overlay at
  * src/arch/<arch>/kernel/core/kstack.c can strong-override any single
@@ -26,8 +23,6 @@
 #include "kernel/core/arch.h"
 
 /* ── Private implementation helpers ─────────────────────────────────────── */
-
-#ifdef PROC_HAS_FIXED_REGION_KSTACK
 
 /* uintptr_t-wide pattern at the slot base (2 B on ia16, 4 B on
  * 32-bit arches).  Detects this slot's own SP underrunning past its base. */
@@ -162,37 +157,6 @@ static void kstack_usage_report_impl(void) {
   }
 }
 #endif /* KSTACK_USAGE_TRACK */
-
-#else /* PROC_HAS_FIXED_REGION_KSTACK */
-
-static void kstack_init_slot_impl(pcb_t *p, uint32_t slot_idx) {
-  (void)p;
-  (void)slot_idx;
-}
-
-static void kstack_plant_canary_impl(uint32_t slot_idx) { (void)slot_idx; }
-
-static int kstack_slot_canary_ok(uint32_t slot_idx, uintptr_t *base_out,
-                                 uintptr_t *got_base_out,
-                                 uint32_t *got_guard_out) {
-  (void)slot_idx;
-  if (base_out) *base_out = 0u;
-  if (got_base_out) *got_base_out = 0u;
-  if (got_guard_out) *got_guard_out = 0u;
-  return 1;
-}
-
-#ifdef KSTACK_USAGE_TRACK
-static void kstack_paint_impl(void) {}
-
-static uint16_t kstack_scan_impl(void) { return 0; }
-
-static uint16_t kstack_capacity_impl(void) { return 0; }
-
-static void kstack_usage_report_impl(void) {}
-#endif /* KSTACK_USAGE_TRACK */
-
-#endif /* PROC_HAS_FIXED_REGION_KSTACK */
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
