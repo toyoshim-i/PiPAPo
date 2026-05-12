@@ -35,13 +35,18 @@
 #define DISPLAY_WIDTH       240
 #define DISPLAY_HEIGHT      135
 
-/* ── Keyboard (GPIO matrix: 7 rows × 8 columns) ──────────────────────── */
-
-/* Row pins (directly from M5Stack Arduino library) */
-#define KBD_ROW_PINS        { 8, 9, 11, 13, 15, 3, 4 }
-#define KBD_COL_PINS        { 18, 17, 16, 7, 6, 5, 10, 0 }
-#define KBD_NUM_ROWS        7
-#define KBD_NUM_COLS        8
+/* ── Keyboard (3-bit counter + 1-of-8 demux + 7 input pins) ──────────────
+ *
+ * 3 output pins drive an 8-state counter that feeds an external
+ * 1-of-8 demultiplexer; 7 INPUT_PULLUP lines read whichever column
+ * the counter has grounded.  Decoded into a logical 4 × 14 keymap.
+ * See docs/reference/cardcomputer.md §Keyboard for the full topology,
+ * scan algorithm, and keymap.
+ */
+#define KBD_OUT_PINS        { 8, 9, 11 }              /* 3-bit counter LSB→MSB */
+#define KBD_IN_PINS         { 13, 15, 3, 4, 5, 6, 7 } /* INPUT_PULLUP, active low */
+#define KBD_NUM_OUT         3
+#define KBD_NUM_IN          7
 
 /* ── microSD (HSPI) ──────────────────────────────────────────────────── */
 
