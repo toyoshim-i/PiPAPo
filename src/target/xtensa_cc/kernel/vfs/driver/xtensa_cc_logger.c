@@ -48,6 +48,13 @@ static const tty_backend_t fbcon_backend = {
 };
 
 void klog_init_logger(void) {
+  /* Idempotent: target_early_init dispatches VFS_EVENT_MODULE_READY so the
+   * USJ logger is online before mm_init's "MM:" banner prints, and
+   * vfs_init() later calls this again unconditionally.  Re-emitting the
+   * boot banner from the second call would be noise. */
+  static int initialized;
+  if (initialized) return;
+  initialized = 1;
   usj_init();
   klog_set_logger(KLOG_LOGGER_PRIMARY, usj_putc, NULL);
   tty_set_backend(TTY_SERIAL, &usj_tty_backend);
@@ -57,6 +64,13 @@ void klog_init_logger(void) {
 
 void vfs_notify(int event) {
   switch (event) {
+    case VFS_EVENT_MODULE_READY:
+      /* target_early_init dispatches this before mm_init so the "MM:"
+       * memory-map banner has a logger to write to.  klog_init_logger
+       * is idempotent — vfs_init() will call it again later. */
+      klog_init_logger();
+      break;
+
     case VFS_EVENT_LATE_INIT:
       spi_lcd_init();
       if (!spi_lcd_ok()) {

@@ -102,7 +102,11 @@ void target_early_init(void)
     __asm__ volatile("wsr %0, intclear; rsync" :: "r"(0xFFFFFFFFu));
     __asm__ volatile("wsr %0, intenable; rsync" :: "r"(0));
 
-    /* Boot banner printed from klog_init_logger() (VFS side) */
+    /* Bring the USJ klog backend online before kmain() runs mm_init().
+     * Without this, mm_init's "MM:" memory-map banner is written into a
+     * sink-less klog and lost; pcxt does the same dispatch via
+     * VFS_EVENT_MODULE_READY (see src/target/pcxt/.../target_pcxt.c). */
+    mod_vfs.notify(VFS_EVENT_MODULE_READY);
 }
 
 void target_late_init(void)
