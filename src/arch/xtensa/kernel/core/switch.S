@@ -83,11 +83,11 @@ xtensa_do_yield:
     # ── Disable interrupts for the switch ───────────────────────────────
     rsil    a2, 15                    # save old PS, set INTLEVEL=15
 
-    # ── Call C helper: xtensa_do_switch(current_sp) → new_sp ───────────
+    # ── Call C helper: xtensa_ctx_switch(current_sp) → new_sp ──────────
     # Windowed call (call4): our a6 → callee's a2 (arg), callee's a2
     # (return) → our a6.
     mov     a6, a1                    # pass current SP as argument
-    call4   xtensa_do_switch
+    call4   xtensa_ctx_switch
     mov     a1, a6                    # a1 = new process's saved SP
 
     # ── Check exit marker: solicited (0) vs new-process (1) ───────────

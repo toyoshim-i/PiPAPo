@@ -154,8 +154,7 @@ Remaining:
    - RISC-V already uses `riscv_ctx_switch`
    - m68k switch paths now share `m68k_ctx_switch`
    - ia16 now uses `i16_ctx_switch`
-   - extract/rename Xtensa helper glue as `xtensa_ctx_switch` if it improves
-     readability
+  - Xtensa now uses `xtensa_ctx_switch` for the C handoff helper
 6. DONE: keep the userland blocking-pipe test as coverage for one process
    blocking inside a syscall while another runnable process executes before
    the blocked syscall returns.
@@ -202,13 +201,13 @@ replaces the image).  Each architecture currently tracks it differently:
 | `ia16`  | n/a — real-mode does not split user and kernel stacks      |
 | `m68k`  | `pcb_t::user_stack_page` (named field) plus `pcb_t::usp`   |
 | `riscv` | `user_pages[USER_PAGES_MAX - 1]` (magic slot, no name)     |
-| `xtensa`| not tracked anywhere — the page allocated by `vfork_copy_user_stack()` in `sys_vfork()` is referenced only by the child's saved frame, never recorded on the PCB.  Observed symptom: `MemFree` drops 4 KB per shell-spawned `cat /proc/meminfo` on hardware. |
+| `xtensa`| `user_pages[USER_PAGES_MAX - 1]` for the copied vfork child stack; the normal process stack still uses `stack_page_id` while live switch frames remain on the shared process stack |
 
 The free sites in `sys_proc.c` mirror that fragmentation: every reference to
 `user_stack_page` in `sys_exit()`, the vfork-child cleanup branch, and the
 post-`execve()` old-stack cleanup is guarded `#if defined(__m68k__)`, RISC-V
-relies on its slot being walked by `proc_release_tracked_pages()`, and
-xtensa has nothing.
+and Xtensa rely on the magic tracked slot being walked by
+`proc_release_tracked_pages()`.
 
 When this work is picked up, the four post-Phase-2 architectures
 (`arm_m`, `m68k`, `riscv`, `xtensa`) converge on a single named field
@@ -230,9 +229,11 @@ vfork-specific second copy.  The naming-and-tracking cleanup is still
 needed in that world, just simplified — there is one user-stack page per
 process to track, not one per process plus a per-vfork copy.
 
-The xtensa per-vfork page leak is the immediate symptom that motivates the
-unification, but it can also be fixed standalone within the current xtensa
-convention if the broader cleanup is deferred.
+The original Xtensa per-vfork page leak has been fixed standalone by tracking
+the copied child stack in the same magic slot used by RISC-V.  The broader
+unification is still useful because that slot does not name the page's role,
+and it will be easier to reason about after live Xtensa switch frames move off
+the process stack.
 
 ## Step-by-Step Fixed-Kstack Migration
 
@@ -437,7 +438,7 @@ Current state:
 
 - Xtensa uses the windowed ABI.  `xtensa_do_yield()` builds a solicited frame,
   spills register windows, disables interrupts for the SP handoff, and calls
-  `xtensa_do_switch(current_sp)`.
+  `xtensa_ctx_switch(current_sp)`.
 - `pcb_t.sp` is the saved solicited-frame SP.  `pcb_t.kernel_sp` is populated
   from the common fixed-region helper, backed by aligned Xtensa BSS because
   ESP-IDF owns the target linker script.  The live solicited frames have not
@@ -455,7 +456,7 @@ Current state:
 - `arch_build_initial_frame()` builds the marked new-process frame.  Exec and
   vfork child paths place that frame on the fixed kstack slot and record the
   user argc/argv or copied vfork stack pointer in the frame's user-SP slot.
-- `xtensa_do_switch(current_sp)` stores the outgoing frame pointer in
+- `xtensa_ctx_switch(current_sp)` stores the outgoing frame pointer in
   `current->sp`, picks `sched_next()`, installs `current_core[0]`, and returns
   the incoming process's saved frame pointer.
 - Syscalls enter through the illegal-instruction exception path.  When a
@@ -485,8 +486,8 @@ Plan:
    new-process frames; remaining work is the live cooperative yield frame.
 8. Make exception return restore either a normal user frame or a suspended
    kernel continuation from the fixed kstack.
-9. Rename `xtensa_do_yield()` / `xtensa_do_switch()` only after deciding the
-   shared helper naming convention.
+9. DONE: rename the low-level C handoff helper to `xtensa_ctx_switch`.
+   Keep `xtensa_do_yield()` as the public arch scheduling trigger.
 10. Add a test that blocks inside the syscall handler and resumes through the
    same windowed call chain, because this is the Xtensa-specific risk.
 

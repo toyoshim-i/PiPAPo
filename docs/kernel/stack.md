@@ -174,7 +174,7 @@ PROC_KSTACK_SIZE=2048u
 
 `xtensa_do_yield()` builds a solicited frame, saves return PC and PS, spills
 windows via the Xtensa HAL, disables interrupts for the SP handoff, calls
-`xtensa_do_switch(current_sp)`, and restores the incoming frame.  A fresh
+`xtensa_ctx_switch(current_sp)`, and restores the incoming frame.  A fresh
 process uses a marked "new-process" frame so the restore path can jump to the
 entry point directly instead of using `retw`.
 

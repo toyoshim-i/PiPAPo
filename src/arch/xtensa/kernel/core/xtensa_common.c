@@ -4,7 +4,7 @@
  * Provides:
  *   - Context switch pending flag (checked by timer ISR / yield)
  *   - CCOMPARE0 timer init and ISR
- *   - xtensa_do_switch() — C helper called from switch.S
+ *   - xtensa_ctx_switch() — C helper called from switch.S
  *   - Syscall dispatch (via ESP-IDF exception table)
  *   - Exception/fault handler (crash reporting)
  */
@@ -124,8 +124,7 @@ void xtensa_timer_init(void) {
 
 /* Called from switch.S (xtensa_do_yield) with the current SP.
  * Saves SP to old PCB, picks next process, returns new SP. */
-uint32_t xtensa_do_switch(uint32_t current_sp) {
-  pcb_t *prev = current;
+uint32_t xtensa_ctx_switch(uint32_t current_sp) {
   if (current) current->sp = current_sp;
   pcb_t *next = sched_next();
   current_core[core_id()] = next;

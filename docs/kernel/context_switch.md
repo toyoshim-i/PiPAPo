@@ -115,7 +115,7 @@ Xtensa uses the windowed ABI, so a context switch must spill register windows
 before SP can be saved.  `arch_sched_switch()` calls `xtensa_do_yield()`
 directly.  That assembly builds a solicited frame, saves return PC and PS,
 spills windows, disables interrupts around the SP handoff, calls
-`xtensa_do_switch(current_sp)`, and restores the incoming frame.
+`xtensa_ctx_switch(current_sp)`, and restores the incoming frame.
 
 `pcb_t.sp` points at this solicited frame.  The frame keeps the first 16 bytes
 for ABI scratch, then stores an exit marker, PC, PS, optional user SP, saved
