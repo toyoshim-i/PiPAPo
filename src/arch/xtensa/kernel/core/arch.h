@@ -21,6 +21,19 @@
 #define ARCH_VFORK_COPY_PROCESS_STACK 0
 #define ARCH_VFORK_CHILD_FRAME_POINTER 0
 
+/* Solicited/new-process frame layout used by switch.S. */
+#define XTENSA_SOL_EXIT_WORD 4u
+#define XTENSA_SOL_PC_WORD 5u
+#define XTENSA_SOL_PS_WORD 6u
+#define XTENSA_SOL_SP_WORD 7u
+#define XTENSA_SOL_A0_WORD 8u
+#define XTENSA_SOL_A3_WORD 9u
+#define XTENSA_SOL_FRMSZ 64u
+
+uint32_t *xtensa_build_vfork_child_frame(uint32_t kernel_sp, uint32_t child_pc,
+                                         uint32_t child_user_sp,
+                                         uint32_t child_a0, uint32_t child_a3);
+
 /* ── Context switch trigger ──────────────────────────────────────────────
  *
  * Xtensa has no PendSV equivalent.  We use the RISC-V/m68k pattern:

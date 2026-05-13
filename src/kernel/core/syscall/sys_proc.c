@@ -1901,19 +1901,8 @@ long sys_vfork(uint32_t *frame) {
         child_a3 = cbase + (child_a3 - pbase);
     }
 
-    /* Build new-process frame on the child's fixed kernel stack slot. */
-    uint32_t *sp = (uint32_t *)(uintptr_t)child->kernel_sp;
-    sp = (uint32_t *)((uintptr_t)sp & ~0xFu);
-    *--sp = child_a3;      /* [SP+36] a3 = preserved reg */
-    *--sp = child_a0;      /* [SP+32] a0 = return addr */
-    *--sp = child_user_sp; /* [SP+28] user SP */
-    *--sp = (1u << 5);     /* [SP+24] PS: UM=1 */
-    *--sp = child_pc;      /* [SP+20] entry */
-    *--sp = 1u;            /* [SP+16] exit = 1 */
-    *--sp = 0;             /* [SP+12] ABI scratch */
-    *--sp = 0;             /* [SP+8]  ABI scratch */
-    *--sp = 0;             /* [SP+4]  ABI scratch */
-    *--sp = 0;             /* [SP+0]  ABI scratch */
+    uint32_t *sp = xtensa_build_vfork_child_frame(
+        child->kernel_sp, child_pc, child_user_sp, child_a0, child_a3);
     child->sp = (uint32_t)(uintptr_t)sp;
   }
 

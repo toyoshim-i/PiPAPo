@@ -28,6 +28,7 @@
 #   base-save-area overlap that would corrupt the user SP.
 #
 # PCB layout: sp is at offset 0 in pcb_t (PCB_SP_OFFSET = 0).
+# Keep these offsets in sync with XTENSA_SOL_*_WORD in arch.h.
 # =============================================================================
 
     .equ SOL_EXIT,   16

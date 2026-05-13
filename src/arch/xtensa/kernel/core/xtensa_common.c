@@ -155,9 +155,9 @@ static void xtensa_syscall_handler(XtExcFrame *frame) {
   if (exec_pending[0]) {
     exec_pending[0] = 0;
     uint32_t *nf = (uint32_t *)(uintptr_t)current->sp;
-    frame->pc = nf[5]; /* SOL_PC / 4 = 20/4 */
-    frame->ps = nf[6]; /* SOL_PS / 4 = 24/4 */
-    frame->a1 = nf[7]; /* SOL_SP / 4 = 28/4 */
+    frame->pc = nf[XTENSA_SOL_PC_WORD];
+    frame->ps = nf[XTENSA_SOL_PS_WORD];
+    frame->a1 = nf[XTENSA_SOL_SP_WORD];
     frame->a2 = 0;
   }
 
@@ -286,6 +286,25 @@ void xtensa_trap_init(void) {
 void xtensa_trap_reassert(void) { xtensa_install_exception_handlers(); }
 
 /* ── Initial stack frame for new processes ──────────────────────────────── */
+
+uint32_t *xtensa_build_vfork_child_frame(uint32_t kernel_sp, uint32_t child_pc,
+                                         uint32_t child_user_sp,
+                                         uint32_t child_a0, uint32_t child_a3) {
+  uint32_t *sp = (uint32_t *)(uintptr_t)kernel_sp;
+  sp = (uint32_t *)((uintptr_t)sp & ~0xFu);
+
+  *--sp = child_a3;      /* [SP+36] a3 = preserved reg */
+  *--sp = child_a0;      /* [SP+32] a0 = return addr */
+  *--sp = child_user_sp; /* [SP+28] user SP */
+  *--sp = (1u << 5);     /* [SP+24] PS: UM=1 */
+  *--sp = child_pc;      /* [SP+20] entry */
+  *--sp = 1u;            /* [SP+16] exit = 1 */
+  *--sp = 0;             /* [SP+12] ABI scratch */
+  *--sp = 0;             /* [SP+8]  ABI scratch */
+  *--sp = 0;             /* [SP+4]  ABI scratch */
+  *--sp = 0;             /* [SP+0]  ABI scratch */
+  return sp;
+}
 
 /* Build a "new-process" frame for switch.S (exit marker = 1).
  *
