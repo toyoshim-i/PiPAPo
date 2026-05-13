@@ -285,9 +285,17 @@ the process stack.
    slots, keeping register-window spilling hidden inside the arch helper.
    DONE for manufactured new-process frames (`exec` initial frames and
    `vfork` child frames); live cooperative yield frames still remain.
-6. Make timer/fault return paths restore either normal user state or suspended
+6. Split the ESP-IDF exception-table syscall entry wrapper from the PPAP
+   syscall body so an arch trampoline can switch to `pcb_t.kernel_sp` before
+   running `syscall_dispatch()` or `sched_switch()`.
+7. Add that Xtensa syscall-stack trampoline.  It must save the ESP-IDF
+   exception-entry stack, run the syscall body on the process fixed kstack,
+   and restore the original exception stack before returning to ESP-IDF.
+8. After syscall bodies run on fixed kstack, move live solicited yield frames
+   there as the normal blocked continuation.
+9. Make timer/fault return paths restore either normal user state or suspended
    kernel continuations from the fixed kstack.
-7. Add or enable a userland blocking-continuation test for Xtensa.
+10. Add or enable a userland blocking-continuation test for Xtensa.
 
 ## Architecture Notes
 
@@ -462,6 +470,9 @@ Current state:
 - Syscalls enter through the illegal-instruction exception path.  When a
   syscall blocks or a preemption is pending, the handler calls
   `sched_switch()`, which performs a real `xtensa_do_yield()`.
+- The ESP-IDF exception-table syscall wrapper is separate from the PPAP
+  syscall body.  This is a staging point for switching to `pcb_t.kernel_sp`
+  before the shared syscall body runs.
 - Timer ISR currently sets the shared pending flag through
   `sched_timer_tick()`, but the real switch occurs when code reaches the
   cooperative yield path.
@@ -484,11 +495,18 @@ Plan:
 7. Move solicited yield frames and syscall continuations onto the fixed kstack
    while preserving the window-spill discipline.  DONE for manufactured
    new-process frames; remaining work is the live cooperative yield frame.
-8. Make exception return restore either a normal user frame or a suspended
+8. DONE: split the ESP-IDF exception-table syscall entry wrapper from the
+   PPAP syscall body, leaving a clean insertion point for a kstack-switch
+   trampoline.
+9. Add the kstack-switch trampoline before `xtensa_syscall_body()`.  The
+   trampoline should save the ESP-IDF exception-entry stack, switch to
+   `pcb_t.kernel_sp`, call the syscall body, and restore the exception-entry
+   stack before returning to ESP-IDF.
+10. Make exception return restore either a normal user frame or a suspended
    kernel continuation from the fixed kstack.
-9. DONE: rename the low-level C handoff helper to `xtensa_ctx_switch`.
+11. DONE: rename the low-level C handoff helper to `xtensa_ctx_switch`.
    Keep `xtensa_do_yield()` as the public arch scheduling trigger.
-10. Add a test that blocks inside the syscall handler and resumes through the
+12. Add a test that blocks inside the syscall handler and resumes through the
    same windowed call chain, because this is the Xtensa-specific risk.
 
 ## Constraints

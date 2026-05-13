@@ -28,6 +28,7 @@ volatile uint32_t xtensa_trap_ready = 0;
 /* Tick counter — incremented by timer ISR. */
 volatile uint32_t xtensa_tick_count = 0;
 
+void xtensa_syscall_body(XtExcFrame *frame);
 static void xtensa_syscall_handler(XtExcFrame *frame);
 static void xtensa_fault_handler(XtExcFrame *frame);
 
@@ -134,11 +135,11 @@ uint32_t xtensa_ctx_switch(uint32_t current_sp) {
 /* ── Syscall handler ────────────────────────────────────────────────────────
  */
 
-/* Syscall handler — called from xtensa_ill_handler when the faulting
+/* Syscall body — called from xtensa_syscall_handler when the faulting
  * instruction is ILL (PPAP's syscall trap).  The XtExcFrame has all
  * registers saved; we extract syscall args from a2-a7 and call the
  * shared syscall_dispatch(). */
-static void xtensa_syscall_handler(XtExcFrame *frame) {
+void xtensa_syscall_body(XtExcFrame *frame) {
   /* Advance PC past the 3-byte ILL instruction */
   frame->pc += 3;
 
@@ -188,6 +189,13 @@ static void xtensa_syscall_handler(XtExcFrame *frame) {
     switch_pending = 0;
     sched_switch();
   }
+}
+
+/* ESP-IDF exception-table entry point.  Keep this wrapper separate from the
+ * PPAP syscall body so the fixed-kstack migration can switch stacks before
+ * running syscall_dispatch() and the cooperative yield path. */
+static void xtensa_syscall_handler(XtExcFrame *frame) {
+  xtensa_syscall_body(frame);
 }
 
 /* ── Fault handler ───────────────────────────────────────────────────────── */
