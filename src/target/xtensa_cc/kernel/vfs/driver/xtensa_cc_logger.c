@@ -139,8 +139,12 @@ void vfs_notify(int event) {
         break;
       }
       fbcon_init();
-      /* 240/8 × 135/8 = 30 × 16 — the only sensible grid for this panel. */
-      fbcon_set_mode(FBCON_MODE_SQUARE);
+      /* 4×8 font: 240/4 × 135/8 = 60 × 16.  Twice the column count of
+       * MODE_SQUARE (8×8 → 30 × 16) at the cost of half-width
+       * characters — readable on the panel's ~240 ppi horizontal and
+       * a much better fit for typical shell output (ls, error lines,
+       * banners) that gets clipped at 30 columns. */
+      fbcon_set_mode(FBCON_MODE_COMPACT);
       klog_set_logger(KLOG_LOGGER_SECONDARY, fbcon_putc, fbcon_flush);
       tty_set_backend(TTY_DISPLAY, &fbcon_backend);
       gpio_set_level(DISPLAY_BL_PIN, 1); /* backlight on, suppress garbage */
@@ -152,7 +156,7 @@ void vfs_notify(int event) {
        * started).  Keeping LCD and KBD as separate setup blocks makes
        * the boot log read in the obvious order. */
       kbd_init();
-      klogf("KBD: matrix scan enabled (30x16 console accepts input)\n");
+      klogf("KBD: matrix scan enabled (60x16 console accepts input)\n");
       break;
 
     case VFS_EVENT_IDLE:

@@ -88,7 +88,7 @@ PPAP-side design choices for the display driver:
 
 - **Strategy**: text-mode cell buffer + scanline-streaming SPI flush
   (no full 63 KB RGB565 framebuffer in SRAM).  Reuse pico1calc's
-  fbcon pipeline verbatim — ~960 B for 30×16 cell+attr, plus a
+  fbcon pipeline verbatim — ~1920 B for 60×16 cell+attr, plus a
   480-byte stack scanline buffer during flush.
 - **Driver placement**:
   - Generic ST7789V2 controller init at
@@ -103,8 +103,10 @@ PPAP-side design choices for the display driver:
   (`xtensa_cc_logger.c`) after `lcd_init()` returns so the
   post-reset garbage is not visible to the user.  PWM via `ledc`
   is a future option if brightness control is needed.
-- **TTY grid**: 8×8 IchigoJam font → 30×16 character terminal
-  (240 / 8 = 30, 128 / 8 = 16, with 7 px vertical slack).
+- **TTY grid**: 4×8 font → 60×16 character terminal
+  (240 / 4 = 60, 128 / 8 = 16, with 7 px vertical slack).  MODE_SQUARE
+  (8×8 → 30×16) is reachable via `fbcon_set_mode()` for callers that
+  want bigger glyphs at the cost of half the column count.
 
 Detailed substep breakdown is in §7's Phase CC-4.
 
@@ -550,7 +552,7 @@ This table covers cross-cutting concerns:
 |------|-----------|
 | 512 KB SRAM is tight if anything ever wants a full RGB565 framebuffer (63 KB) | Text-mode cell buffer + scanline streaming keeps fbcon under 1 KB SRAM; never allocate the full framebuffer. |
 | Display SPI (SPI2) and microSD SPI (SPI3) on different controllers | Already separate hosts per [reference §Peripheral Pin Assignments](../reference/cardcomputer.md#peripheral-pin-assignments); no bus contention possible. |
-| Display refresh latency with text-mode rendering | Dirty-row flushing keeps each SPI transfer to ≤ 1 row; at 40 MHz SPI a worst-case 30×16 grid flush is ≈ 1 ms. |
+| Display refresh latency with text-mode rendering | Dirty-row flushing keeps each SPI transfer to ≤ 1 row; at 40 MHz SPI a worst-case 60×16 grid flush is ≈ 2 ms. |
 
 ---
 
