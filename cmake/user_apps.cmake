@@ -11,11 +11,7 @@
 include_guard(GLOBAL)
 
 # Application programs (sources in src/user/). Single canonical list.
-set(USER_APPS hello getty init trace pdb push cat ls ps df top pi pile calc uname sleep mkdir reset rmdir rm kill touch date cp mv chmod ln wc head tail printf basename dirname yes cut tr free mount umount grep sort sed)
-# ttyctl is pico1calc-only (LCD terminal control)
-if(CMAKE_PROJECT_NAME STREQUAL "ppap_pico1calc")
-    list(APPEND USER_APPS ttyctl)
-endif()
+set(USER_APPS hello getty init trace pdb push cat ls ps df top pi pile calc uname sleep mkdir reset rmdir rm kill touch date cp mv chmod ln wc head tail printf basename dirname yes cut tr free mount umount grep sort sed ttyctl)
 # Install destinations: init -> sbin, ttyctl -> usr/bin, others -> bin
 
 # Optional per-app extra sources (for multi-file user programs).

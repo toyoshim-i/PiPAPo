@@ -1,5 +1,12 @@
 /*
- * ttyctl.c — Terminal management utility for PicoCalc
+ * ttyctl.c — Terminal management utility
+ *
+ * The mode-switching subcommands (reset / 80 / 40 / sq / cols) are
+ * generic — they emit VT100 escapes and call TIOCGWINSZ, and work on
+ * any target whose TTY backend implements set_winsize.  The device
+ * subcommands (backlight / battery / poweroff) open target-specific
+ * /dev or /proc nodes (e.g. /dev/backlight) and return a clean error
+ * message on targets that do not expose those nodes.
  *
  * Usage:
  *   ttyctl reset          Reset terminal to defaults (40×20, clear)
