@@ -288,14 +288,18 @@ the process stack.
 6. Split the ESP-IDF exception-table syscall entry wrapper from the PPAP
    syscall body so an arch trampoline can switch to `pcb_t.kernel_sp` before
    running `syscall_dispatch()` or `sched_switch()`.
-7. Add that Xtensa syscall-stack trampoline.  It must save the ESP-IDF
-   exception-entry stack, run the syscall body on the process fixed kstack,
-   and restore the original exception stack before returning to ESP-IDF.
-8. After syscall bodies run on fixed kstack, move live solicited yield frames
-   there as the normal blocked continuation.
-9. Make timer/fault return paths restore either normal user state or suspended
+7. REMAINING: add the Xtensa syscall-stack trampoline.  A direct `a1` switch
+   to `pcb_t.kernel_sp` builds cleanly, but hardware testing double-excepts at
+   the first user process.  The accepted version must preserve ESP-IDF's
+   exception-entry and Xtensa window state instead of only changing the C
+   stack pointer.
+8. REMAINING: move live syscall-path solicited yield frames onto the fixed
+   kstack as the normal blocked continuation.
+9. Make non-syscall cooperative switch paths use fixed kstack or stay
+   explicitly limited to kernel-idle/target bootstrap paths.
+10. Make timer/fault return paths restore either normal user state or suspended
    kernel continuations from the fixed kstack.
-10. Add or enable a userland blocking-continuation test for Xtensa.
+11. Add or enable a userland blocking-continuation test for Xtensa.
 
 ## Architecture Notes
 
@@ -471,8 +475,12 @@ Current state:
   syscall blocks or a preemption is pending, the handler calls
   `sched_switch()`, which performs a real `xtensa_do_yield()`.
 - The ESP-IDF exception-table syscall wrapper is separate from the PPAP
-  syscall body.  This is a staging point for switching to `pcb_t.kernel_sp`
-  before the shared syscall body runs.
+  syscall body.  This remains the insertion point for a future fixed-kstack
+  handoff.
+- A direct syscall trampoline that only switches `a1` to `pcb_t.kernel_sp`
+  was tried and rejected: it builds, but `xtensa_cc` hardware testing
+  double-excepts before user tests start.  The next version must account for
+  Xtensa window spill/restore state and ESP-IDF's exception-entry contract.
 - Timer ISR currently sets the shared pending flag through
   `sched_timer_tick()`, but the real switch occurs when code reaches the
   cooperative yield path.
@@ -498,15 +506,21 @@ Plan:
 8. DONE: split the ESP-IDF exception-table syscall entry wrapper from the
    PPAP syscall body, leaving a clean insertion point for a kstack-switch
    trampoline.
-9. Add the kstack-switch trampoline before `xtensa_syscall_body()`.  The
-   trampoline should save the ESP-IDF exception-entry stack, switch to
-   `pcb_t.kernel_sp`, call the syscall body, and restore the exception-entry
-   stack before returning to ESP-IDF.
-10. Make exception return restore either a normal user frame or a suspended
+9. Add the kstack-switch trampoline before `xtensa_syscall_body()`.  It must
+   save the ESP-IDF exception-entry state, preserve the Xtensa window ABI
+   invariants needed by spill/restore, switch to `pcb_t.kernel_sp`, call the
+   syscall body, and restore the exception-entry state before returning to
+   ESP-IDF.
+10. Move syscall-path solicited yield frames onto the fixed kstack by making
+   `sched_switch()` run only after that accepted trampoline is active.
+11. Audit non-syscall `sched_switch()` callers.  Keep target bootstrap and
+   idle-only uses explicit, and move any process continuation path onto the
+   fixed kstack before it can block.
+12. Make exception return restore either a normal user frame or a suspended
    kernel continuation from the fixed kstack.
-11. DONE: rename the low-level C handoff helper to `xtensa_ctx_switch`.
+13. DONE: rename the low-level C handoff helper to `xtensa_ctx_switch`.
    Keep `xtensa_do_yield()` as the public arch scheduling trigger.
-12. Add a test that blocks inside the syscall handler and resumes through the
+14. Add a test that blocks inside the syscall handler and resumes through the
    same windowed call chain, because this is the Xtensa-specific risk.
 
 ## Constraints
