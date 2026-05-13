@@ -1661,10 +1661,9 @@ long sys_vfork(uint32_t *frame) {
   pcb_t *child = proc_alloc();
   if (!child) return -(long)ENOMEM;
 
-#if !defined(__ia16__)
     /* 2. Allocate a child stack page for arches whose live child frame still
      * lives there.  Split-kstack arches build child frames on kernel_sp. */
-#if !defined(__riscv) && !defined(__m68k__) && !defined(__xtensa__)
+#if ARCH_VFORK_COPY_PROCESS_STACK
   proc_image_segment_t stack_region = {0};
   if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                        PROC_IMAGE_SEG_WRITABLE) < 0) {
@@ -1674,9 +1673,8 @@ long sys_vfork(uint32_t *frame) {
   void *stack = stack_region.base;
   child->stack_page_id = mem_region_ptr_to_page(stack);
 #endif
-#if !defined(__m68k__) && !defined(__xtensa__)
+#if ARCH_VFORK_CHILD_FRAME_POINTER
   uint32_t *child_frame = NULL;
-#endif
 #endif
 
   /* 3. Share parent's user_pages with child */
@@ -1754,7 +1752,7 @@ long sys_vfork(uint32_t *frame) {
     uint16_t ax_off = ax_rel % PAGE_SIZE;
     mem_region_page_write(ax_page, ax_off, &zero, 2);
   }
-#elif !defined(__riscv) && !defined(__m68k__) && !defined(__xtensa__)
+#elif ARCH_VFORK_COPY_PROCESS_STACK
   memcpy(stack, mem_region_page_to_ptr(current->stack_page_id), PAGE_SIZE);
 
   /* Calculate child's frame position at the same offset as parent's */

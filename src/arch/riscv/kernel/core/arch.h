@@ -15,6 +15,10 @@
 #include "kernel/common/irq.h"
 #include "kernel/core/mm/mem_region.h"
 
+/* RISC-V vfork copies a fixed-kstack trap frame and patches saved a0. */
+#define ARCH_VFORK_COPY_PROCESS_STACK 0
+#define ARCH_VFORK_CHILD_FRAME_POINTER 1
+
 /* ── Context switch trigger ──────────────────────────────────────────────
  *
  * RISC-V has no PendSV equivalent.  arch_yield() uses the shared

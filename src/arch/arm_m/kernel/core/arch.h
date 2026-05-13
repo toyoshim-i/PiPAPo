@@ -18,6 +18,10 @@
 #include "kernel/common/irq.h"
 #include "kernel/core/mm/mem_region.h"
 
+/* ARM-M vfork still manufactures the child frame on a copied process stack. */
+#define ARCH_VFORK_COPY_PROCESS_STACK 1
+#define ARCH_VFORK_CHILD_FRAME_POINTER 1
+
 /* ── Context switch trigger ─────────────────────────────────────────────────
  */
 

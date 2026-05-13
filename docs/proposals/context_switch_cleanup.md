@@ -113,6 +113,9 @@ Done:
 - RISC-V native ELF processes no longer allocate the old placeholder
   `stack_page_id` page; the user stack remains a tracked page in
   `user_pages[USER_PAGES_MAX - 1]`.
+- `sys_vfork()` no longer uses an opt-out architecture list for its copied
+  process-stack path.  Each architecture now declares the vfork stack-frame
+  behavior it needs through positive `ARCH_VFORK_*` capability macros.
 - m68k now uses fixed per-process kernel-stack slots on `qemu_m68k` and
   `x68k`; native m68k ELF and Human68k loaders no longer allocate
   `stack_page_id` as SSP storage.

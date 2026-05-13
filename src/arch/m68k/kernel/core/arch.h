@@ -14,6 +14,10 @@
 #include "kernel/common/irq.h"
 #include "kernel/core/mm/mem_region.h"
 
+/* m68k vfork copies a fixed-kstack TRAP #0 frame directly. */
+#define ARCH_VFORK_COPY_PROCESS_STACK 0
+#define ARCH_VFORK_CHILD_FRAME_POINTER 0
+
 /* ── Context switch trigger ───────────────────────────────────────────────
  *
  * On 68k there is no PendSV equivalent.  We set a flag that the

@@ -17,6 +17,10 @@
 #include "kernel/common/irq.h"
 #include "kernel/core/mm/mem_region.h"
 
+/* Xtensa vfork builds the child frame on the fixed kstack slot. */
+#define ARCH_VFORK_COPY_PROCESS_STACK 0
+#define ARCH_VFORK_CHILD_FRAME_POINTER 0
+
 /* ── Context switch trigger ──────────────────────────────────────────────
  *
  * Xtensa has no PendSV equivalent.  We use the RISC-V/m68k pattern:
