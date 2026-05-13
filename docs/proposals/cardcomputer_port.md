@@ -157,10 +157,10 @@ matches the icons silkscreened on the keys (see [reference
 
 | Combo | Output | Notes |
 |-------|--------|-------|
-| Fn+`;` | `\033[D` (←) | Arrow left |
+| Fn+`;` | `\033[A` (↑) | Arrow up — silkscreen places `;` directly above `,` `.` `/` |
+| Fn+`,` | `\033[D` (←) | Arrow left |
+| Fn+`.` | `\033[B` (↓) | Arrow down |
 | Fn+`/` | `\033[C` (→) | Arrow right |
-| Fn+`.` | `\033[A` (↑) | Arrow up |
-| Fn+`,` | `\033[B` (↓) | Arrow down |
 | Fn+`` ` `` | `\033` (Esc) | Cardputer has no dedicated Esc key |
 | Fn+1..0 | `\033OP`..`\033OY` (F1–F10) | Standard VT100 PF / F-key codes |
 | Fn+Backspace | `\033[3~` (Delete) | Forward-delete |

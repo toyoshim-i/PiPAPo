@@ -204,10 +204,10 @@ are **conventions**, not hardware mappings — the keyboard reports
 only `(Fn pressed, key pressed)`; software must implement the layer.
 The icons are:
 
-- Fn+`;` → ←
+- Fn+`;` → ↑
+- Fn+`,` → ←
+- Fn+`.` → ↓
 - Fn+`/` → →
-- Fn+`.` → ↑
-- Fn+`,` → ↓
 - Fn+`` ` `` → Esc
 - Fn+1..0 → F1..F10
 - Fn+Backspace → Delete

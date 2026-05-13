@@ -111,10 +111,10 @@ static const cc_fn_entry_t cc_fn_layer[] = {
     {0, 10, "\x1bOY"},
     /* Backspace → Delete */
     {0, 13, "\x1b[3~"},
-    /* Home row ; → ← */
-    {2, 11, "\x1b[D"},
-    /* Bottom row , . / → ↓ ↑ → */
-    {3, 10, "\x1b[B"}, {3, 11, "\x1b[A"}, {3, 12, "\x1b[C"},
+    /* Home row ; → ↑ (silkscreen places ; above , . /) */
+    {2, 11, "\x1b[A"},
+    /* Bottom row , . / → ← ↓ → */
+    {3, 10, "\x1b[D"}, {3, 11, "\x1b[B"}, {3, 12, "\x1b[C"},
 };
 /* clang-format on */
 
