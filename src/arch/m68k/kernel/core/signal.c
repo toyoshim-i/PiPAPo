@@ -41,7 +41,7 @@
 #include <stdint.h>
 
 #include "common/errno.h"
-#include "kernel/core/arch.h" /* m68k_trap_frame_sp */
+#include "kernel/core/arch.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/signal/signal_helper.h"
 #include "kernel/core/syscall/syscall.h"

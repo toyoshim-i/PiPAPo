@@ -19,6 +19,13 @@
 #define ARCH_VFORK_COPY_PROCESS_STACK 0
 #define ARCH_VFORK_CHILD_FRAME_POINTER 1
 
+/* Pointer to the saved trap frame at the base of the current kernel trap
+ * stack frame, captured by trap.S in the ecall (syscall) path.
+ * signal_check / sys_rt_sigreturn read/overwrite the mepc/mstatus/sp slots
+ * so the trap-exit mret lands in the desired user context.  Zero outside
+ * a syscall trap.  Defined in riscv_common.c. */
+extern volatile uint32_t rv32_trap_frame_sp;
+
 /* ── Context switch trigger ──────────────────────────────────────────────
  *
  * RISC-V has no PendSV equivalent.  arch_yield() uses the shared

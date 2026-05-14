@@ -10,7 +10,7 @@
 
 #include "kernel/common/ioregs.h" /* SR_USER */
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/core/arch.h" /* m68k_trap_frame_sp */
+#include "kernel/core/arch.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/subsys/subsys.h"
 #include "kernel/core/syscall/syscall.h"

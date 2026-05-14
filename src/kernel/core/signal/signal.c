@@ -113,104 +113,7 @@ int signal_check_kernel(void) {
  *       frame-layout comment on the i16 branch below.
  * ────────────────────────────────────────────────────────────────────────── */
 
-#if defined(__riscv)
-
-/*
- * RISC-V signal delivery — mret-based, sa_restorer style.
- *
- * Trap frame layout (144 bytes, see src/arch/riscv/kernel/core/trap.S):
- *
- *   offset 0   x1   (ra)       regs[0]
- *   offset 4   x3   (gp)
- *   offset 8   x4   (tp)
- *   offset 12  x5   (t0)
- *   offset 16  x6   (t1)
- *   offset 20  x7   (t2)
- *   offset 24  x8   (s0)
- *   offset 28  x9   (s1)
- *   offset 32  x10  (a0)       regs[8]
- *   ...
- *   offset 60  x17  (a7)
- *   ...
- *   offset 120 mepc             regs[30]
- *   offset 124 mstatus          regs[31]
- *   offset 128 user_sp          regs[32]
- *
- * signal_check plants a 144-byte copy of the trap frame below the
- * current user sp and rewrites the live frame so the trap-exit mret
- * lands in the handler with the right ABI state:
- *
- *   regs[mepc]    = handler
- *   regs[a0]      = sig         (first arg per RISC-V ABI)
- *   regs[ra]      = sa_restorer (handler's `ret` jumps here)
- *   regs[user_sp] = new_sp      (points just above the saved frame)
- *
- * Handler returns via `ret` → restorer → ecall SYS_RT_SIGRETURN.
- * sys_rt_sigreturn reads the saved frame back from user memory and
- * copies it over the current (sigreturn) trap frame so the next
- * trap-exit mret resumes the interrupted user PC with its original
- * register state.  It returns orig_a0 so syscall_dispatch writes back
- * the interrupted syscall's original return value (not 0).
- */
-
-#define RV32_TF_RA_IDX 0u
-#define RV32_TF_A0_IDX 8u
-#define RV32_TF_MEPC_IDX 30u
-#define RV32_TF_USER_SP_IDX 32u
-#define RV32_TRAP_FRAME_SIZE 144u /* matches TRAP_FRAME_SIZE in trap.S */
-
-extern volatile uint32_t rv32_trap_frame_sp;
-
-void signal_check(uint32_t *regs) {
-  uint32_t deliverable;
-  int sig;
-  sighandler_t handler;
-  uint32_t restorer;
-  uint32_t orig_sp;
-  uint32_t new_sp;
-
-  if (!current || current->state != PROC_RUNNABLE) return;
-
-  deliverable = current->sig_pending & ~current->sig_blocked;
-  if (!deliverable) return;
-
-  sig = ctz32(deliverable);
-  current->sig_pending &= ~(1u << sig);
-
-  handler = current->sig_handlers[sig];
-  if (handler == SIG_IGN) return;
-  if (handler == SIG_DFL) {
-    signal_default_action(sig, regs);
-    return;
-  }
-
-  restorer = (uint32_t)(uintptr_t)current->sig_restorers[sig];
-  if (restorer == 0u) {
-    sys_exit(128 + sig);
-    return;
-  }
-
-  orig_sp = regs[RV32_TF_USER_SP_IDX];
-  new_sp = orig_sp - RV32_TRAP_FRAME_SIZE;
-  /* RISC-V ABI requires 16-byte sp alignment at function entry.  The
-   * trap frame size is already 16-byte aligned (144), so new_sp keeps
-   * the alignment of orig_sp. */
-
-  /* Save the interrupted frame verbatim on the user stack.  On
-   * sys_rt_sigreturn we copy it back into the then-live trap frame,
-   * which restores every caller-saved register to its pre-signal
-   * value (callee-saved regs are preserved by the handler's ABI
-   * compliance, just like ARM). */
-  sys_copy_to_user((uintptr_t)new_sp, regs, RV32_TRAP_FRAME_SIZE);
-
-  /* Rewrite live frame so mret enters the handler in user mode. */
-  regs[RV32_TF_MEPC_IDX] = (uint32_t)(uintptr_t)handler;
-  regs[RV32_TF_A0_IDX] = (uint32_t)sig;
-  regs[RV32_TF_RA_IDX] = restorer;
-  regs[RV32_TF_USER_SP_IDX] = new_sp;
-}
-
-#elif defined(__xtensa__)
+#if defined(__xtensa__)
 
 /* Xtensa signal delivery — CC-3 will implement. */
 
@@ -286,37 +189,7 @@ long sys_sigaction(long sig, long handler, long old_ptr) {
 /* ── sys_rt_sigreturn ──────────────────────────────────────────────────────
  */
 
-#if defined(__riscv)
-
-/*
- * Unwind the delivery frame planted by signal_check.
- *
- * At entry we are inside the restorer's ecall trap.  rv32_trap_frame_sp
- * points at the live trap frame; current user sp (in that frame) equals
- * new_sp — handler's `ret` doesn't touch sp and the restorer hasn't
- * adjusted it either.  The saved pre-signal frame sits at [new_sp ..
- * new_sp + 144).
- *
- * Copying it back over the live trap frame restores every caller-saved
- * register, mepc, mstatus, and user_sp to their pre-signal values.  We
- * then return orig_a0 so syscall_dispatch writes it into the a0 slot,
- * matching what trap-exit would restore anyway (no net change).
- */
-long sys_rt_sigreturn(void) {
-  uint32_t *regs;
-  uint32_t saved_sp;
-  uint32_t orig_a0;
-
-  if (rv32_trap_frame_sp == 0u) return -(long)EFAULT;
-
-  regs = (uint32_t *)(uintptr_t)rv32_trap_frame_sp;
-  saved_sp = regs[RV32_TF_USER_SP_IDX];
-  sys_copy_from_user(regs, (uintptr_t)saved_sp, RV32_TRAP_FRAME_SIZE);
-  orig_a0 = regs[RV32_TF_A0_IDX];
-  return (long)(int32_t)orig_a0;
-}
-
-#elif defined(__xtensa__)
+#if defined(__xtensa__)
 
 /* Xtensa sigreturn — CC-3 will implement. */
 long sys_rt_sigreturn(void) { return -(long)ENOSYS; }

@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "kernel/core/arch.h" /* i16_current_ksp, i16_trap_frame_sp */
+#include "kernel/core/arch.h"
 
 /* Declared in arch.h.  Boot stack top — set before current_core is wired. */
 volatile uint16_t i16_current_ksp = 0xFFFC;

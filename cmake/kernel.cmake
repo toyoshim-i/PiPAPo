@@ -42,6 +42,7 @@ set(ARCH_RISCV_SOURCES
     ${_KS_ROOT}/src/arch/riscv/boot/boot.S
     ${_KS_ROOT}/src/arch/riscv/kernel/core/trap.S
     ${_KS_ROOT}/src/arch/riscv/kernel/core/riscv_common.c
+    ${_KS_ROOT}/src/arch/riscv/kernel/core/signal.c
     ${_KS_ROOT}/src/arch/riscv/kernel/core/smp.c
 )
 
