@@ -393,11 +393,13 @@ static char state_char(const pcb_t *p) {
  *
  * Fixed kstack slots are reserved by target linker scripts and are not part of
  * the page pool, so they are intentionally excluded from /proc/<pid>/stat
- * vsize/rss.  Architectures that use a page-backed process stack expose it via
- * stack_page_id; RISC-V instead tracks its user stack in user_pages[]. */
+ * vsize/rss.  User stacks may be either stack_page_id or the separate
+ * user_stack_page field, depending on the architecture. */
 static uint32_t proc_page_pool_bytes(const pcb_t *p) {
   uint32_t pages = 0;
+
   if (p->stack_page_id != PAGE_ID_INVALID) pages++;
+  if (p->user_stack_page) pages++;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     if (p->user_pages[i] != PAGE_ID_INVALID) pages++;
   }

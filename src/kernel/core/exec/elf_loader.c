@@ -633,28 +633,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
     p->image.data.base_page = data_region.base_page;
   }
 
-  /* RISC-V: track user stack in the last user_pages slot to keep it
-   * out of the brk growth range (slots data_pages .. USER_PAGES_MAX-2).
-   * Derive stack_top from this tracked page. */
-  if (cpu_ops->arch_id == CPU_ARCH_RISCV && need_user_stack) {
-    if (proc_track_page(p, USER_PAGES_MAX - 1,
-                        mem_region_ptr_to_page(ustack_region.base)) < 0) {
-      mem_region_free(&data_region);
-      mem_region_free(&text_region);
-      mem_region_free(&ustack_region);
-      mem_region_free(&stack_region);
-      p->stack_page_id = PAGE_ID_INVALID;
-      p->image.stack = (proc_image_segment_t){0};
-      return -(int)ENOMEM;
-    }
-    page_id_t us_id = proc_last_page_backed_base(p);
-    out->stack_top = mem_region_page_linear(us_id) + PAGE_SIZE;
-  }
-
-#if defined(__m68k__)
-  if (cpu_ops->arch_id == CPU_ARCH_M68K && need_user_stack)
-    p->user_stack_page = ustack_region.base;
-#endif
+  if (need_user_stack) p->user_stack_page = ustack_region.base;
 
   /* --- 7. brk setup --- */
   if (data_base) {

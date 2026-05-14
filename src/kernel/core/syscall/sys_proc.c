@@ -606,12 +606,11 @@ static int trace_store_z80_regs(pcb_t *target,
 }
 
 static int trace_native_contains(const pcb_t *target, uint32_t addr) {
-#if defined(__m68k__)
   if (target->user_stack_page) {
     uint32_t base = (uint32_t)(uintptr_t)target->user_stack_page;
     if (addr >= base && addr < base + PAGE_SIZE) return 1;
   }
-#elif !defined(__ia16__)
+#if !defined(__ia16__)
   if (target->stack_page_id != PAGE_ID_INVALID) {
     uint32_t base =
         (uint32_t)(uintptr_t)mem_region_page_to_ptr(target->stack_page_id);
@@ -1552,11 +1551,9 @@ long sys_exit(long status) {
       current->stack_page_id = PAGE_ID_INVALID;
 #endif
     proc_release_tracked_pages(current, 0, USER_PAGES_MAX);
-#if defined(__m68k__)
     if (current->user_stack_page) {
       proc_release_stack_page(&current->user_stack_page);
     }
-#endif
   } else {
     /* vfork child exiting without exec: free child-owned pages only
      * (e.g. the user stack copy allocated by sys_vfork). */
@@ -1567,13 +1564,11 @@ long sys_exit(long status) {
      * restores the parent's stack_page into the child's pcb. */
     if (current->stack_page_id == current->vfork_parent->stack_page_id)
       current->stack_page_id = PAGE_ID_INVALID;
-#if defined(__m68k__)
     /* Free child's user stack copy if different from parent's */
     if (current->user_stack_page &&
         current->user_stack_page != current->vfork_parent->user_stack_page) {
       proc_release_stack_page(&current->user_stack_page);
     }
-#endif
   }
 
   /* Unblock vfork parent if we are a vfork child */
@@ -1820,10 +1815,8 @@ long sys_vfork(uint32_t *frame) {
 
   /* RISC-V mscratch split: the child must have its own user stack copy. */
   {
-    uint32_t ustack_slot = USER_PAGES_MAX - 1;
-    page_id_t parent_ustack_id = current->user_pages[ustack_slot];
-    if (parent_ustack_id != PAGE_ID_INVALID) {
-      void *parent_ustack = mem_region_page_to_ptr(parent_ustack_id);
+    void *parent_ustack = current->user_stack_page;
+    if (parent_ustack) {
       void *child_ustack = NULL;
       uint32_t *child_tf = child_frame - 8; /* trap frame base */
       uint32_t child_usp = 0;
@@ -1832,7 +1825,7 @@ long sys_vfork(uint32_t *frame) {
         proc_free(child);
         return -(long)ENOMEM;
       }
-      child->user_pages[ustack_slot] = mem_region_ptr_to_page(child_ustack);
+      child->user_stack_page = child_ustack;
       child_tf[32] = child_usp; /* patch TF_USER_SP */
     }
   }
@@ -1877,16 +1870,7 @@ long sys_vfork(uint32_t *frame) {
       return -(long)ENOMEM;
     }
     child_user_sp = remapped_sp;
-    /* Track the allocated user-stack page so it is freed on execve
-     * (via exec_snapshot_release_private_tracked_pages) or on _exit
-     * (via proc_release_tracked_pages).  This matches the riscv
-     * convention at sys_proc.c:1840 as a stop-gap; the proper unified
-     * pcb_t::user_stack_page tracking and the underlying no-copy vfork
-     * model are tracked in
-     * docs/proposals/context_switch_cleanup.md "User Stack and Tracking"
-     * and docs/proposals/no_stack_copy_on_vfork.md. */
-    child->user_pages[USER_PAGES_MAX - 1] =
-        mem_region_ptr_to_page(child_ustack);
+    child->user_stack_page = child_ustack;
 
     /* Remap a3 if it points into the parent's stack page */
     {
@@ -2178,17 +2162,13 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
     mem_region_page_free(args_page);
     return (long)rc;
   }
-#if defined(__m68k__)
   void *old_user_stack = current->user_stack_page;
-#endif
 
   /* Clear pages so execve allocates fresh ones */
   current->stack_page_id = PAGE_ID_INVALID;
   proc_clear_page_tracking(current);
   current->image = (proc_image_t){0};
-#if defined(__m68k__)
   current->user_stack_page = NULL;
-#endif
 
   /* Save old cpu_state so we can free it after successful exec.  argv/envp
    * live in the args page, which we keep allocated until exec_execve
@@ -2198,9 +2178,7 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
     /* Restore old pages on failure — fds are untouched (POSIX) */
     current->stack_page_id = old_stack_id;
     exec_snapshot_restore(exec_snapshot, current);
-#if defined(__m68k__)
     current->user_stack_page = old_user_stack;
-#endif
     mem_region_page_free(exec_snapshot);
     mem_region_page_free(args_page);
     return (long)err;
@@ -2236,19 +2214,15 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
   if (owns_pages) {
     exec_snapshot_release_owned_segments(exec_snapshot);
     exec_snapshot_release_tracked_pages(exec_snapshot);
-#if defined(__m68k__)
     if (old_user_stack) proc_release_stack_page(&old_user_stack);
-#endif
   } else if (current->vfork_parent) {
     /* vfork child: free pages that were allocated specifically for
      * the child (e.g. user stack copy), not the shared parent pages. */
     exec_snapshot_release_private_tracked_pages(
         exec_snapshot, current->vfork_parent->user_pages);
-#if defined(__m68k__)
     if (old_user_stack &&
         old_user_stack != current->vfork_parent->user_stack_page)
       proc_release_stack_page(&old_user_stack);
-#endif
   }
   mem_region_page_free(exec_snapshot);
 

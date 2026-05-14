@@ -111,8 +111,8 @@ Done:
   `pico2rv`; `mscratch` is loaded from `pcb_t.kernel_sp` rather than lazily
   deriving the kernel stack from `stack_page_id`.
 - RISC-V native ELF processes no longer allocate the old placeholder
-  `stack_page_id` page; the user stack remains a tracked page in
-  `user_pages[USER_PAGES_MAX - 1]`.
+  `stack_page_id` page; the user stack is tracked through
+  `pcb_t.user_stack_page`.
 - `sys_vfork()` no longer uses an opt-out architecture list for its copied
   process-stack path.  Each architecture now declares the vfork stack-frame
   behavior it needs through positive `ARCH_VFORK_*` capability macros.
@@ -130,7 +130,6 @@ Done:
 
 Remaining:
 
-- Optional naming cleanup remains for arch switch helpers (`*_ctx_switch`).
 - ARM stack-size reduction is deferred until measurements are useful after, or
   independent of, userland subsystem migration.
 
@@ -149,7 +148,7 @@ Remaining:
    - `mod_core.svc_set_restart` -> `mod_core.syscall_set_restart`
 4. DONE: keep ARM-only names for ARM-only state, such as
    `arm_exc_return[]`.
-5. REMAINING: normalize context-switch helper names where useful:
+5. DONE: normalize context-switch helper names where useful:
    - RISC-V already uses `riscv_ctx_switch`
    - m68k switch paths now share `m68k_ctx_switch`
    - ia16 now uses `i16_ctx_switch`
@@ -198,15 +197,15 @@ replaces the image).  Each architecture currently tracks it differently:
 |---------|------------------------------------------------------------|
 | `arm_m` | `pcb_t::stack_page_id` (originally PSP, now solely the user stack after the kernel-stack migration) |
 | `ia16`  | n/a — real-mode does not split user and kernel stacks      |
-| `m68k`  | `pcb_t::user_stack_page` (named field) plus `pcb_t::usp`   |
-| `riscv` | `user_pages[USER_PAGES_MAX - 1]` (magic slot, no name)     |
-| `xtensa`| normal process stack uses `stack_page_id`; the copied vfork child user stack uses `user_pages[USER_PAGES_MAX - 1]`; live syscall switch frames use the fixed kstack |
+| `m68k`  | `pcb_t::user_stack_page` plus `pcb_t::usp`                 |
+| `riscv` | `pcb_t::user_stack_page` plus trap-frame user SP           |
+| `xtensa`| normal process stack uses `stack_page_id`; copied vfork child user stacks use `pcb_t::user_stack_page`; live syscall switch frames use the fixed kstack |
 
 The free sites in `sys_proc.c` mirror that fragmentation: every reference to
 `user_stack_page` in `sys_exit()`, the vfork-child cleanup branch, and the
-post-`execve()` old-stack cleanup is guarded `#if defined(__m68k__)`, RISC-V
-and Xtensa rely on the magic tracked slot being walked by
-`proc_release_tracked_pages()`.
+post-`execve()` old-stack cleanup is now common.  ARM still uses
+`stack_page_id` for its user PSP page, and normal Xtensa processes still use
+`stack_page_id` for their user stack.
 
 When this work is picked up, the four post-Phase-2 architectures
 (`arm_m`, `m68k`, `riscv`, `xtensa`) converge on a single named field

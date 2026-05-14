@@ -147,10 +147,8 @@ typedef struct pcb {
   /* ── Memory ─────────────────────────────────────────────────────────── */
   page_id_t stack_page_id; /* page_id_t for 4 KB stack backing page */
   page_id_t user_pages[USER_PAGES_MAX]; /* page-backed user memory tracking */
-  proc_image_t image; /* explicit process image layout / memory classes */
-#if defined(__m68k__)
-  void *user_stack_page; /* m68k: separate user stack page (USP target) */
-#endif
+  proc_image_t image;    /* explicit process image layout / memory classes */
+  void *user_stack_page; /* separate user stack page, when not stack_page_id */
 
   /* ── File descriptors ───────────────────────────────────────────────── */
   int16_t fd_map[FD_MAX]; /* per-process fd -> system descriptor ID map
