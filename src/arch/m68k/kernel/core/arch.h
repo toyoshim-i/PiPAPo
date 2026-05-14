@@ -18,6 +18,12 @@
 #define ARCH_VFORK_COPY_PROCESS_STACK 0
 #define ARCH_VFORK_CHILD_FRAME_POINTER 0
 
+/* Pointer to the saved d0-d7/a0-a6/SR/PC frame at SSP, captured by trap.S
+ * at TRAP #0 entry.  signal_check / sys_rt_sigreturn read/overwrite the
+ * SR/PC slots so the trap-exit RTE lands in the desired user context.
+ * Zero outside a syscall trap.  Defined in m68k_common.c. */
+extern volatile uint32_t m68k_trap_frame_sp;
+
 /* ── Context switch trigger ───────────────────────────────────────────────
  *
  * On 68k there is no PendSV equivalent.  We set a flag that the

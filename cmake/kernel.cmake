@@ -30,6 +30,7 @@ set(ARCH_M68K_SOURCES
     ${_KS_ROOT}/src/arch/m68k/boot/boot.S
     ${_KS_ROOT}/src/arch/m68k/kernel/core/m68k_common.c
     ${_KS_ROOT}/src/arch/m68k/kernel/core/probe_ram.S
+    ${_KS_ROOT}/src/arch/m68k/kernel/core/signal.c
     ${_KS_ROOT}/src/arch/m68k/kernel/core/string.c
     ${_KS_ROOT}/src/arch/m68k/kernel/core/switch.S
     ${_KS_ROOT}/src/arch/m68k/kernel/core/trap.S
