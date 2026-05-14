@@ -123,7 +123,7 @@ Each step builds and tests independently; one commit per step.
   [`src/arch/arm_m/kernel/core/arch.h`](../../src/arch/arm_m/kernel/core/arch.h).
   trap.S already has its own `extern signal_check` knowledge via the linker;
   no asm change.
-- `extern uint32_t svc_exc_return[]; int core_id(void);` — verify they come
+- `extern uint32_t arm_exc_return[]; int core_id(void);` — verify they come
   from a header already (no inline `extern` in the new `.c` file per
   [`feedback_no_in_function_externs.md`](file:///home/toyoshim/.claude/projects/-home-toyoshim-Work-PPAP/memory/feedback_no_in_function_externs.md)).
 - Remove the `__ARM_ARCH` block from shared `signal.c`.

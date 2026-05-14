@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "kernel/common/spinlock.h"
+#include "kernel/core/arch.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/signal/signal.h"
@@ -34,7 +35,7 @@
  *   [PSP - 8]   saved EXC_RETURN (4 bytes) + padding (4 bytes)
  *   [PSP]       original HW frame (8 or 26 words depending on FPU)
  *   PSP set to PSP - 40.
- *   svc_exc_return forced to basic frame (bit 4 = 1).
+ *   arm_exc_return forced to basic frame (bit 4 = 1).
  *
  * On exception return the CPU pops the new frame and runs the handler.
  * The handler's `bx lr` reaches the per-process sa_restorer the user
@@ -80,12 +81,12 @@ static int signal_setup_frame(int sig, sighandler_t handler) {
   /* Save original EXC_RETURN between signal frame and original HW frame.
    * sys_rt_sigreturn reads this to restore the correct frame type. */
   uint32_t cid = core_id();
-  frame[8] = svc_exc_return[cid]; /* saved EXC_RETURN */
+  frame[8] = arm_exc_return[cid]; /* saved EXC_RETURN */
   frame[9] = 0;                   /* padding          */
 
   /* Force SVC_Handler to return with basic frame (bit 4 = 1).
    * The signal handler starts without FPU context. */
-  svc_exc_return[cid] = svc_exc_return[cid] | 0x10u;
+  arm_exc_return[cid] = arm_exc_return[cid] | 0x10u;
 #endif
 
   __asm volatile("msr psp, %0" ::"r"(new_psp));
@@ -114,7 +115,7 @@ void signal_check(void) {
  *   which may be basic (32 bytes) or extended (104 bytes) depending on
  *   whether the signal handler used FPU.  After skipping that frame,
  *   we read the saved EXC_RETURN (8 bytes), then PSP = original frame.
- *   We also restore svc_exc_return so SVC_Handler returns with the
+ *   We also restore arm_exc_return so SVC_Handler returns with the
  *   correct EXC_RETURN for the original frame type.
  */
 long sys_rt_sigreturn(void) {
@@ -123,7 +124,7 @@ long sys_rt_sigreturn(void) {
 
 #if __ARM_ARCH >= 8
   uint32_t cid = core_id();
-  uint32_t exc_ret = svc_exc_return[cid];
+  uint32_t exc_ret = arm_exc_return[cid];
 
   /* Skip the sigreturn SVC's HW frame (basic or extended) */
   uint32_t frame_size = (exc_ret & 0x10u) ? 32u : 104u;
@@ -135,7 +136,7 @@ long sys_rt_sigreturn(void) {
   psp += 8;
 
   /* Restore original EXC_RETURN so SVC_Handler returns correctly */
-  svc_exc_return[cid] = orig_exc;
+  arm_exc_return[cid] = orig_exc;
 #else
   psp += 32;
 #endif

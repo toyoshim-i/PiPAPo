@@ -19,6 +19,9 @@
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/syscall/syscall.h"
 
+/* EXC_RETURN saved by the ARM-M SVC handler for signal frame fixups. */
+volatile uint32_t arm_exc_return[2] = {0, 0};
+
 /* Legacy ARM-only MSP scratch slot.  Current SVC entry stores the live
  * entry MSP in pcb_t.svc_msp; this symbol remains declared with the other
  * svc_* per-core slots for compatibility with older assembly references. */

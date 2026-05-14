@@ -82,9 +82,9 @@ SVC_Handler:
     @ --- Save EXC_RETURN for signal frame fixup (M33 FPU) ---
 #if __ARM_ARCH >= 8
     ldr   r0, [sp, #20]       @ r0 = EXC_RETURN from pushed lr
-    ldr   r1, =svc_exc_return
+    ldr   r1, =arm_exc_return
     adds  r1, r1, r6
-    str   r0, [r1]             @ svc_exc_return[core_id] = EXC_RETURN
+    str   r0, [r1]             @ arm_exc_return[core_id] = EXC_RETURN
 #endif
 
     @ --- Save original frame[0] for potential syscall restart ---
@@ -193,7 +193,7 @@ SVC_Handler:
 #if __ARM_ARCH >= 8
     @ Restore potentially-modified EXC_RETURN (signal delivery may have
     @ changed it to force a basic frame, sigreturn restores the original).
-    ldr   r0, =svc_exc_return
+    ldr   r0, =arm_exc_return
     adds  r0, r0, r6
     ldr   r0, [r0]
     str   r0, [sp, #20]       @ update stacked lr (= EXC_RETURN)

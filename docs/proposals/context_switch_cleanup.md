@@ -121,16 +121,15 @@ Done:
   `stack_page_id` as SSP storage.
 - m68k `execve()` no longer needs the deferred old-SSP-page free hook because
   syscall return switches between fixed kstack frames.
+- Xtensa now runs the PPAP syscall body on the fixed per-process kstack with a
+  `movsp` wrapper, leaving ESP-IDF's exception frame and final user return on
+  the original exception stack.
 - Kernel-stack-use reduction for deep subsystem paths is deferred in
   [`kernel_stack_use.md`](kernel_stack_use.md), because userland subsystem
   work may obsolete much of that path.
 
 Remaining:
 
-- Xtensa still carries user, kernel, and solicited switch frames on one process
-  stack.  The `xtensa_cc` build is reliable again and now uses the shared
-  Xtensa kernel source list; the remaining work is the functional fixed-kstack
-  migration.
 - Optional naming cleanup remains for arch switch helpers (`*_ctx_switch`).
 - ARM stack-size reduction is deferred until measurements are useful after, or
   independent of, userland subsystem migration.
@@ -139,22 +138,22 @@ Remaining:
 
 1. DONE: audit ARM-M, ia16, m68k, RISC-V, and Xtensa against the target
    contract in this proposal and the stack/context-switch docs.
-2. PARTIAL: move every architecture to the fixed per-process kstack model.
-   ARM-M, ia16, m68k, and RISC-V already use fixed kstack slots.  Xtensa is
-   now buildable again and remains the only functional migration target.
+2. DONE: move every architecture to the fixed per-process kstack model.
+   ARM-M, ia16, m68k, RISC-V, and Xtensa use fixed kstack slots for their
+   process kernel continuations.
 3. DONE: rename shared restart symbols from ARM-flavored `svc_*` names to
    syscall names:
    - `svc_restart[]` -> `syscall_restart[]`
    - `svc_saved_a0[]` -> `syscall_saved_arg0[]`
    - `svc_set_restart()` -> `syscall_set_restart()`
    - `mod_core.svc_set_restart` -> `mod_core.syscall_set_restart`
-4. REMAINING: keep ARM-only names for ARM-only state, such as
-   `svc_exc_return[]`.
+4. DONE: keep ARM-only names for ARM-only state, such as
+   `arm_exc_return[]`.
 5. REMAINING: normalize context-switch helper names where useful:
    - RISC-V already uses `riscv_ctx_switch`
    - m68k switch paths now share `m68k_ctx_switch`
    - ia16 now uses `i16_ctx_switch`
-  - Xtensa now uses `xtensa_ctx_switch` for the C handoff helper
+   - Xtensa now uses `xtensa_ctx_switch` for the C handoff helper
 6. DONE: keep the userland blocking-pipe test as coverage for one process
    blocking inside a syscall while another runnable process executes before
    the blocked syscall returns.
@@ -168,7 +167,7 @@ stay behavior-preserving unless a subtask explicitly calls for
 measurement-driven sizing.
 
 1. DONE: establish the common fixed-region helper for per-process kernel
-   stacks.  ARM-M, ia16, and RISC-V use it today.
+   stacks.  ARM-M, ia16, m68k, RISC-V, and Xtensa use it today.
 2. DONE: move RISC-V away from lazy `kernel_sp` initialization from the
    process stack page.  `qemu_rv32` and `pico2rv` now reserve fixed kstack
    regions and initialize slots through `proc_kstack_init_slot`.
@@ -181,8 +180,8 @@ measurement-driven sizing.
    slots while preserving the existing USP and full-frame switch contract.
 6. DONE: set m68k fixed-kstack user-process slots to 2 KB on `qemu_m68k` and
    `x68k`; TODO: measure high-water marks and shrink to 1 KB if safe.
-7. REMAINING: migrate Xtensa solicited switch frames to a fixed per-process
-   kernel stack.  The build prerequisite is done.
+7. DONE: migrate Xtensa syscall-path solicited switch frames to a fixed
+   per-process kernel stack.
 8. DEFERRED: measure pico1calc stack usage with CP/M and other deep subsystem
    paths.  See [`kernel_stack_use.md`](kernel_stack_use.md).
 9. DEFERRED: shrink pico1calc `PROC_KSTACK_SIZE` from 2 KB only if
@@ -201,7 +200,7 @@ replaces the image).  Each architecture currently tracks it differently:
 | `ia16`  | n/a — real-mode does not split user and kernel stacks      |
 | `m68k`  | `pcb_t::user_stack_page` (named field) plus `pcb_t::usp`   |
 | `riscv` | `user_pages[USER_PAGES_MAX - 1]` (magic slot, no name)     |
-| `xtensa`| `user_pages[USER_PAGES_MAX - 1]` for the copied vfork child stack; the normal process stack still uses `stack_page_id` while live switch frames remain on the shared process stack |
+| `xtensa`| normal process stack uses `stack_page_id`; the copied vfork child user stack uses `user_pages[USER_PAGES_MAX - 1]`; live syscall switch frames use the fixed kstack |
 
 The free sites in `sys_proc.c` mirror that fragmentation: every reference to
 `user_stack_page` in `sys_exit()`, the vfork-child cleanup branch, and the

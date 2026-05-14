@@ -36,7 +36,6 @@
 volatile int exec_pending[2] = {0, 0};
 volatile int syscall_restart[2] = {0, 0};
 volatile uint32_t syscall_saved_arg0[2] = {0, 0};
-volatile uint32_t svc_exc_return[2] = {0, 0};
 
 #if defined(__ia16__)
 static long ia16_sign_extend_arg(long value) {

@@ -22,6 +22,9 @@
 #define ARCH_VFORK_COPY_PROCESS_STACK 1
 #define ARCH_VFORK_CHILD_FRAME_POINTER 1
 
+extern volatile uint32_t arm_exc_return[2];
+extern volatile uint32_t svc_saved_msp[2];
+
 /* ── Context switch trigger ─────────────────────────────────────────────────
  */
 

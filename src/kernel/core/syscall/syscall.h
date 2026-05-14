@@ -54,14 +54,6 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5);
 extern volatile int exec_pending[2];
 extern volatile int syscall_restart[2];
 extern volatile uint32_t syscall_saved_arg0[2];
-extern volatile uint32_t
-    svc_exc_return[2]; /* EXC_RETURN saved by SVC_Handler (M33) */
-
-#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
-/* OLD MSP stashed across SVC body's per-process kernel-stack swap;
- * defined in src/arch/arm_m/kernel/core/arm_m_common.c. */
-extern volatile uint32_t svc_saved_msp[2];
-#endif
 
 /* Helper: mark current syscall for restart after blocking yield.
  * Sets both the global syscall_restart and the per-process flag used by
