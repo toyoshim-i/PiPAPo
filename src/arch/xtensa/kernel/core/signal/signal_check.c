@@ -1,5 +1,5 @@
 /*
- * signal.c — Xtensa LX7 signal delivery (stub)
+ * signal_check.c — Xtensa LX7 signal delivery (stub)
  *
  * CC-3 will wire real user-handler delivery once the trap glue passes a
  * saved register frame here.  Today this just consumes pending signals
@@ -15,12 +15,12 @@
  * sigaction-family syscalls link.
  */
 
-#include "kernel/core/signal/signal.h"
+#include "kernel/core/signal/signal_check.h"
 
-#include <stdint.h>
+#include <stddef.h>
 
 #include "common/errno.h"
-#include "kernel/core/signal/signal_helper.h"
+#include "kernel/core/signal/signal.h"
 
 void signal_check(void) {
   int sig;

@@ -1,5 +1,5 @@
 /*
- * signal.c — RISC-V signal delivery
+ * signal_check.c — RISC-V signal delivery
  *
  * mret-based, sa_restorer style.  signal_check plants a copy of the
  * interrupted trap frame on the user stack and rewrites the live frame
@@ -34,14 +34,14 @@
  *   regs[user_sp] = new_sp      (points just above the saved frame)
  */
 
-#include "kernel/core/signal/signal.h"
+#include "kernel/core/signal/signal_check.h"
 
 #include <stdint.h>
 
 #include "common/errno.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/proc/proc.h"
-#include "kernel/core/signal/signal_helper.h"
+#include "kernel/core/signal/signal.h"
 #include "kernel/core/syscall/syscall.h"
 
 #define RV32_TF_RA_IDX 0u

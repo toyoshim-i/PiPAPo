@@ -46,7 +46,7 @@
  * we then copy it to regs[0] (d0) for the caller.
  * ────────────────────────────────────────────────────────────────────── */
 
-#include "kernel/core/signal/signal.h"
+#include "kernel/core/signal/signal_check.h"
 #include "kernel/core/syscall/syscall.h"
 
 void m68k_syscall_entry(uint32_t *regs) {

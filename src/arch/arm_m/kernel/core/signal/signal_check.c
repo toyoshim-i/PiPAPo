@@ -1,5 +1,5 @@
 /*
- * signal.c — ARM Cortex-M signal delivery
+ * signal_check.c — ARM Cortex-M signal delivery
  *
  * RTE-based, sa_restorer style.  signal_check pushes a new HW exception
  * frame below PSP with LR = current->sig_restorers[sig].  The CPU unwinds
@@ -10,14 +10,15 @@
  * Frame layout — see signal_setup_frame below for the per-profile detail.
  */
 
-#include "kernel/core/signal/signal.h"
+#include "kernel/core/signal/signal_check.h"
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "kernel/common/spinlock.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
-#include "kernel/core/signal/signal_helper.h"
+#include "kernel/core/signal/signal.h"
 #include "kernel/core/syscall/syscall.h"
 
 /*

@@ -1,5 +1,5 @@
 /*
- * signal.c — Intel i8086 real-mode signal delivery
+ * signal_check.c — Intel i8086 real-mode signal delivery
  *
  * IRET-based, split-frame aware.  trap.S passes (user_sp, user_ss) from
  * the kernel-stack slot to signal_check(), which plants a new GP+IRET
@@ -31,14 +31,16 @@
  * pre-signal context.
  */
 
-#include "kernel/core/signal/signal.h"
+#include "kernel/core/signal/signal_check.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "kernel/common/config.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/proc/proc.h"
-#include "kernel/core/signal/signal_helper.h"
+#include "kernel/core/signal/signal.h"
 #include "kernel/core/syscall/syscall.h"
 
 #define I16_GP_FRAME_BYTES 18u  /* ES/DS/BP/DI/SI/DX/CX/BX/AX  (9 words) */

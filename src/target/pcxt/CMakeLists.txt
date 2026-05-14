@@ -310,7 +310,7 @@ set(ARCH_I16_SOURCES
   ${PPAP_ROOT}/src/arch/i16/kernel/core/switch.S
   ${PPAP_ROOT}/src/arch/i16/kernel/core/trap.S
   ${PPAP_ROOT}/src/arch/i16/kernel/core/i16_common.c
-  ${PPAP_ROOT}/src/arch/i16/kernel/core/signal.c
+  ${PPAP_ROOT}/src/arch/i16/kernel/core/signal/signal_check.c
   ${PPAP_ROOT}/src/arch/i16/kernel/core/smp.c
   ${PPAP_ROOT}/src/arch/i16/kernel/core/string.c
   ${PPAP_ROOT}/src/arch/i16/kernel/core/seg.c

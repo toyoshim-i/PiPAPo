@@ -1,33 +1,35 @@
 /*
- * signal.c — Signal infrastructure for PPAP
+ * signal.c — Architecture-independent signal core
  *
- *   sys_kill(pid, sig)            — send signal to process
- *   sys_rt_sigaction(sig, ...)    — install/query signal handler
- *                                   (legacy 3-arg sys_sigaction below
- *                                   survives only as a kernel-internal
- *                                   helper that ktest exercises)
- *   sys_rt_sigreturn()            — restore context after signal handler
- *   signal_check()                — called on return to user mode
+ *   signal_default_action(sig, regs)    — SIGCHLD-ignore / subsys hook /
+ *                                         sys_exit dispatch
+ *   signal_pop_pending(&sig, regs)      — preamble shared by every arch's
+ *                                         signal_check: state guard, pop
+ *                                         lowest pending, apply SIG_IGN
+ *                                         and SIG_DFL dispositions
+ *   signal_check_kernel()               — emulator-backed-task variant
+ *                                         (SIG_IGN / SIG_DFL only)
+ *   sys_kill(pid, sig)                  — post a pending signal
+ *   sys_sigaction(sig, hdl, old)        — legacy 3-arg, kernel-internal
+ *                                         (only ktest still calls it)
+ *   sys_rt_sigaction(sig, act, oact, …) — musl-compatible install/query
+ *   sys_rt_sigprocmask(how, set, oset, …)
  *
- * Signal delivery model:
- *   signal_check() runs on the syscall return path (ARM / ia16) or is
- *   driven by the trap handler that has a pointer to the saved register
- *   frame (m68k).  It delivers one pending, non-blocked signal per
- *   return:
- *     - SIG_IGN: clear pending bit, done
- *     - SIG_DFL: SIGCHLD ignored, all others terminate via sys_exit(128+sig)
- *     - User handler: arch-specific — see the per-arch branches below.
+ * Per-arch signal_check and sys_rt_sigreturn live in
+ * src/arch/<arch>/kernel/core/signal/signal_check.c — they build the
+ * arch-specific delivery frame and unwind it.  All arches share the
+ * sa_restorer model: user-space libc/crt supplies the sigreturn
+ * trampoline whose address is recorded per handler by rt_sigaction.
  */
 
 #include "kernel/core/signal/signal.h"
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "common/errno.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/common/bitops.h"
 #include "kernel/core/proc/proc.h"
-#include "kernel/core/proc/sched.h"
-#include "kernel/core/signal/signal_helper.h"
 #include "kernel/core/subsys/subsys.h"
 #include "kernel/core/syscall/syscall.h"
 
@@ -82,13 +84,6 @@ int signal_check_kernel(void) {
 
   return signal_default_action(sig, NULL);
 }
-
-/* signal_check and sys_rt_sigreturn live in
- * src/arch/<arch>/kernel/core/signal.c. All arches share the sa_restorer model:
- * user-space libc/crt provides the sigreturn trampoline, the kernel records its
- * address per handler via rt_sigaction, and signal_check uses it as the
- * handler's return target. Only the frame-building mechanics are arch-specific.
- */
 
 /* ── sys_kill ───────────────────────────────────────────────────────────────
  */
@@ -149,9 +144,6 @@ long sys_sigaction(long sig, long handler, long old_ptr) {
 
   return 0;
 }
-
-/* sys_rt_sigreturn lives in src/arch/<arch>/kernel/core/signal.c — body
- * differs per arch (unwinds the per-arch delivery frame). */
 
 /* ── sys_rt_sigaction ────────────────────────────────────────────────────── */
 /*

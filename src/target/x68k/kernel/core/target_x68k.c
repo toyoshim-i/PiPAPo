@@ -34,7 +34,7 @@
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
-#include "kernel/core/signal/signal.h"
+#include "kernel/core/signal/signal_check.h"
 #include "kernel/core/syscall/syscall.h"
 #ifdef PPAP_HAS_BLKDEV
 // TODO: core-side code including VFS driver headers directly bypasses

@@ -10,7 +10,7 @@ covering ~580 of its 856 lines.
 
 Eliminate both `#ifdef` ladders by moving each architecture's
 `signal_check` and `sys_rt_sigreturn` bodies into
-`src/arch/<arch>/kernel/core/signal.c`, leaving the shared file with the
+`src/arch/<arch>/kernel/core/signal/signal_check.c`, leaving the shared file with the
 genuinely architecture-independent code only.  No behavior change.
 
 ## Current state
@@ -199,20 +199,79 @@ Each step builds and tests independently; one commit per step.
 - Wire into [`cmake/kernel.cmake:47-53`](../../cmake/kernel.cmake#L47-L53).
 - **Verify:** `./scripts/build.sh xtensa_cc` builds and links.
 
-### Step 8 — Final shared-file cleanup
+### Step 8 — Final shared-file cleanup (revised)
 
-- Delete the now-empty "Architecture-specific signal delivery" overview
-  comment ([`signal.c:89-117`](../../src/kernel/core/signal/signal.c#L89-L117)).
-- Replace with a one-line pointer: "Per-arch delivery lives in
-  `src/arch/<arch>/kernel/core/signal.c`."
-- Keep the existing per-arch design docs as comments at the top of each new
-  per-arch file (they are the most valuable part of this file — preserve
-  verbatim).
-- Drop the `#ifdef` ladder from [`signal.h`](../../src/kernel/core/signal/signal.h)
-  if not already done in step 3.
-- **Verify:** full QEMU test matrix —
-  `qemu_arm` (24/24), `qemu_m68k` (19/19), `qemu_rv32` (no regression), plus
-  builds for `pico1calc`, `pico2`, `pico2rv`, `xtensa_cc`, `pcxt`.
+The original plan put per-arch `signal_check` prototypes into each arch's
+`arch.h`.  Reviewer pushback: `arch.h` is the forward-declaration header
+for the arch-abstraction API (`arch_yield`, `arch_wfi`, etc.); cramming
+`signal_check` there breaks the header-pairs-with-its-`.c` convention.
+Reviewer also pointed out that `signal_helper.h` was the wrong shape —
+two of its three contents pair with the shared `signal.c` (so they
+belong in `signal.h`) and `ctz32` is a bit-twiddling helper unrelated
+to signals (so it belongs in a generic bitops header).  Revised step:
+
+**Per-arch `signal_check.{c,h}`:** rename each per-arch `signal.c` →
+`signal_check.c` and pair it with a new `signal_check.h` in the same
+directory.  Two reasons:
+  - Header name = the single function it declares (`signal_check`),
+    so the file's purpose is unambiguous from the filename alone.
+  - Avoids the basename collision that would arise from putting a
+    per-arch `signal.h` next to the shared
+    `src/kernel/core/signal/signal.h` (different paths but identical
+    leafname — confusing).
+
+Non-arch callers reach the per-arch header via
+`#include "kernel/core/signal/signal_check.h"`, which resolves to the
+appropriate per-arch overlay (-I `src/arch/<arch>` ahead of -I `src`),
+the same dispatch mechanism `kernel/core/arch.h` uses today.  The
+per-arch files live under `src/arch/<arch>/kernel/core/signal/` —
+mirroring the shared `src/kernel/core/signal/` layout.  The two
+C callers of `signal_check`
+([`target_qemu_m68k.c`](../../src/target/qemu_m68k/kernel/core/target_qemu_m68k.c)
+and [`target_x68k.c`](../../src/target/x68k/kernel/core/target_x68k.c))
+use this path; each per-arch `signal_check.c` includes its own paired
+header via the same path (own-header-first rule satisfied because the
+overlay resolves to the file in the same directory).
+
+**`bitops.h`:** create `src/kernel/common/bitops.h` containing only
+`static inline int ctz32(uint32_t x)`.  Generic bit-twiddling helpers;
+future `clz32` / `popcount32` collocate cleanly.  Hand-rolled — no
+`__builtin_ctz` / libgcc `__ctzsi2` dependency.
+
+**Promote helper prototypes into `signal.h`:** `signal_default_action`
+and `signal_pop_pending` are implemented in the shared `signal.c`, so
+their declarations belong in the paired `signal.h`, not in a separate
+"helper" header.
+
+**Delete `signal_helper.h`** — its three contents are redistributed
+above.
+
+**Drop the ladder** from
+[`signal.h`](../../src/kernel/core/signal/signal.h): per-arch
+`signal_check` prototypes now live in per-arch headers.
+
+**Update file-header docs** in `signal.c` and `signal.h` to reflect
+the post-cleanup state.
+
+**Per-arch `signal_check.c` include block** after this step:
+```c
+#include "kernel/core/signal/signal_check.h"  /* own header (overlay-resolved) */
+
+#include <stdint.h>
+
+#include "common/errno.h"
+#include "kernel/core/arch.h"           /* <arch>_trap_frame_sp etc. */
+#include "kernel/core/proc/proc.h"
+#include "kernel/core/signal/signal.h"  /* signal_pop_pending */
+#include "kernel/core/syscall/syscall.h"
+```
+(`kernel/common/bitops.h` is needed only in the shared `signal.c` —
+the per-arch files go through `signal_pop_pending` and don't call
+`ctz32` directly.)
+
+**Verify:** full QEMU test matrix —
+`qemu_arm` (24/24), `qemu_m68k` (24/24), `qemu_rv32` (17/17), plus
+builds for `pico1calc`, `pico2`, `pico2rv`, `xtensa_cc`, `pcxt` kernel.
 
 ## `ctz32` vs `__builtin_ctz`
 

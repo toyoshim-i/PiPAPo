@@ -1,5 +1,5 @@
 /*
- * signal.c — Motorola 68000 signal delivery
+ * signal_check.c — Motorola 68000 signal delivery
  *
  * RTE-based, sa_restorer style.  signal_check rewrites the (SR, PC)
  * slot in the trap frame so rte enters the handler in user mode, and
@@ -36,14 +36,14 @@
  * and ia16 branches.
  */
 
-#include "kernel/core/signal/signal.h"
+#include "kernel/core/signal/signal_check.h"
 
 #include <stdint.h>
 
 #include "common/errno.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/proc/proc.h"
-#include "kernel/core/signal/signal_helper.h"
+#include "kernel/core/signal/signal.h"
 #include "kernel/core/syscall/syscall.h"
 
 #define M68K_TRAP_FRAME_SIZE 66u

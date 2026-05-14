@@ -56,9 +56,9 @@ SYSCALL_STUB ptrace,       0x000F
 # as the glibc/musl user-space sigreturn trampolines on Linux.
 #
 # Xtensa kernel-side signal_check / sys_rt_sigreturn are still stubs
-# (see src/kernel/core/signal/signal.c — "CC-3 will implement"), so this
-# trampoline is provided for linkage and forward compatibility; with no
-# user handler currently delivered, control never reaches it today.
+# (see src/arch/xtensa/kernel/core/signal/signal_check.c — "CC-3 will implement"),
+# so this trampoline is provided for linkage and forward compatibility;
+# with no user handler currently delivered, control never reaches it today.
 .section .text._ppap_sigreturn_trampoline, "ax"
 .global _ppap_sigreturn_trampoline
 _ppap_sigreturn_trampoline:
