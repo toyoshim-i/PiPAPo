@@ -125,3 +125,34 @@ xtensa_do_yield:
     jx      a8                        # jump to entry
 
     .size   xtensa_do_yield, . - xtensa_do_yield
+
+    .align 4
+    .global xtensa_syscall_on_kstack
+    .type   xtensa_syscall_on_kstack, @function
+
+# -----------------------------------------------------------------------------
+# xtensa_syscall_on_kstack(frame, kernel_sp)
+#
+# Called from ESP-IDF's exception-table handler through the normal windowed ABI.
+# The ESP-IDF exception frame and caller chain stay on the original exception
+# stack.  Only the PPAP syscall body and any solicited sched_switch() frame run
+# on the fixed process kstack.
+# -----------------------------------------------------------------------------
+xtensa_syscall_on_kstack:
+    entry   a1, 32
+
+    mov     a4, a1                    # original exception-stack frame
+    addi    a3, a3, -32
+    movi    a5, -16
+    and     a3, a3, a5                # align the kstack frame
+    s32i    a4, a3, 16                # saved exception-stack frame
+
+    movsp   a1, a3
+    mov     a6, a2                    # call4: our a6 -> callee's a2
+    call4   xtensa_syscall_body
+
+    l32i    a3, a1, 16
+    movsp   a1, a3
+    retw
+
+    .size   xtensa_syscall_on_kstack, . - xtensa_syscall_on_kstack

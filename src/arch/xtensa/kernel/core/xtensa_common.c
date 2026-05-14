@@ -29,6 +29,7 @@ volatile uint32_t xtensa_trap_ready = 0;
 volatile uint32_t xtensa_tick_count = 0;
 
 void xtensa_syscall_body(XtExcFrame *frame);
+void xtensa_syscall_on_kstack(XtExcFrame *frame, uintptr_t kernel_sp);
 static void xtensa_syscall_handler(XtExcFrame *frame);
 static void xtensa_fault_handler(XtExcFrame *frame);
 
@@ -195,6 +196,10 @@ void xtensa_syscall_body(XtExcFrame *frame) {
  * PPAP syscall body so the fixed-kstack migration can switch stacks before
  * running syscall_dispatch() and the cooperative yield path. */
 static void xtensa_syscall_handler(XtExcFrame *frame) {
+  if (current && current->kernel_sp != 0u) {
+    xtensa_syscall_on_kstack(frame, (uintptr_t)current->kernel_sp);
+    return;
+  }
   xtensa_syscall_body(frame);
 }
 

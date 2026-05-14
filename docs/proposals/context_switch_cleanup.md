@@ -281,20 +281,21 @@ the process stack.
 4. DONE: reserve a fixed kstack region for Xtensa and initialize the Xtensa
    `kernel_sp` field from it.  Because ESP-IDF owns the final linker script,
    the region is aligned arch-owned BSS rather than a target `.ld` section.
-5. Move syscall continuation and solicited yield frames onto fixed kstack
-   slots, keeping register-window spilling hidden inside the arch helper.
-   DONE for manufactured new-process frames (`exec` initial frames and
-   `vfork` child frames); live cooperative yield frames still remain.
-6. Split the ESP-IDF exception-table syscall entry wrapper from the PPAP
-   syscall body so an arch trampoline can switch to `pcb_t.kernel_sp` before
-   running `syscall_dispatch()` or `sched_switch()`.
-7. REMAINING: add the Xtensa syscall-stack trampoline.  A direct `a1` switch
-   to `pcb_t.kernel_sp` builds cleanly, but hardware testing double-excepts at
-   the first user process.  The accepted version must preserve ESP-IDF's
-   exception-entry and Xtensa window state instead of only changing the C
-   stack pointer.
-8. REMAINING: move live syscall-path solicited yield frames onto the fixed
-   kstack as the normal blocked continuation.
+5. DONE: move syscall continuation and solicited yield frames onto fixed
+   kstack slots, keeping register-window spilling hidden inside the arch
+   helper.  Manufactured new-process frames (`exec` initial frames and
+   `vfork` child frames) are built on the fixed kstack, and live syscall-path
+   cooperative yield frames are now created below the syscall body on the
+   fixed kstack.
+6. DONE: split the ESP-IDF exception-table syscall entry wrapper from the
+   PPAP syscall body so an arch trampoline can switch to `pcb_t.kernel_sp`
+   before running `syscall_dispatch()` or `sched_switch()`.
+7. DONE: add the Xtensa syscall-kstack handoff.  The accepted version keeps
+   ESP-IDF's exception frame and return path on the original exception stack,
+   but calls `xtensa_syscall_body()` through a `movsp` stack switch onto
+   `pcb_t.kernel_sp`.
+8. DONE: move live syscall-path solicited yield frames onto the fixed kstack
+   as the normal blocked continuation.
 9. Make non-syscall cooperative switch paths use fixed kstack or stay
    explicitly limited to kernel-idle/target bootstrap paths.
 10. Make timer/fault return paths restore either normal user state or suspended
@@ -471,16 +472,35 @@ Current state:
 - `xtensa_ctx_switch(current_sp)` stores the outgoing frame pointer in
   `current->sp`, picks `sched_next()`, installs `current_core[0]`, and returns
   the incoming process's saved frame pointer.
-- Syscalls enter through the illegal-instruction exception path.  When a
-  syscall blocks or a preemption is pending, the handler calls
-  `sched_switch()`, which performs a real `xtensa_do_yield()`.
+- Syscalls enter through the illegal-instruction exception path.  The ESP-IDF
+  exception-table wrapper keeps ESP-IDF's exception frame on the original
+  exception stack, then calls `xtensa_syscall_body()` through
+  `xtensa_syscall_on_kstack()`.
+- `xtensa_syscall_on_kstack()` uses Xtensa `movsp` rather than a plain `a1`
+  move so the windowed ABI can keep its spill/underflow state coherent across
+  the temporary stack switch.  When a syscall blocks or a preemption is
+  pending, `xtensa_syscall_body()` calls `sched_switch()`, which performs a
+  real `xtensa_do_yield()` below that fixed-kstack body frame.
 - The ESP-IDF exception-table syscall wrapper is separate from the PPAP
-  syscall body.  This remains the insertion point for a future fixed-kstack
-  handoff.
+  syscall body.  This remains the boundary for Xtensa-specific exception
+  entry handling.
 - A direct syscall trampoline that only switches `a1` to `pcb_t.kernel_sp`
   was tried and rejected: it builds, but `xtensa_cc` hardware testing
   double-excepts before user tests start.  The next version must account for
   Xtensa window spill/restore state and ESP-IDF's exception-entry contract.
+- A first two-stage prototype also remains rejected.  It copied `XtExcFrame`
+  to the fixed kstack, patched the ESP-IDF return frame to enter a windowed
+  PPAP trampoline, and passed the copied frame through the simulated `call4`
+  argument slot.  Hardware testing got past the previous immediate
+  double-exception, but still panicked at the first user process with a kernel
+  exception / EXCCAUSE=1 while unwinding through the syscall body.  This points
+  at an unresolved Xtensa window spill / exception-mode interaction, so the
+  runtime hook was backed out instead of leaving a known-broken path.
+- ESP-IDF's `_xt_user_exc` creates a full `XtExcFrame`, calls the registered
+  exception-table handler with a windowed `callx4`, restores the saved frame,
+  and exits with `rfe`.  The accepted path leaves that frame and return tail
+  untouched.  PPAP only switches stacks around the syscall body itself, then
+  switches back before returning to ESP-IDF.
 - Timer ISR currently sets the shared pending flag through
   `sched_timer_tick()`, but the real switch occurs when code reaches the
   cooperative yield path.
@@ -500,19 +520,23 @@ Plan:
 5. DONE: add `pcb_t.kernel_sp` for Xtensa.
 6. DONE: initialize `pcb_t.kernel_sp` from a target-reserved fixed kstack
    region.  `xtensa_cc` uses 2 KB user-process slots for the staging region.
-7. Move solicited yield frames and syscall continuations onto the fixed kstack
-   while preserving the window-spill discipline.  DONE for manufactured
-   new-process frames; remaining work is the live cooperative yield frame.
+7. DONE: move solicited yield frames and syscall continuations onto the fixed
+   kstack while preserving the window-spill discipline.  Manufactured
+   new-process frames and live syscall-path cooperative yield frames now use
+   the fixed kstack.
 8. DONE: split the ESP-IDF exception-table syscall entry wrapper from the
    PPAP syscall body, leaving a clean insertion point for a kstack-switch
    trampoline.
-9. Add the kstack-switch trampoline before `xtensa_syscall_body()`.  It must
-   save the ESP-IDF exception-entry state, preserve the Xtensa window ABI
-   invariants needed by spill/restore, switch to `pcb_t.kernel_sp`, call the
-   syscall body, and restore the exception-entry state before returning to
-   ESP-IDF.
-10. Move syscall-path solicited yield frames onto the fixed kstack by making
-   `sched_switch()` run only after that accepted trampoline is active.
+9. DONE: add the syscall-kstack handoff:
+   - keep ESP-IDF's incoming `XtExcFrame` on the original exception stack;
+   - switch only the PPAP syscall body to `current->kernel_sp`;
+   - use `movsp` for both stack-pointer transitions, not a plain `a1` move;
+   - run `xtensa_syscall_body()` on the fixed kstack so blocking waits and
+     `xtensa_do_yield()` build live frames there;
+   - switch back before returning to ESP-IDF so `_xt_user_exc` owns the final
+     user return.
+10. DONE: move syscall-path solicited yield frames onto the fixed kstack by
+   making `sched_switch()` run only under the accepted syscall-body wrapper.
 11. Audit non-syscall `sched_switch()` callers.  Keep target bootstrap and
    idle-only uses explicit, and move any process continuation path onto the
    fixed kstack before it can block.
