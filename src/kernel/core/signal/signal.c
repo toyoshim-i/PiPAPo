@@ -27,6 +27,7 @@
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
+#include "kernel/core/signal/signal_helper.h"
 #include "kernel/core/subsys/subsys.h"
 #include "kernel/core/syscall/syscall.h"
 
@@ -37,31 +38,7 @@ struct kernel_sigaction {
   uint32_t mask[2];
 };
 
-static int ctz32(uint32_t x) {
-  int n = 0;
-  if (!(x & 0xFFFF)) {
-    n += 16;
-    x >>= 16;
-  }
-  if (!(x & 0xFF)) {
-    n += 8;
-    x >>= 8;
-  }
-  if (!(x & 0xF)) {
-    n += 4;
-    x >>= 4;
-  }
-  if (!(x & 0x3)) {
-    n += 2;
-    x >>= 2;
-  }
-  if (!(x & 0x1)) {
-    n += 1;
-  }
-  return n;
-}
-
-static int signal_default_action(int sig, uint32_t *regs) {
+int signal_default_action(int sig, uint32_t *regs) {
   if (sig == SIGCHLD) return 1;
 
   {
