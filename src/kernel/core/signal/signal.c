@@ -12,7 +12,7 @@
  *   sys_kill(pid, sig)                  — post a pending signal
  *   sys_sigaction(sig, hdl, old)        — legacy 3-arg, kernel-internal
  *                                         (only ktest still calls it)
- *   sys_rt_sigaction(sig, act, oact, …) — musl-compatible install/query
+ *   sys_rt_sigaction(sig, act, oact, …) — POSIX-style install/query
  *   sys_rt_sigprocmask(how, set, oset, …)
  *
  * Per-arch signal_check and sys_rt_sigreturn live in
@@ -147,14 +147,20 @@ long sys_sigaction(long sig, long handler, long old_ptr) {
 
 /* ── sys_rt_sigaction ────────────────────────────────────────────────────── */
 /*
- * musl's sigaction() calls rt_sigaction(sig, act, oact, sigsetsize).
+ * User-space calls rt_sigaction(sig, act, oact, sigsetsize) passing a
+ * pointer to `struct ppap_sigaction` (declared in src/user/syscall.h):
  *
- * struct k_sigaction {
- *     void (*handler)(int);    // offset 0
- *     unsigned long sa_flags;  // offset 4
- *     void (*sa_restorer)(void); // offset 8
- *     unsigned long sa_mask[2];  // offset 12
- * };
+ *   struct ppap_sigaction {
+ *     void (*sa_handler)(int);    // offset 0
+ *     unsigned long sa_flags;     // offset 4
+ *     void (*sa_restorer)(void);  // offset 8
+ *     unsigned long sa_mask[2];   // offset 12
+ *   };
+ *
+ * Kernel reads/writes the four 32-bit slots through `struct
+ * kernel_sigaction` above — matching the wire layout without committing
+ * to user-side function-pointer types.  PPAP's user-space sigaction()
+ * lives in src/user/lib/sigaction.c.
  */
 long sys_rt_sigaction(long sig, uintptr_t act_ptr, uintptr_t oact_ptr,
                       long sigsetsize) {
