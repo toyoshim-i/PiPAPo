@@ -64,4 +64,26 @@ static inline int ctz32(uint32_t x) {
  */
 int signal_default_action(int sig, uint32_t *regs);
 
+/*
+ * Pop one deliverable pending signal and apply the trivial dispositions
+ * (SIG_IGN discard, SIG_DFL via signal_default_action).
+ *
+ * Intended to run at the top of every per-arch signal_check.  Collapses
+ * the four-arch preamble (state guard / mask / ctz / clear-bit / IGN /
+ * DFL) into one call.
+ *
+ * Returns:
+ *   0 — no further action.  Either no signal was deliverable, the
+ *       handler was SIG_IGN (consumed, discard), or SIG_DFL ran
+ *       (subsys hook handled it, or sys_exit did not return).
+ *   1 — `*sig_out` holds the popped signal number and the handler at
+ *       current->sig_handlers[*sig_out] is a user function pointer.
+ *       Caller builds the arch-specific delivery frame.
+ *
+ * `regs` is forwarded to signal_default_action for arches that pass
+ * a saved-register frame (m68k / riscv).  Pass NULL on arches that
+ * don't (arm_m / ia16 / xtensa).
+ */
+int signal_pop_pending(int *sig_out, uint32_t *regs);
+
 #endif /* PPAP_KERNEL_CORE_SIGNAL_SIGNAL_HELPER_H */

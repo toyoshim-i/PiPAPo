@@ -51,6 +51,26 @@ int signal_default_action(int sig, uint32_t *regs) {
   return 1;
 }
 
+int signal_pop_pending(int *sig_out, uint32_t *regs) {
+  if (!current || current->state != PROC_RUNNABLE) return 0;
+
+  uint32_t deliverable = current->sig_pending & ~current->sig_blocked;
+  if (!deliverable) return 0;
+
+  int sig = ctz32(deliverable);
+  current->sig_pending &= ~(1u << sig);
+
+  sighandler_t handler = current->sig_handlers[sig];
+  if (handler == SIG_IGN) return 0;
+  if (handler == SIG_DFL) {
+    signal_default_action(sig, regs);
+    return 0;
+  }
+
+  *sig_out = sig;
+  return 1;
+}
+
 int signal_check_kernel(void) {
   uint32_t deliverable = current->sig_pending & ~current->sig_blocked;
   if (!deliverable) return 0;
