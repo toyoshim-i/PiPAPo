@@ -83,48 +83,12 @@ int signal_check_kernel(void) {
   return signal_default_action(sig, NULL);
 }
 
-/* ── Architecture-specific signal delivery ─────────────────────────────────
- *
- * All arches share the sa_restorer model: user-space libc/crt provides
- * the sigreturn trampoline, the kernel records its address per handler
- * via rt_sigaction, and signal_check uses it as the handler's return
- * target.  Only the frame-building mechanics are arch-specific.
- *
- * ARM:  RTE-based.  signal_setup_frame pushes a new HW exception frame
- *       below PSP with LR = current->sig_restorers[sig].  The CPU unwinds
- *       into the handler; `bx lr` lands on the restorer, which issues
- *       SYS_RT_SIGRETURN.  sys_rt_sigreturn advances PSP past the
- *       sig-delivery frame.
- *
- * m68k: RTE-based.  signal_check rewrites the (SR, PC) slot in the trap
- *       frame so rte enters the handler in user mode, and plants a small
- *       sig-arg + saved-context trailer below USP.  Handler's `rts`
- *       lands on the restorer (which pops the sig arg slot and issues
- *       SYS_RT_SIGRETURN).  sys_rt_sigreturn reads the saved (SR, PC,
- *       USP) out of the trailer and rewrites the current trap frame so
- *       the trap-exit rte resumes at the pre-signal user PC.
- *
- * i16:  IRET-based real-mode delivery.  trap.S passes (user_sp, user_ss)
- *       from the kernel-stack slot to signal_check(), which plants a new
- *       GP+IRET frame plus a small trailer on the user stack and returns
- *       the new user_sp.  Handler's near `ret` lands on the restorer in
- *       proc_seg; that stub issues INT 30h SYS_RT_SIGRETURN, which
- *       restores the pre-signal user_sp in the kernel slot.  See the
- *       frame-layout comment on the i16 branch below.
- * ────────────────────────────────────────────────────────────────────────── */
-
-#if defined(__xtensa__)
-
-/* Xtensa signal delivery — CC-3 will implement. */
-
-void signal_setup_frame(int sig) {
-  /* Stub: deliver default action (terminate) for now. */
-  if (current->sig_handlers[sig] == (sighandler_t)0 /* SIG_DFL */) {
-    sys_exit(128 + sig);
-  }
-}
-
-#endif /* __m68k__ / ARM / __riscv / __xtensa__ */
+/* signal_check and sys_rt_sigreturn live in
+ * src/arch/<arch>/kernel/core/signal.c. All arches share the sa_restorer model:
+ * user-space libc/crt provides the sigreturn trampoline, the kernel records its
+ * address per handler via rt_sigaction, and signal_check uses it as the
+ * handler's return target. Only the frame-building mechanics are arch-specific.
+ */
 
 /* ── sys_kill ───────────────────────────────────────────────────────────────
  */
@@ -186,15 +150,8 @@ long sys_sigaction(long sig, long handler, long old_ptr) {
   return 0;
 }
 
-/* ── sys_rt_sigreturn ──────────────────────────────────────────────────────
- */
-
-#if defined(__xtensa__)
-
-/* Xtensa sigreturn — CC-3 will implement. */
-long sys_rt_sigreturn(void) { return -(long)ENOSYS; }
-
-#endif /* __m68k__ / ARM / __riscv / __xtensa__ */
+/* sys_rt_sigreturn lives in src/arch/<arch>/kernel/core/signal.c — body
+ * differs per arch (unwinds the per-arch delivery frame). */
 
 /* ── sys_rt_sigaction ────────────────────────────────────────────────────── */
 /*
