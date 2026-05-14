@@ -28,6 +28,12 @@
 
 extern volatile uint16_t i16_current_ksp;
 
+/* User_SP slot on the kernel stack, captured by trap.S at INT 30h entry.
+ * signal_check / sys_rt_sigreturn read/write it to splice the post-trap
+ * IRET frame.  sys_proc.c also reads it for ptrace's syscall-entry SP
+ * snapshot.  Zero outside a syscall trap.  Defined in i16_common.c. */
+extern volatile uint16_t i16_trap_frame_sp;
+
 /* Shared flag-based yield.  See kernel/common/arch_yield_default.h.
  * Skip the default arch_sched_switch: ia16 has no PendSV equivalent,
  * so a thread-context switch needs i16_ctx_switch() directly rather

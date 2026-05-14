@@ -42,10 +42,6 @@
 #define TRACE_MODE_MASK \
   (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
 
-#if defined(__ia16__)
-extern volatile uint16_t i16_trap_frame_sp;
-#endif
-
 #define EXEC_SNAPSHOT_IMAGE_OFF 0u /* saved proc_image_t */
 #define EXEC_SNAPSHOT_USER_OFF \
   ((uint16_t)sizeof(proc_image_t)) /* saved user_pages[] */

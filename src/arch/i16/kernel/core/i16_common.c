@@ -5,15 +5,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Current process's kernel stack pointer.  ISR/syscall entry loads
- * SS:SP from SS=0:i16_current_ksp.  Updated on context switch and
- * at boot.  Avoids dereferencing current_core before SS=0 is set. */
-volatile uint16_t i16_current_ksp = 0xFFFC; /* boot stack top */
+#include "kernel/core/arch.h" /* i16_current_ksp, i16_trap_frame_sp */
+
+/* Declared in arch.h.  Boot stack top — set before current_core is wired. */
+volatile uint16_t i16_current_ksp = 0xFFFC;
 
 /* Tick counter incremented by timer handler */
 volatile uint32_t i16_tick_count = 0;
 
-/* Current INT 30h saved-frame SP, captured by trap.S for sys_rt_sigreturn. */
+/* Declared in arch.h — see header for semantics. */
 volatile uint16_t i16_trap_frame_sp = 0;
 
 /* -- Initial stack frame for new processes --------------------------------
