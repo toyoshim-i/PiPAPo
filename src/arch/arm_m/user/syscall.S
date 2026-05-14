@@ -213,8 +213,8 @@ kill:
 @ The kernel records this symbol's address as sa_restorer when sigaction()
 @ installs a handler, and uses it as the handler's LR target at delivery
 @ time.  The handler's `bx lr` lands here and this stub issues
-@ SYS_RT_SIGRETURN to unwind the signal frame — same role as the sigreturn
-@ trampolines glibc/musl provide on Linux.
+@ SYS_RT_SIGRETURN to unwind the signal frame — same role as the
+@ sigreturn trampolines a Linux libc provides.
 .section .text._ppap_sigreturn_trampoline, "ax", %progbits
 .global _ppap_sigreturn_trampoline
 .thumb_func

@@ -2,7 +2,7 @@
  * errno.h --- POSIX error codes
  *
  * Shared between kernel and user space.  Numbers match the Linux/ARM
- * EABI ABI so that musl libc programs interpret them correctly when
+ * EABI ABI so that user-space libc interprets them correctly when
  * returned as negative values from syscalls.
  */
 

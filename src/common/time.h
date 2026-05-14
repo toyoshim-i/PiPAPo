@@ -3,7 +3,7 @@
  *
  * struct timespec is passed by nanosleep, clock_gettime32,
  * clock_nanosleep32, ppoll, and any other 32-bit time syscall.
- * Layout matches musl libc on 32-bit ARM / m68k / RISC-V.
+ * Layout matches the Linux 32-bit timespec on ARM / m68k / RISC-V.
  */
 
 #ifndef PPAP_COMMON_TIME_H

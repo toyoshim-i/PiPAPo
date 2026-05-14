@@ -690,7 +690,7 @@ the serial mirror (`_OUT232C`).
 ### 8.4 TERM=dumb for Shell Startup
 
 Some shells (historically hush, but kept as a precaution for any future
-musl-linked shell) probe terminal capabilities by sending ESC[6n
+libc-linked shell) probe terminal capabilities by sending ESC[6n
 (cursor position query) before `/etc/profile` is sourced.  The X68000
 IOCS cannot respond to this query, so init sets `TERM=dumb` in the
 default environment to suppress any such probe.

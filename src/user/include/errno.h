@@ -19,7 +19,7 @@
 
 extern int errno;
 
-/* musl-style indirection used by some third-party headers. */
+/* POSIX __errno_location indirection used by some third-party headers. */
 int *__errno_location(void);
 
 #endif /* _ERRNO_H */

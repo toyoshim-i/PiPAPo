@@ -2,7 +2,7 @@
  * termios.h --- Terminal I/O constants and structures
  *
  * Shared between kernel and user space.
- * Layout matches Linux ARM (used by musl libc).
+ * Layout matches Linux ARM termios.
  */
 
 #ifndef PPAP_COMMON_TERMIOS_H

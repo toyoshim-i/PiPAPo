@@ -49,7 +49,7 @@
 /* ── TRAP #0 syscall dispatch ────────────────────────────────────────── *
  *
  * Called from m68k_trap0_handler (trap.S) with a pointer to the saved
- * register frame.  Register layout (Linux m68k / musl convention):
+ * register frame.  Register layout (Linux m68k syscall convention):
  *
  *   regs[0]  = d0  (syscall number → overwritten with return value)
  *   regs[1]  = d1  (arg 1)

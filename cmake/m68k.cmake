@@ -10,7 +10,7 @@
 include_guard(GLOBAL)
 
 # Shared build directory for userland artifacts (rogue, etc.).
-# All m68k targets share one build to avoid redundant musl/rogue rebuilds.
+# All m68k targets share one build to avoid redundant rebuilds.
 set(PPAP_SHARED_BUILD "${PPAP_ROOT}/build/m68k")
 
 # Userland build config (rogue, romfs pipeline)

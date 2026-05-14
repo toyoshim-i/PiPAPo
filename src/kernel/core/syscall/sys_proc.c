@@ -1507,10 +1507,10 @@ void kernel_panic_halt(uint8_t status) { target_qemu_poweroff(status); }
  * again because sched_next() only picks PROC_RUNNABLE processes.
  */
 long sys_exit(long status) {
-  /* Guard against double-exit.  musl's _Exit() calls SYS_exit_group
-   * then SYS_exit in a loop.  On RISC-V, the second call can reach
-   * here if the context switch after the first exit doesn't happen
-   * before the ecall return path re-executes. */
+  /* Guard against double-exit.  Some user-space _Exit() paths issue
+   * SYS_exit_group then SYS_exit in a loop.  On RISC-V, the second
+   * call can reach here if the context switch after the first exit
+   * doesn't happen before the ecall return path re-executes. */
   if (current->state == PROC_ZOMBIE) {
 #if defined(__xtensa__)
     /* On Xtensa, syscall handler performs the post-syscall switch when it

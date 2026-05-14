@@ -26,7 +26,7 @@ PROC_FREE → PROC_RUNNABLE → PROC_BLOCKED → PROC_ZOMBIE → PROC_FREE
 
 ## 2. Normal Exit Flow
 
-When a process calls `_exit(status)` (or musl's `exit()` → `_Exit()`):
+When a process calls `_exit(status)` (or libc's `exit()` → `_Exit()`):
 
 ```
 Process calls _exit(status)
@@ -239,7 +239,7 @@ on microcontrollers with no MMU.
   isn't calling `waitpid()`. Check if the parent is alive and in its
   wait loop.
 
-- **Double-free on exit**: check if musl-linked binaries trigger the
+- **Double-free on exit**: check if libc-linked binaries trigger the
   double-exit path. The zombie guard should prevent it, but verify with
   `trace --ppap /bin/command`.
 

@@ -5,8 +5,8 @@
  * Builds a struct ppap_sigaction on the stack with sa_restorer set to
  * the per-arch _ppap_sigreturn_trampoline symbol (provided by each
  * arch's user/syscall.S) and forwards to SYS_RT_SIGACTION.  Same
- * convention as glibc / musl on Linux: libc owns the sigreturn
- * trampoline, the kernel just records its address via sa_restorer.
+ * convention as a Linux libc: libc owns the sigreturn trampoline,
+ * the kernel just records its address via sa_restorer.
  *
  * Compiled into PPAP libc as a regular libc unit by cmake/user.cmake.
  * Every arch that goes through user.cmake must therefore provide

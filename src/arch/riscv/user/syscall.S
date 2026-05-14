@@ -48,7 +48,7 @@ SYSCALL_STUB ptrace,    0x000F
 # Recorded as sa_restorer when sigaction() installs a handler (see
 # sigaction.c).  Handler's `ret` jumps to ra == _ppap_sigreturn_trampoline;
 # this stub issues SYS_RT_SIGRETURN to unwind the delivery frame.  Same
-# role as the glibc/musl user-space sigreturn trampolines on Linux.
+# role as a Linux libc's user-space sigreturn trampoline.
 .section .text._ppap_sigreturn_trampoline, "ax"
 .global _ppap_sigreturn_trampoline
 _ppap_sigreturn_trampoline:

@@ -3,7 +3,7 @@
  *
  * Shared between kernel and user space.
  * struct stat is the PPAP-native stat structure (4 x uint32_t),
- * NOT the Linux-compat stat64 used by musl.
+ * NOT the Linux UAPI stat64 layout.
  */
 
 #ifndef PPAP_COMMON_STAT_H

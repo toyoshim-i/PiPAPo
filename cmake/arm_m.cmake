@@ -10,7 +10,7 @@
 include_guard(GLOBAL)
 
 # Shared build directory for userland artifacts (rogue, etc.).
-# All ARM targets share one build to avoid redundant musl/rogue rebuilds.
+# All ARM targets share one build to avoid redundant rebuilds.
 if(PPAP_ARM_HARDFLOAT)
     set(PPAP_SHARED_BUILD "${PPAP_ROOT}/build/arm_m33")
 else()

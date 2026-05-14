@@ -20,6 +20,8 @@
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
+#include "kernel/core/signal/signal_check.h"
+#include "kernel/core/syscall/syscall.h"
 #include "target/target.h"
 
 /* virt-ctrl device — built into QEMU m68k virt machine */
@@ -30,7 +32,7 @@
 /* ── TRAP #0 syscall dispatch ────────────────────────────────────────── *
  *
  * Called from m68k_trap0_handler (trap.S) with a pointer to the saved
- * register frame.  Register layout (Linux m68k / musl convention):
+ * register frame.  Register layout (Linux m68k syscall convention):
  *
  *   regs[0]  = d0  (syscall number → overwritten with return value)
  *   regs[1]  = d1  (arg 1)
@@ -45,9 +47,6 @@
  * syscall_dispatch() writes the return value into frame[0] (d1 slot);
  * we then copy it to regs[0] (d0) for the caller.
  * ────────────────────────────────────────────────────────────────────── */
-
-#include "kernel/core/signal/signal_check.h"
-#include "kernel/core/syscall/syscall.h"
 
 void m68k_syscall_entry(uint32_t *regs) {
   uint32_t nr = regs[0]; /* d0 = syscall number */

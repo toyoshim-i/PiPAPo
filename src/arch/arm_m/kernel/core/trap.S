@@ -2,7 +2,7 @@
 @ svc.S — SVC exception handler entry point
 @ =============================================================================
 @
-@ ARM EABI Linux syscall convention (compatible with musl libc):
+@ ARM EABI Linux syscall convention:
 @   r7    = syscall number (set by caller just before "svc 0")
 @   r0–r3 = arguments 1–4 (stacked automatically by Cortex-M0+ hardware)
 @   r4    = argument 5 (callee-saved, still live at SVC entry)

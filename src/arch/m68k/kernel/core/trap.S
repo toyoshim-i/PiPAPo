@@ -2,7 +2,7 @@
 | trap.S — TRAP #0 Syscall Handler for M68K
 | =============================================================================
 |
-| M68K syscall convention (matches Linux m68k / musl libc):
+| M68K syscall convention (matches Linux m68k):
 |   d0    = syscall number
 |   d1-d5 = arguments 1-5
 |   a0    = argument 6

@@ -74,7 +74,8 @@ long sys_brk(long addr) {
    *
    * Linux semantics: brk ALWAYS returns the current program break.
    * On failure, it returns the unchanged break (never a negative errno).
-   * musl relies on this to detect brk failure and fall back to mmap. */
+   * User-space libc relies on this to detect brk failure and fall back
+   * to mmap. */
   if (addr == 0) return (long)(current->brk_current);
 
   uintptr_t new_brk = (uintptr_t)addr;
@@ -325,7 +326,7 @@ long sys_munmap(uintptr_t addr, size_t len) {
   }
 
   /* Not found in user_pages — try freeing as a single page anyway.
-   * musl may mmap then munmap pages we didn't track (edge case). */
+   * User-space may mmap then munmap pages we didn't track (edge case). */
   proc_image_segment_t region =
       proc_image_segment_make((void *)(uintptr_t)addr, num_pages * PAGE_SIZE,
                               PPAP_MEM_RAM_DATA, PROC_IMAGE_SEG_WRITABLE);

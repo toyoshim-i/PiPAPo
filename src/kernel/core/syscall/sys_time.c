@@ -156,7 +156,7 @@ long sys_clock_gettime32(long clk_id, uintptr_t tp_ptr) {
  */
 /*
  * 64-bit timespec: { int64_t tv_sec; int64_t tv_nsec; }
- * musl time64 first-try path.
+ * Linux time64 first-try path used by libc clock_gettime().
  */
 long sys_clock_gettime64(long clk_id, uintptr_t tp_ptr) {
   int64_t ts[2];

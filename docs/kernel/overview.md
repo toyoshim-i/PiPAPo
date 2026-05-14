@@ -10,7 +10,7 @@ Internal design reference for kernel developers.
 ┌─────────────────────────────────────────────────────────┐
 │  User Space                                             │
 │  push shell, ~50 native utils, rogue, user programs     │
-│  musl libc (static) — or bare-metal syscall stubs       │
+│  in-tree libc (static) — or bare-metal syscall stubs    │
 ├────────────────────────┬────────────────────────────────┤
 │  Syscall Interface     │  Signal Delivery               │
 │  svc 0 (ARM)           │  sigaction, sigprocmask        │

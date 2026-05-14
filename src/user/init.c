@@ -5,10 +5,9 @@
  * and respawns them when they exit.
  *
  * Compiled with PIC (like other user programs) so string literals
- * are accessed via GOT.  Uses 2 SRAM pages (GOT + stack) vs ~24 KB
- * for the busybox init (musl libc GOT + heap + stack).
- *
- * See busybox.init for the full-featured BusyBox-based init.
+ * are accessed via GOT.  Uses 2 SRAM pages (GOT + stack); the larger
+ * libc-linked variants would need additional pages for libc data,
+ * heap, and stack.
  */
 
 #include "syscall.h"

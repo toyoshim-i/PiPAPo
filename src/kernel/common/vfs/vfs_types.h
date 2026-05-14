@@ -57,8 +57,8 @@ _Static_assert(
 /* ── struct kernel_statfs — filesystem statistics ───────────────────────────
  */
 /*
- * Matches the Linux ARM statfs64 layout that musl expects from
- * SYS_statfs64 / SYS_fstatfs64.  64-bit fields for block/inode counts.
+ * Matches the Linux ARM statfs64 wire layout for SYS_statfs64 /
+ * SYS_fstatfs64.  64-bit fields for block/inode counts.
  */
 struct kernel_statfs {
   uint32_t f_type;     /* filesystem magic number                       */

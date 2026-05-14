@@ -310,7 +310,7 @@ swi_handler:
 ```
 
 The syscall ABI is identical to the RP2040 port: r7=syscall number,
-r0-r5=arguments, return in r0. musl libc uses the same convention on
+r0-r5=arguments, return in r0. A Linux libc uses the same convention on
 all ARM Linux targets.
 
 ### 4.6 Page Fault Handler (Data Abort)
@@ -712,7 +712,7 @@ m68k porting effort.
 
 ### Phase E — User Space
 
-1. Port musl libc for armv6 (needed only for ports like Rogue)
+1. Cross-build PPAP's in-tree libc for armv6 (needed for ports like Rogue)
 2. Cross-build the existing PPAP native userland for armv6
 3. Interactive shell on QEMU
 4. Framebuffer console via GPU mailbox (HDMI output)
@@ -801,7 +801,7 @@ A (arch abstraction — split arm_m / arm_a)
   └─→ B (QEMU bringup — boot, UART, exceptions)
         └─→ C (MMU — page tables, TLB, fault handler)
               └─→ D (process model — fork COW, exec, mmap)
-                    └─→ E (user space — native utils + musl for Rogue)
+                    └─→ E (user space — native utils + in-tree libc for Rogue)
                           └─→ F (Pi Zero hardware — SD, HDMI, USB)
 ```
 

@@ -338,7 +338,7 @@ long sys_utimes(page_id_t page, uint16_t off, uintptr_t times_ptr) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
- * Linux-compatible syscalls (musl libc ABI)
+ * Linux UAPI-compatible syscalls
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -392,7 +392,8 @@ static void fill_stat64(const struct stat *src, void *buf) {
   PUT_BE32(d, 48, 4096);
   PUT_BE32(d, 56, ((uint32_t)src->st_size + 511u) / 512u);
   /* m68k kstat: st_atime_sec=60, _nsec=64, st_mtime_sec=68, _nsec=72,
-   * st_ctime_sec=76, _nsec=80 (see third_party/musl/arch/m68k/kstat.h). */
+   * st_ctime_sec=76, _nsec=80 — matches the Linux m68k UAPI stat64
+   * field offsets. */
   PUT_BE32(d, 60, src->st_atime);
   PUT_BE32(d, 68, src->st_mtime);
   PUT_BE32(d, 76, src->st_ctime);

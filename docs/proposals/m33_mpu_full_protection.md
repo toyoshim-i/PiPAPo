@@ -81,7 +81,7 @@ keep all of a process's memory in as few contiguous blocks as possible.
      if so, extend that region's size (merge).
   2. Otherwise, find a free `mpu_data[]` slot (size == 0) and assign it.
   3. If no free slot is available, **fail the mmap with `-ENOMEM`**. The caller
-     (typically musl) will handle the failure gracefully.
+     (typically libc) will handle the failure gracefully.
 
 **sys_munmap:**
 - If the unmapped range is at the end of a data region, shrink the region.
@@ -174,7 +174,7 @@ within the 4 available data regions, the allocation fails.**
 
 This is reasonable because:
 - Most processes use 1 data region (data+heap contiguous) + 0–2 mmap regions.
-- musl's malloc uses brk for small allocations and mmap for large ones; with
+- libc malloc uses brk for small allocations and mmap for large ones; with
   4 data regions, this works well.
 - If a process truly needs >4 discontiguous data areas, it has outgrown what a
   4 KB-page, 8-region MPU microcontroller can offer.
@@ -197,7 +197,7 @@ This is reasonable because:
 ### Step 4: sys_mmap2 / sys_munmap Integration
 - Allocate/free `mpu_data[]` slots on mmap/munmap.
 - Fail mmap if no slot available.
-- Test: mmap-heavy programs (musl large alloc) work within limits.
+- Test: mmap-heavy programs (libc large alloc) work within limits.
 
 ### Step 5: NS MPU Review (RP2350 only)
 - Verify Option A is sufficient with tests.

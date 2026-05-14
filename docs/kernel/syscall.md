@@ -24,10 +24,10 @@ the low byte is the index.  The same numbers are used on every architecture
 | 0x08xx | User/group     | getuid, getgid, chown, ... |
 | 0x09xx | Mount          | mount, umount2 |
 | 0x0Axx | Misc           | futex, getcpu |
-| 0xF0xx | Unimplemented  | Return -ENOSYS (musl compile stubs) |
+| 0xF0xx | Unimplemented  | Return -ENOSYS (libc compile stubs) |
 
-Unimplemented syscalls (0xF0xx) exist so that musl libc compiles, but the
-kernel returns `-ENOSYS` for all of them.
+Unimplemented syscalls (0xF0xx) exist so that user-space libc compiles, but
+the kernel returns `-ENOSYS` for all of them.
 
 The canonical definitions live in `src/common/syscall_nr.h` (shared by
 kernel and user-space).  Each arch's `src/arch/<arch>/user/syscall.S`
@@ -51,7 +51,7 @@ for all implemented syscalls.
 
 Invoke with `svc 0`.
 
-### m68k (Linux m68k / musl convention)
+### m68k (Linux m68k syscall convention)
 
 | Register | Purpose |
 |----------|---------|
@@ -167,7 +167,7 @@ M-mode where the kernel handles the request.
 
 | Number | Name | Notes |
 |--------|------|-------|
-| 0xF0A8 | get_thread_area | Returns TLS pointer (musl m68k TLS) |
+| 0xF0A8 | get_thread_area | Returns TLS pointer (m68k Linux libc TLS) |
 | 0xF0A9 | set_thread_area | Sets TLS pointer |
 
 These use 0xF0xx numbers because they are m68k-specific and not part of the
@@ -214,7 +214,7 @@ All three are routed to `sys_vfork`.  PPAP implements **vfork semantics only**:
 the parent blocks until the child calls `execve` or `exit`.  The child shares
 the parent's user pages.
 
-`clone` accepts the fast-path `clone(SIGCHLD, 0)` that musl uses for `fork()`
+`clone` accepts the fast-path `clone(SIGCHLD, 0)` that libc uses for `fork()`
 and routes it to `sys_vfork`.
 
 Returns the child PID in the parent and 0 in the child.
@@ -340,7 +340,7 @@ pid_t set_tid_address(int *tidptr);
 Store `tidptr` in the PCB for thread library use.  Returns the caller's PID.
 
 **vs POSIX/Linux:**  The kernel stores the pointer but never writes to it
-(no thread support).  Exists to satisfy musl's startup sequence.
+(no thread support).  Exists to satisfy Linux libc's startup sequence.
 
 ---
 
@@ -574,7 +574,7 @@ int fstatat64(int dirfd, const char *path, struct stat64 *buf, int flags);
 ```
 
 Get file status in Linux `struct stat64` format (96 bytes).  These are the
-primary stat calls used by musl.  `lstat64` does not follow symlinks.
+primary stat calls used by libc.  `lstat64` does not follow symlinks.
 `fstatat64` only supports `dirfd == AT_FDCWD`.
 
 **vs POSIX/Linux:**  Wire-compatible with the Linux ARM stat64 structure.
@@ -594,7 +594,7 @@ int getdents64(int fd, struct dirent64 *buf, size_t count);
 Read directory entries from an open directory fd.  Returns the number of
 entries written, or 0 at end-of-directory.
 
-**vs POSIX/Linux:**  Same wire format as Linux.  `readdir(3)` in musl works
+**vs POSIX/Linux:**  Same wire format as Linux.  `readdir(3)` in libc works
 on top of `getdents64`.
 
 ---
@@ -614,7 +614,7 @@ Adjust the program break (heap boundary).
 - `addr < current break`: shrink by freeing pages.
 
 Always returns the current break value (never a negative errno), matching
-Linux semantics so musl can fall back to `mmap` on failure.
+Linux semantics so libc can fall back to `mmap` on failure.
 
 **vs POSIX/Linux:**  Same semantics.  Maximum heap is limited by
 `USER_PAGES_MAX` (32 pages = 128 KB per process).

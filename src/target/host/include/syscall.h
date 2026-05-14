@@ -89,7 +89,7 @@ int ppap_getcwd(char *buf, size_t size);
 #endif
 
 /* PPAP termios flag values — ensure they match what the app expects.  On
- * Linux glibc/musl these are already defined by <termios.h> with the same
+ * a Linux libc, these are already defined by <termios.h> with the same
  * values; we simply don't redefine them. */
 
 /* open() in PPAP is 3-arg (path, flags, mode).  Libc is variadic but the

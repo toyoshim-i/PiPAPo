@@ -74,7 +74,7 @@ to select optimized M33 paths where it matters (e.g., `switch.S`).
 
 ## 2. Syscall ABI
 
-PPAP uses the ARM EABI Linux syscall convention (compatible with musl libc):
+PPAP uses the ARM EABI Linux syscall convention:
 
 ```
 svc 0

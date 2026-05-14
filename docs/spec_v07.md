@@ -270,7 +270,7 @@ A monolithic kernel architecture is adopted. A microkernel design is disadvantag
 
 ### 4.3 Process Model
 
-A minimal process model is implemented for the native shell + utilities and for ported musl-linked apps (Rogue).
+A minimal process model is implemented for the native shell + utilities and for ported libc-linked apps (Rogue).
 
 **PCB (Process Control Block):** Holds the process ID, parent PID, register context (architecture-specific), page table, file descriptor table (up to 16 fds per process), current directory, signal mask, and signal handlers. PCB size is approximately 256 bytes per process.
 
@@ -309,7 +309,7 @@ Memory protection depends on the target hardware:
 
 ## 5. System Calls
 
-A minimal POSIX subset is implemented to support the native userland and ported musl-linked apps. PPAP uses a **16-bit grouped numbering** scheme that is shared across all architectures. The trap mechanism is architecture-specific:
+A minimal POSIX subset is implemented to support the native userland and ported libc-linked apps. PPAP uses a **16-bit grouped numbering** scheme that is shared across all architectures. The trap mechanism is architecture-specific:
 
 - **ARM:** `svc 0` with syscall number in r7, arguments in r0–r5
 - **m68k:** `trap #0` with syscall number in d0, arguments in d1–d5/a0
@@ -386,11 +386,9 @@ These are freestanding (no libc) single-file programs built from `src/user/`.  E
 
 On ARM targets, PIE binaries reside on flash and are executed directly via XIP. SRAM consumption per process is limited to stack and heap only — the code segment consumes no SRAM at all. On m68k targets, code is loaded into RAM pages.
 
-### 6.3 musl libc Porting
+### 6.3 In-Tree libc
 
-musl libc is ported to each target architecture. The Linux system call wrapper layer is rewritten to issue system calls via the architecture-specific trap instruction targeting PPAP's unified syscall numbers.
-
-Key porting areas:
+PPAP supplies its own bare-metal libc under `src/user/lib/` (string, stdio, stdlib, alloc, file, time, errno, signal, sigaction, util), compiled per-architecture by `cmake/user.cmake`.  The syscall wrapper layer issues syscalls via the architecture-specific trap instruction with PPAP's unified syscall numbers (see §5).  Coverage is the subset needed by the native userland and the ported Rogue binary:
 - syscall(): Trap instruction mapped to PPAP's syscall numbers (shared across architectures)
 - pthread: single-thread stub; TLS via simplified implementation
 - mmap: anonymous mappings only (malloc backend); file mappings not supported
@@ -489,10 +487,10 @@ The m68k QEMU target currently uses a UART for console and a RAM-backed block de
 
 ### 9.3 User Space
 
-- **musl libc:** ported to ARM and m68k with PPAP's unified syscall interface
+- **In-tree libc:** PPAP's own bare-metal libc under `src/user/lib/`, built per-architecture by `cmake/user.cmake`; targets PPAP's unified syscall interface
 - **push:** native shell (`/bin/sh`), ~14 KB, no malloc
 - **Native utilities:** ~50 applets (init, getty, push shell, ps, ls, cat, df, grep, sed, sort, mount, pdb, …) — no busybox
-- **Rogue 5.4.4:** classic dungeon crawler with minimal VT100 curses shim (musl-linked)
+- **Rogue 5.4.4:** classic dungeon crawler with minimal VT100 curses shim, linked against PPAP's in-tree libc
 - **PIE/PIC binaries:** position-independent ELFs with architecture-specific relocation
 
 ### 9.4 Display and Input (PicoCalc)
@@ -532,7 +530,7 @@ The loopback mount introduces an additional I/O indirection layer. In the worst 
 
 ### 10.4 Multi-Architecture Binary Compatibility
 
-PPAP uses a unified syscall numbering scheme across all architectures, so the kernel-side syscall dispatch table is shared. However, user-space binaries are architecture-specific (ARM Thumb ELFs vs m68k ELFs). Native utilities are built per-architecture by CMake. The musl libc build (used by Rogue) is also performed separately for each architecture.
+PPAP uses a unified syscall numbering scheme across all architectures, so the kernel-side syscall dispatch table is shared. However, user-space binaries are architecture-specific (ARM Thumb ELFs vs m68k ELFs). Native utilities and the in-tree libc are built per-architecture by CMake.
 
 ### 10.5 Target-Specific Constraints
 
@@ -552,7 +550,7 @@ PPAP uses a unified syscall numbering scheme across all architectures, so the ke
 |---|---|
 | ARM Compiler | arm-none-eabi-gcc |
 | m68k Compiler | m68k-elf-gcc (custom-built) |
-| C Standard Library | musl libc (per-architecture static cross-compiled) |
+| C Standard Library | In-tree libc under src/user/lib/ (per-architecture static) |
 | Build System | CMake + Ninja. ARM targets use Pico SDK integration |
 | Debugger | OpenOCD + GDB (ARM hardware); QEMU built-in GDB stub |
 | Emulator | QEMU system-arm (mps2-an500), QEMU system-m68k (virt, -cpu m68000) |
@@ -569,7 +567,7 @@ PPAP uses a unified syscall numbering scheme across all architectures, so the ke
 - **Traditional UNIX:** romfs (/) + UFS (loopback on VFAT) maintains UNIX semantics while embracing real-world interoperability
 - **Universal Interoperability:** The SD card is standard FAT32, readable by any PC/Mac
 - **Maximize XIP:** On targets with flash, execute code via XIP, reserving RAM exclusively for data
-- **Native First:** Core shell and utilities are purpose-built for PiPAPo; ported third-party apps (e.g. Rogue) link against musl
+- **Native First:** Core shell and utilities are purpose-built for PiPAPo; ported third-party apps (e.g. Rogue) link against PPAP's in-tree libc
 - **Architecture-neutral kernel:** Shared kernel source with thin target abstraction layer (target.h)
 - **Multi-target from day one:** Target-specific code (drivers, pin definitions, boot sequences, linker scripts) is isolated in per-target directories
 - **Unified syscall interface:** Same syscall numbers and semantics across all architectures

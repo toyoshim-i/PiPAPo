@@ -7,7 +7,7 @@
 #define WUNTRACED WSTOPPED
 #define WCONTINUED 8
 
-/* Wait status helpers compatible with musl's sys/wait.h macros. */
+/* Wait status helpers compatible with POSIX <sys/wait.h> macros. */
 #define WEXITSTATUS(s) (((s)&0xff00) >> 8)
 #define WTERMSIG(s) ((s)&0x7f)
 #define WSTOPSIG(s) WEXITSTATUS(s)

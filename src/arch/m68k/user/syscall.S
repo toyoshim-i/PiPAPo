@@ -212,8 +212,8 @@ setsid:
 | Address is recorded as sa_restorer when sigaction() installs a handler
 | (see sigaction.c).  The kernel uses it as the handler's rts target; the
 | handler's `rts` lands here and this stub drops the leftover sig argument
-| slot before issuing SYS_RT_SIGRETURN — same role as the glibc/musl
-| user-space sigreturn trampolines on Linux.
+| slot before issuing SYS_RT_SIGRETURN — same role as a Linux libc's
+| user-space sigreturn trampoline.
     .globl _ppap_sigreturn_trampoline
 _ppap_sigreturn_trampoline:
     addq.l  #4, %sp              | discard the sig arg the kernel planted

@@ -322,15 +322,17 @@ When `execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
 - **Failure**: If `mem_region_alloc_at()` fails (the target page is already in
   use or the pool is exhausted), or if the request exceeds `USER_PAGES_MAX`
   pages, the break is left unchanged.  The return value is always the
-  current break (never a negative errno), matching Linux semantics.  musl
-  libc relies on this to detect failure and fall back to `mmap()`.
+  current break (never a negative errno), matching Linux semantics.
+  User-space libc relies on this to detect failure and fall back to
+  `mmap()`.
 
 ---
 
 ## 7. How the Heap Grows
 
-User programs call `malloc()` (provided by musl libc), which internally
-calls `brk()` to expand the heap.  The heap grows **upward** from `brk_base`:
+User programs call `malloc()` (provided by PPAP's in-tree libc), which
+internally calls `brk()` to expand the heap.  The heap grows **upward**
+from `brk_base`:
 
 ```
 user_pages[0]  ┌─────────────────┐
@@ -346,10 +348,10 @@ user_pages[0]  ┌─────────────────┐
 ```
 
 When `malloc()` needs more memory than available between `brk_current` and the
-end of the last allocated page, musl calls `brk()` to extend.  The kernel
+end of the last allocated page, libc calls `brk()` to extend.  The kernel
 allocates the next contiguous page, zeroes it, and advances `brk_current`.
 
-For large allocations, musl falls back to `mmap()`.  PPAP supports
+For large allocations, libc falls back to `mmap()`.  PPAP supports
 anonymous-only `mmap()` via `sys_mmap2()`, which allocates pages from the
 same pool and tracks them in `user_pages[]` (high slots, allocated
 top-down to avoid collision with brk growth).

@@ -393,8 +393,7 @@ ioctl:
  * sigaction() installs a handler (see below), and uses it as the
  * handler's near-return target when delivering a signal.  The handler's
  * `ret` lands here and this stub issues SYS_RT_SIGRETURN to unwind the
- * signal frame — same role as the sigreturn trampolines glibc/musl
- * provide on Linux. */
+ * signal frame — same role as a Linux libc's sigreturn trampoline. */
   .global _ppap_sigreturn_trampoline
 _ppap_sigreturn_trampoline:
   addw  $2, %sp                 /* drop the sig arg the kernel planted */

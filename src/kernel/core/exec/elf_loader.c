@@ -777,7 +777,7 @@ static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
   }
   frame[envp_base + (uint32_t)envc] = 0; /* envp terminator */
 
-  /* auxv: enough for musl static TLS setup, then AT_NULL */
+  /* auxv: enough for static-TLS libc startup, then AT_NULL */
   uint32_t auxv_base = envp_base + (uint32_t)envc + 1u;
   frame[auxv_base + 0] = PPAP_AT_PHDR;
   frame[auxv_base + 1] = res.phdr_addr;

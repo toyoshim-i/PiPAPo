@@ -211,14 +211,14 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_vfork(frame);
       break;
 
-    /* ── P0: musl boot-critical ─────────────────────────────────────────── */
-    case SYS_FORK: /* musl's vfork() calls fork(2) */
+    /* ── libc boot-critical ────────────────────────────────────────────── */
+    case SYS_FORK: /* libc vfork() falls back to fork(2) */
       ret = sys_vfork(frame);
       break;
     case SYS_PTRACE:
       ret = sys_ptrace(a0, a1, (uintptr_t)a2, (uintptr_t)a3);
       break;
-    case SYS_CLONE: /* musl's _Fork() uses clone(SIGCHLD, 0) */
+    case SYS_CLONE: /* libc _Fork() uses clone(SIGCHLD, 0) */
       if (a0 == SIGCHLD_NR && a1 == 0)
         ret = sys_vfork(frame);
       else
@@ -455,7 +455,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_poweroff();
       break;
 
-    /* ── TLS: set/get_thread_area (m68k musl uses these for TLS) ──────── */
+    /* ── TLS: set/get_thread_area (m68k Linux libc uses these for TLS) ─── */
     case 0xF0A8: /* __NR_get_thread_area */
       ret = (long)current->tp_value;
       break;

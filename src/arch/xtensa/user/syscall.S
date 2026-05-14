@@ -53,7 +53,7 @@ SYSCALL_STUB ptrace,       0x000F
 # Recorded as sa_restorer when sigaction() installs a handler (see
 # src/user/lib/sigaction.c).  When delivery returns control here, this
 # stub issues SYS_RT_SIGRETURN to unwind the delivery frame — same role
-# as the glibc/musl user-space sigreturn trampolines on Linux.
+# as a Linux libc's user-space sigreturn trampoline.
 #
 # Xtensa kernel-side signal_check / sys_rt_sigreturn are still stubs
 # (see src/arch/xtensa/kernel/core/signal/signal_check.c — "CC-3 will implement"),
