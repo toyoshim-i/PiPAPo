@@ -5,8 +5,7 @@
  * the host architecture.  Memory access functions are direct pointer
  * operations.  The run() function is a stub — native processes use the
  * scheduler's context switch mechanism (PendSV on ARM, RTE on m68k)
- * rather than an interpreter loop.  This will be connected in Phase 2
- * when execve is refactored.
+ * rather than an interpreter loop.
  */
 
 #include <string.h>
@@ -46,8 +45,7 @@ static int native_init(void *state, uint8_t *memory, uint32_t mem_size) {
  *
  * Native processes do not use an interpreter loop.  They return to user
  * mode via the scheduler's exception return (PendSV on ARM, RTE on m68k).
- * This function should not be called in Phase 1; it will be properly
- * implemented in Phase 2.
+ * This function is not on the live execution path today.
  */
 static int native_run(void *state) {
   (void)state;
@@ -63,7 +61,7 @@ static void native_set_trap_handler(void *state, cpu_trap_handler_t handler,
   (void)ctx;
 }
 
-/* ── Register access (not meaningful for native in Phase 1) ────────────── */
+/* ── Register access (not meaningful for native) ───────────────────────── */
 
 static uint32_t native_get_reg(void *state, int reg_id) {
   (void)state;

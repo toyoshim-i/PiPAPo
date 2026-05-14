@@ -281,7 +281,7 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
   *--sp = 0u;                    /* r1                          */
   *--sp = 0u;                    /* r0                          */
   /* Software callee-saved frame (loaded by PendSV).  EXC_RETURN is
-   * saved here on every Cortex-M variant (Phase 4 prep). */
+   * saved here on every Cortex-M variant. */
   *--sp = EXC_RETURN_THREAD_PSP; /* EXC_RETURN                  */
   *--sp = 0u;                    /* r11 */
   *--sp = 0u;                    /* r10 */

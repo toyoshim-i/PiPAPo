@@ -241,7 +241,7 @@ SVC_Handler:
     add   sp, sp, #24         @ skip all 6 stacked words
     bx    lr                  @ EXC_RETURN from new process → exception return
 #else
-    @ ARMv6-M: SW frame is {r4-r11, EXC_RETURN} (9 words; Phase 4 prep).
+    @ ARMv6-M: SW frame is {r4-r11, EXC_RETURN} (9 words).
     ldr   r0, [r0, #PCB_SP_OFFSET]   @ r0 = current->sp (SW frame base)
     ldmia r0!, {r4-r7}       @ restore r4-r7; r0 advances to r8 area
     push  {r4-r7}             @ preserve real r4-r7 on MSP

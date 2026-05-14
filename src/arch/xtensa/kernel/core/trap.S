@@ -1,14 +1,13 @@
 # =============================================================================
-# trap.S — Xtensa exception handler (stub for CC-1)
+# trap.S — Xtensa exception handler (stub)
 # =============================================================================
 #
-# Minimal exception vector for the initial CardComputer port.
-# All exceptions halt in a loop — no syscall dispatch, no timer ISR yet.
-# These will be implemented in CC-2 (timer) and CC-3 (context switch/syscall).
+# Minimal exception vector for the CardComputer port.  All exceptions halt
+# in a loop — no syscall dispatch, no timer ISR yet.
 #
 # ESP-IDF installs its own exception vectors by default.  For PPAP to take
-# over, we will need to replace them via VECBASE in CC-2.  For CC-1, this
-# file exists only for completeness (not yet wired).
+# over we will need to replace them via VECBASE.  This file exists for
+# completeness (not yet wired).
 # =============================================================================
 
     .text

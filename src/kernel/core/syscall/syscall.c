@@ -123,7 +123,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
   }
 
   switch (nr) {
-    /* ── Existing syscalls (Phase 1-3) ──────────────────────────────────── */
+    /* ── Core POSIX syscalls ─────────────────────────────────────────────── */
     case SYS_EXIT:
     case SYS_EXIT_GROUP: /* single-threaded: exit_group = exit */
       ret = sys_exit(a0);
@@ -287,7 +287,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_clock_gettime64(a0, (uintptr_t)a1);
       break;
 
-    /* ── P0: trivial return-0 stubs ─────────────────────────────────────── */
+    /* ── Trivial return-0 stubs ─────────────────────────────────────────── */
     case SYS_GETUID:
     case SYS_GETEUID:
     case SYS_GETGID:
@@ -301,7 +301,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = 0; /* no MMU */
       break;
 
-    /* ── P1: interactive shell ──────────────────────────────────────────── */
+    /* ── Interactive shell ──────────────────────────────────────────────── */
     case SYS_ACCESS: {
       user_page_ref_t r;
       if ((ret = xlate_user_ptr((uintptr_t)a0, &r)) != 0) break;
@@ -377,7 +377,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = -(long)ENOMEM; /* force malloc to mmap new region */
       break;
 
-    /* ── P2: stubs for applet completeness ──────────────────────────────── */
+    /* ── Stubs for applet completeness ──────────────────────────────────── */
     case SYS_MKNOD:
       ret = -(long)EPERM;
       break;
@@ -416,7 +416,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = -(long)ENOSYS; /* stat64 suffices */
       break;
 
-    /* ── P3: mount / umount / statfs ────────────────────────────────────────
+    /* ── mount / umount / statfs ────────────────────────────────────────────
      */
     case SYS_MOUNT: {
       user_page_ref_t rs, rt, rf;
@@ -441,7 +441,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       ret = sys_fstatfs64(a0, a1, (uintptr_t)a2);
       break;
 
-    /* ── P4: poll / blocking I/O ─────────────────────────────────────────── */
+    /* ── poll / blocking I/O ─────────────────────────────────────────────── */
     case SYS_POLL:
       ret = sys_poll((uintptr_t)a0, (uint32_t)a1, a2);
       break;

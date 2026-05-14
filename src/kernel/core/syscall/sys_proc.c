@@ -1841,7 +1841,7 @@ long sys_vfork(uint32_t *frame) {
   /* ARM: Set child's r0 = 0 (child sees vfork return 0) */
   child_frame[0] = 0;
 
-  /* Phase 4 prep: 9-word SW frame on every Cortex-M variant
+  /* 9-word SW frame on every Cortex-M variant
    * (r4-r11 + EXC_RETURN at sw[8]).  Child r9 = parent's GOT base. */
   uint32_t *sw = child_frame - 9;
   memset(sw, 0, 9 * sizeof(uint32_t));

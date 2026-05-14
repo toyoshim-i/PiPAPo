@@ -12,8 +12,8 @@
  * — no #ifdef is needed.
  *
  * IPC after launch: Core 0 and Core 1 communicate via sio_fifo_push() and
- * sio_fifo_pop() (both blocking).  In Phase 1 the worker simply echoes every
- * command word back to Core 0 as a placeholder for Phase 4 SD I/O.
+ * sio_fifo_pop() (both blocking).  The current worker simply echoes every
+ * command word back to Core 0 as a placeholder for SD I/O.
  */
 
 #ifndef PPAP_KERNEL_CORE_CPU_SMP_H

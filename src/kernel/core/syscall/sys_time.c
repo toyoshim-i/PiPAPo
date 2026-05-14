@@ -85,8 +85,8 @@ static int timespec64_write_remaining(uintptr_t rem_ptr) {
  *
  * Minimum sleep is 1 tick (10 ms) to avoid a no-op for sub-tick requests.
  *
- * Phase 1 limitations:
- *   - rem is not filled in (no signal interruption in Phase 1).
+ * Current limitations:
+ *   - rem is not filled in (no signal interruption yet).
  *   - Sleep duration has SysTick resolution (10 ms).
  *   - tv_sec is capped at UINT32_MAX / PPAP_TICK_HZ to prevent wrap-around.
  */

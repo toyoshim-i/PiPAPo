@@ -352,7 +352,7 @@ PendSV_Handler:
     mov  r7, r11
     stmia r0!, {r4-r7}        @ save r8–r11 (as r4–r7); r0 points past r11
 
-    @ Save EXC_RETURN at sw[8] (Phase 4 prep).
+    @ Save EXC_RETURN at sw[8].
     mov  r4, lr
     str  r4, [r0]             @ store EXC_RETURN; r0 unchanged
 

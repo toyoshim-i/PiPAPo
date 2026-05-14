@@ -26,7 +26,7 @@ volatile uint32_t riscv_tick_count = 0;
 volatile uint32_t rv32_trap_frame_sp = 0;
 
 /* core_id() is provided as static inline in spinlock.h (via proc.h).
- * Phase RV-6 (dual-core) will use SIO_CPUID for real core detection. */
+ * Dual-core RP2350 support will use SIO_CPUID for real core detection. */
 
 /* ── Exception handler ──────────────────────────────────────────────────────
  */

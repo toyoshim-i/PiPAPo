@@ -146,7 +146,7 @@ uint32_t target_caps(void)
 /* ── Debug hardware breakpoints ──────────────────────────────────────────── *
  *
  * Hazard3 supports RISC-V trigger module (tselect/tdata1/tdata2) for
- * hardware breakpoints.  Stubbed for now — Phase RV-5 will implement.
+ * hardware breakpoints.  Stubbed for now.
  */
 
 uint32_t target_debug_hwbp_slots(void)

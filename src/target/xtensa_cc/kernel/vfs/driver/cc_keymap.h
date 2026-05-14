@@ -27,7 +27,7 @@
 #define CC_KEY_SHIFT_X 1u
 #define CC_KEY_CTRL_Y  3u
 #define CC_KEY_CTRL_X  0u
-/* Opt at (3,1) and Alt at (3,2) are tracked-only; CC-5 does not act on them. */
+/* Opt at (3,1) and Alt at (3,2) are tracked-only; nothing acts on them. */
 
 /* ── Base + Shift table ────────────────────────────────────────────────── *
  *

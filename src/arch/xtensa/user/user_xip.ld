@@ -1,9 +1,10 @@
 /*
  * user_xip.ld — Experimental Xtensa linker script for future XIP binaries
  *
- * This is the XT-2.5 packaging path, not the current default runtime path.
- * The goal is to separate "how we package immutable code/data for flash"
- * from the existing RAM-loaded bring-up path in user.ld.
+ * This is the experimental packaging path, not the current default
+ * runtime path.  The goal is to separate "how we package immutable
+ * code/data for flash" from the existing RAM-loaded bring-up path in
+ * user.ld.
  *
  * Layout:
  *   literal (RW): .literal*                    — relocation/literal support

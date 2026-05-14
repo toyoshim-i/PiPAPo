@@ -3,9 +3,6 @@
  *
  * Provides the same API as src/arch/arm_m/arch.h, src/arch/m68k/arch.h,
  * and src/arch/riscv/arch.h but with i8086 real-mode implementations.
- *
- * Phase P-1: Stubs only -- just enough to compile the boot banner.
- * Phase P-2 will add real timer/preemption/context-switch support.
  */
 
 #ifndef PPAP_ARCH_I16_KERNEL_CORE_ARCH_H

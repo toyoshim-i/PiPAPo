@@ -4,9 +4,6 @@
  * ESP32-S3 (STAMP S3 module), 8 MB flash, 512 KB SRAM.
  * ST7789V2 display, 56-key keyboard, microSD, speaker, IR.
  *
- * CC-1: Minimal serial-only boot.  Display, keyboard, and SD are
- * deferred to CC-4, CC-5, and CC-6 respectively.
- *
  * ESP-IDF handles boot, clock, flash cache, and UART initialization.
  * PPAP takes over from app_main() → kmain().
  */
@@ -111,10 +108,10 @@ void target_early_init(void)
 
 void target_late_init(void)
 {
-    /* CC-2: start CCOMPARE0 timer for scheduler tick. */
+    /* Start CCOMPARE0 timer for scheduler tick. */
     xtensa_timer_init();
 
-    /* CC-3: install syscall + exception handlers. */
+    /* Install syscall + exception handlers. */
     xtensa_trap_init();
 
     /* Register UART RX polling so the idle loop feeds input to TTY.
@@ -161,8 +158,8 @@ void target_post_mount(void)
 
 const char *target_init_path(void)
 {
-    /* CC-1: no user-mode binaries — skip PID 1 launch.
-     * kmain() will enter the idle loop directly. */
+    /* No user-mode binaries on minimal builds — kmain() will enter the
+     * idle loop directly when no PID 1 launches. */
 #ifdef PPAP_TESTS
 #ifdef PPAP_TESTS_EXTENDED
     return "/bin/runtests_ext";

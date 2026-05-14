@@ -22,7 +22,7 @@
 /* ── UART (USB CDC-ACM, directly routed to internal USB) ───────────── */
 /* ESP-IDF configures UART0 for console output by default.
  * On CardComputer, USB-C is wired to the ESP32-S3 native USB peripheral.
- * For CC-1 we use UART0 (ESP-IDF default console). */
+ * We currently use UART0 (ESP-IDF default console). */
 
 /* ── ST7789V2 Display (SPI2) ──────────────────────────────────────────── */
 

@@ -109,7 +109,7 @@ void xtensa_timer_init(void) {
 
   /* Register the CCOMPARE0 timer ISR through the Xtensa helper API.
    * Direct table patching regressed startup on hardware; keep this
-   * stable path while XT-3 exception/timer ownership is refactored. */
+   * stable path while exception/timer ownership is refactored. */
   xt_set_interrupt_handler(XTENSA_TIMER0_INTNUM, xtensa_timer_isr, (void *)0);
 
   /* Set INTENABLE to ONLY the CCOMPARE0 bit (bit 6).

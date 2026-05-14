@@ -11,7 +11,7 @@
  * ELF loader).  The kernel patches GOT entries at load time so text refs
  * point into flash and data refs point into the SRAM page.
  *
- * Exports _end for future brk/sbrk heap base (Phase 3 Step 9).
+ * Exports _end for the brk/sbrk heap base.
  */
 
 ENTRY(_start)

@@ -36,7 +36,7 @@ static inline void arch_irq_disable(void) { __asm__ volatile("cli"); }
 /* -- Preemption control ---------------------------------------------------
  *
  * TODO: implement PIT IRQ0 mask via 8259A OCW1 for fine-grained
- * preemption control (P-2).  For now, alias to global IRQ toggle.
+ * preemption control.  For now, alias to global IRQ toggle.
  */
 
 static inline void arch_preempt_disable(void) { arch_irq_disable(); }

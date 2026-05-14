@@ -2,7 +2,7 @@
  * arch/xtensa/kernel/core/signal/signal_check.h — Xtensa signal_check
  *
  * Paired with src/arch/xtensa/kernel/core/signal/signal_check.c.  Stub
- * until CC-3 wires real delivery from trap glue.
+ * until trap glue wires real delivery.
  *
  * Reached from non-arch callers via "kernel/core/signal/signal_check.h",
  * which resolves to this file through the arch overlay (-I src/arch/xtensa
