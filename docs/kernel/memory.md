@@ -390,8 +390,9 @@ overflows its stack:
 The kernel stack (MSP on ARM, SS=0 on ia16, SSP on m68k, mscratch-based on
 RISC-V, and Xtensa's syscall kstack) is also fixed-size and comes from a fixed
 per-process kstack region: 2 KB on m68k today, 4 KB on RISC-V, and
-target-specific sizes on ARM and Xtensa.  TODO: measure m68k fixed-kstack
-high-water marks and shrink to 1 KB if the runtime margin is safe.
+target-specific sizes on ARM and Xtensa.  The m68k 2 KB slot is the current
+steady-state budget; any remaining stack-pressure cleanup is subsystem-side
+work rather than part of the context-switch migration.
 
 ---
 

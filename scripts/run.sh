@@ -157,7 +157,8 @@ ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
 # ── Merge filter/flaky/slow into an overlay dir ─────────────────────────────
 TEMP_OVERLAY=""
 if [[ -n "$FILTER" || $RUN_FLAKY -eq 1 || $RUN_SLOW -eq 1 ]]; then
-    TEMP_OVERLAY=$(mktemp -d)
+    mkdir -p "$PROJECT_DIR/build"
+    TEMP_OVERLAY=$(mktemp -d "$PROJECT_DIR/build/test_overlay.XXXXXX")
     # Copy any user-supplied overlay first so test controls take precedence
     if [[ -n "$OVERLAY" ]]; then
         OVERLAY_ABS="$(cd "$OVERLAY" && pwd)"
@@ -218,7 +219,13 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     fi
 
     PPAP_PORT="${PPAP_PORT:-/dev/ttyACM0}"
-    PPAP_XTENSA_FLASH_BAUD="${PPAP_XTENSA_FLASH_BAUD:-460800}"
+    if [[ -z "${PPAP_XTENSA_FLASH_BAUD:-}" ]]; then
+        if [[ $DO_TEST -eq 1 ]]; then
+            PPAP_XTENSA_FLASH_BAUD=115200
+        else
+            PPAP_XTENSA_FLASH_BAUD=460800
+        fi
+    fi
     if [[ ! -e "$PPAP_PORT" ]]; then
         echo "[run] Error: serial port $PPAP_PORT not found."
         echo "      Set PPAP_PORT to the correct device."

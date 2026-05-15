@@ -1,13 +1,12 @@
 # Context Switch Cleanup Follow-Ups
 
-**Status:** mostly complete.  The fixed per-process kernel-stack migration is
-done for the supported architectures.  The steady-state model now lives in
+**Status:** complete.  The fixed per-process kernel-stack migration is done for
+the supported architectures.  The steady-state model now lives in
 [`../kernel/context_switch.md`](../kernel/context_switch.md),
 [`../kernel/stack.md`](../kernel/stack.md), and
 [`../kernel/memory.md`](../kernel/memory.md).
 
-This proposal remains only as a short tracker for cleanup work that should not
-be lost while the stack model settles.
+This proposal is now a short closure note for the cleanup project.
 
 ## Completed Direction
 
@@ -31,6 +30,13 @@ PPAP now uses one long-term context-switch contract:
 - The userland empty-pipe blocking regression passes on the runnable emulator
   targets as of 2026-05-15: `qemu_arm`, `qemu_m68k`, `qemu_rv32`, and `pcxt`
   with the generated HDD test image.
+- The same filtered blocking-continuation regression also passes on
+  `xtensa_cc` hardware as of 2026-05-15:
+  `./scripts/run.sh --test --filter=pipe xtensa_cc`.
+- Kernel syscall paths have been optimized enough that stack-usage tracking is
+  no longer an active context-switch cleanup task.  Remaining stack-pressure
+  work is blocked on the userland subsystem migration and is not part of this
+  cleanup tracker.
 
 The common fixed-region kstack helper initializes `pcb_t.kernel_sp` from the
 target-reserved `__kstack_region_base` area.  ARM-M, ia16, m68k, RISC-V, and
@@ -47,18 +53,6 @@ The detailed architecture material was moved out of this proposal:
   pointer roles, canaries, and `KSTACK_USAGE_TRACK`.
 - `docs/kernel/memory.md` documents page-pool ownership, `stack_page_id`,
   `user_stack_page`, and why fixed kstacks are not process RSS.
-
-## Remaining Follow-Ups
-
-1. Get reliable `xtensa_cc` hardware test runs for the blocking-continuation
-   suite.  The build works, but the flash/monitor path can fail before tests
-   start.
-2. Use common `KSTACK_USAGE_TRACK` measurements before shrinking stack sizes.
-   m68k currently uses 2 KB process slots with a TODO to shrink to 1 KB if the
-   high-water margin is safe.
-3. Keep the deferred subsystem stack-use work in
-   [`kernel_stack_use.md`](kernel_stack_use.md).  Much of that effort may be
-   obsoleted by moving subsystem work to userland.
 
 ## Constraints
 

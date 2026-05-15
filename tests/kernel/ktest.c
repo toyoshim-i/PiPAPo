@@ -36,6 +36,13 @@ static int test_fail;
 static int total_pass;
 static int total_fail;
 
+static int ktest_user_filter_active(void) {
+    int fd = mod_vfs.fd_open("/etc/test_filter", O_RDONLY, 0);
+    if (fd < 0) return 0;
+    mod_vfs.fd_release(fd);
+    return 1;
+}
+
 static inline long ktest_sys_read(long fd, void *buf, size_t n) {
     user_page_ref_t ref;
     if (proc_user_ptr_to_page_ref(current, (uintptr_t)buf, &ref) < 0) return -EFAULT;
@@ -1806,6 +1813,11 @@ static void signal_stack_overflow_test(void)
 
 void ktest_run_all(void)
 {
+    if (ktest_user_filter_active()) {
+        mod_vfs.klogf("KERNEL TESTS SKIPPED: user test filter active\n");
+        return;
+    }
+
     total_pass = 0;
     total_fail = 0;
 

@@ -1866,10 +1866,16 @@ long sys_vfork(uint32_t *frame) {
     uint32_t child_a0 = frame[-2];      /* a0 = return addr to caller */
     uint32_t child_a3 = frame[1];       /* a3 (compiler expects preserved) */
 
+    void *parent_ustack = proc_user_stack_base(current);
+    if (!parent_ustack) {
+      proc_free(child);
+      return -(long)ENOMEM;
+    }
+
     void *child_ustack = NULL;
     uint32_t remapped_sp = 0;
-    if (vfork_copy_user_stack(mem_region_page_to_ptr(current->stack_page_id),
-                              child_user_sp, &child_ustack, &remapped_sp) < 0) {
+    if (vfork_copy_user_stack(parent_ustack, child_user_sp, &child_ustack,
+                              &remapped_sp) < 0) {
       proc_free(child);
       return -(long)ENOMEM;
     }
@@ -1878,8 +1884,7 @@ long sys_vfork(uint32_t *frame) {
 
     /* Remap a3 if it points into the parent's stack page */
     {
-      uint32_t pbase =
-          (uint32_t)(uintptr_t)mem_region_page_to_ptr(current->stack_page_id);
+      uint32_t pbase = (uint32_t)(uintptr_t)parent_ustack;
       uint32_t cbase = (uint32_t)(uintptr_t)child_ustack;
       if (child_a3 >= pbase && child_a3 < pbase + PAGE_SIZE)
         child_a3 = cbase + (child_a3 - pbase);

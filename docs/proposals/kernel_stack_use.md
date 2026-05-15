@@ -1,13 +1,13 @@
 # Kernel Stack Use Reduction
 
-**Status:** deferred proposal.  Do not execute this work yet unless stack
-measurements show an urgent blocker.
+**Status:** dropped for now.  Do not execute this work before the userland
+subsystem migration decides which subsystem paths remain in the kernel.
 
 ## Goal
 
-Reduce kernel-stack use on architectures with small per-process kernel-stack
-budgets, especially ARM-M and ia16, by measuring and simplifying deep syscall
-paths before shrinking stack sizes.
+Reduce kernel-stack use if subsystem-side paths still create pressure after
+the context-switch cleanup.  Ordinary PPAP syscall paths are already optimized
+well enough that broad usage-tracking work is not an active cleanup task.
 
 The main suspected pressure point is the subsystem call path: loaders,
 bridges, host shims, VFS translation, and emulator-facing glue can build deep
@@ -26,29 +26,26 @@ lands, much of the current kernel-side subsystem call path will disappear or
 become much shallower.  Stack-reduction work done before that move may become
 obsolete, or worse, may optimize code that should be deleted instead.
 
-For now, keep this proposal as a measurement and contingency plan.
+For now, keep this proposal only as background context.  It is not an active
+cleanup plan.
 
 ## Current State
 
 - ARM-M targets use fixed per-process kernel-stack slots.
 - ARM-M user-process slots are currently 2 KB.
 - ia16 uses fixed 1 KB user-process kernel-stack slots.
-- `KSTACK_USAGE_TRACK` can measure fixed-region high-water marks for ia16 and
-  ARM-M when enabled at build time.
+- Common PPAP syscall paths are not the main stack-risk area now.
+- Any remaining pressure is expected to be in subsystem bridges, host shims,
+  loaders, or emulator-facing glue.
 - `docs/proposals/context_switch_cleanup.md` tracks the broader
   per-process-kernel-stack context-switch model.
 
-## Deferred Work
+## Dropped Work
 
-1. Add an easy build switch, such as `PPAP_KSTACK_USAGE_TRACK=ON`, instead of
-   requiring manual `CMAKE_C_FLAGS=-DKSTACK_USAGE_TRACK=1`.
-2. Measure high-water marks on:
-   - `qemu_arm`
-   - `pico1`
-   - `pico2`
-   - `pico1calc`
-   - `pcxt`
-3. Exercise deep paths:
+- Add broad stack-usage measurement just for this cleanup.
+- Rewrite subsystem bridge code solely to reduce stack depth before the
+  userland subsystem migration.
+- Exercise deep subsystem paths as an active cleanup task:
    - shell startup
    - `execve` and `vfork`
    - VFS path lookup and directory reads
@@ -56,11 +53,7 @@ For now, keep this proposal as a measurement and contingency plan.
    - CP/M subsystem calls
    - Human68k / m68k subsystem calls
    - DOS subsystem calls on ia16
-4. Record high-water marks in `docs/kernel/stack.md`.
-5. Only after measurement, decide whether ARM-M can reduce
-   `PROC_KSTACK_SIZE` below 2 KB on any target.
-6. If stack pressure remains after subsystem userland migration, reduce the
-   remaining deep kernel paths with targeted changes.
+- Shrink `PROC_KSTACK_SIZE` as part of this proposal.
 
 ## Possible Reduction Tactics
 
@@ -79,7 +72,7 @@ These are intentionally notes, not an implementation plan:
 
 ## Non-Goals
 
-- Do not shrink `PROC_KSTACK_SIZE` based on intuition.
+- Do not shrink `PROC_KSTACK_SIZE` as part of this deferred proposal.
 - Do not rewrite subsystem bridge code solely for stack use before the
   userland subsystem plan is resolved.
 - Do not introduce architecture-specific stack tricks for ARM-M unless the
@@ -95,5 +88,3 @@ Resume this proposal only if one of these becomes true:
   ARM-M or ia16 work.
 - Measurements after userland subsystem migration still show excessive
   kernel-stack use.
-- A target needs a smaller `PROC_KSTACK_SIZE` for memory-map reasons and the
-  measured margin is not yet sufficient.

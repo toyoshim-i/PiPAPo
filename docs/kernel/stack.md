@@ -152,8 +152,9 @@ m68k targets currently use 2 KB user-process slots:
 PROC_KSTACK_SIZE=2048u
 ```
 
-TODO: measure m68k fixed-kstack high-water marks and shrink to 1 KB if the
-runtime margin is safe.
+This is the steady-state budget for now.  Remaining stack-pressure work is
+expected to come from subsystem-side call paths, which are tracked separately
+in `docs/proposals/kernel_stack_use.md`.
 
 ## Xtensa
 

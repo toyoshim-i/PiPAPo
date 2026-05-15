@@ -245,7 +245,15 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         echo "[build] Building xtensa_cc via Docker ($DOCKER_IMAGE)..."
         BUILD_ARGS=()
         if [[ $CLEAN -eq 1 ]]; then BUILD_ARGS+=(--clean); fi
-        if [[ "$TESTS" == "ON" ]]; then BUILD_ARGS+=(--test); fi
+        if [[ "$TESTS_EXTENDED" == "ON" ]]; then
+            BUILD_ARGS+=(--test-extended)
+        elif [[ "$TESTS" == "ON" ]]; then
+            BUILD_ARGS+=(--test)
+        fi
+        if [[ -n "$OVERLAY" ]]; then
+            DOCKER_OVERLAY="${OVERLAY/#"$PROJECT_DIR"/\/ppap}"
+            BUILD_ARGS+=("--overlay=$DOCKER_OVERLAY")
+        fi
         docker_run "$DOCKER_IMAGE" bash -c "
             export IDF_TOOLS_PATH=/opt/ppap/xtensa-tools && \
             source /opt/ppap/src/esp-idf/export.sh >/dev/null 2>&1 && \
@@ -560,6 +568,13 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     OVERLAY_DIR="$PROJECT_DIR/src/target/xtensa_cc/romfs"
     if [[ -d "$OVERLAY_DIR" ]]; then
         cp -r "$OVERLAY_DIR"/* "$ROMFS_STAGING/" 2>/dev/null || true
+    fi
+    if [[ -n "$OVERLAY" ]]; then
+        OVERLAY_ABS="$(cd "$OVERLAY" 2>/dev/null && pwd)" || {
+            echo "[build] Error: overlay directory '$OVERLAY' not found" >&2
+            exit 1
+        }
+        cp -r "$OVERLAY_ABS"/* "$ROMFS_STAGING/" 2>/dev/null || true
     fi
 
     # Generate romfs.bin
