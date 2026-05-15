@@ -4,10 +4,13 @@
  * argv[0] decides the persona: invoked as "more" → forward-only, exits
  * at EOF; invoked as anything else → full less behavior.
  *
- * L-1 scope: terminal raw mode, winsize, persona detect, naive first-
- * screen dump, status bar, quit on 'q' / Ctrl-C (default SIGINT).
- * Forward paging, line index, search, line numbers, env vars and the
- * help overlay land in later phases.  See docs/proposals/less_pager.md.
+ * Current scope (L-2): persona detect, raw mode, lazy forward paging by
+ * streamed reads (no full line index yet), reverse-video status bar with
+ * filename / line / percent / EOF marker, `more` auto-exits when the
+ * viewport reaches EOF.
+ *
+ * Backward paging, search, line numbers, env vars and the help overlay
+ * land in later phases.  See docs/proposals/less_pager.md.
  */
 
 #include "lib/uclib.h"
@@ -25,6 +28,7 @@
 #define C_DIM     C("\033[2m")
 #define C_BCYAN   C("\033[1;36m")
 #define C_BYELLOW C("\033[1;33m")
+#define C_BGREEN  C("\033[1;32m")
 #define C_REV     C("\033[7m")
 
 /* ── Global state ──────────────────────────────────────────────────────── */
@@ -32,9 +36,20 @@
 static int g_rows = 24;
 static int g_cols = 80;
 static int g_more_mode;          /* 1 when invoked as `more` */
-static const char *g_filename;   /* for status line */
+static const char *g_filename;
 static int g_fd = -1;
 static long g_filesize;
+
+/* Viewport position.  g_top_off is the byte offset of the first character
+ * shown on screen; g_top_line is its 1-based line number.  After every
+ * render we also know g_next_off: the byte offset *just past* the last
+ * character drawn — i.e. where the next screen would start.  When the
+ * renderer hits EOF before filling the viewport, g_eof is set. */
+static long g_top_off;
+static long g_top_line = 1;
+static long g_next_off;
+static long g_next_line;
+static int  g_eof;
 
 static struct termios g_saved_tios;
 static int g_raw_active;
@@ -70,8 +85,8 @@ static void term_raw(void) {
 
 static void term_restore(void) {
   if (!g_raw_active) return;
-  write(1, "\033[?7h", 5);             /* re-enable autowrap */
-  write(1, "\033[" "0m", 4);           /* reset SGR */
+  write(1, "\033[?7h", 5);
+  write(1, "\033[" "0m", 4);
   ioctl(0, TCSETS, &g_saved_tios);
   g_raw_active = 0;
 }
@@ -150,7 +165,6 @@ static int read_key(void) {
           case '4': case '8': return LKEY_END;
         }
       }
-      /* Swallow two-digit ~ sequences so they don't leak. */
       if (c4 >= '0' && c4 <= '9') read_byte();
     }
     return LKEY_NONE;
@@ -166,67 +180,151 @@ static int read_key(void) {
   return LKEY_NONE;
 }
 
-/* ── Naive first-screen dump (placeholder until L-2) ───────────────────── */
+/* ── Renderer ─────────────────────────────────────────────────────────── */
 
-static void draw_first_screen(void) {
-  fputs("\033[2J\033[H", stdout);    /* clear, home */
+/* Render up to (g_rows - 1) logical lines starting at byte offset
+ * `start_off`.  Long lines are truncated at g_cols (wrap toggle is a
+ * later phase).  Updates g_next_off / g_next_line / g_eof as side
+ * effects so the main loop can advance the viewport for the next page. */
+static void draw_view(long start_off, long start_line) {
+  fputs("\033[2J\033[H", stdout);
 
-  /* Read up to g_rows-1 lines from the top of the file, truncating at
-   * g_cols.  This is just so L-1 shows something on screen — L-2
-   * replaces it with the proper line-index pager. */
-  lseek(g_fd, 0, 0);
+  lseek(g_fd, start_off, 0);
+
   char buf[256];
   ssize_t n;
   int row = 0;
   int col = 0;
-  int limit_rows = g_rows - 1;       /* leave one row for the status bar */
+  int limit = g_rows - 1;
+  long pos = start_off;
+  long line = start_line;
+  int saw_any_in_line = 0;
+  int hit_eof = 0;
 
-  while (row < limit_rows && (n = read(g_fd, buf, sizeof(buf))) > 0) {
-    for (ssize_t i = 0; i < n && row < limit_rows; i++) {
+  while (row < limit) {
+    n = read(g_fd, buf, sizeof(buf));
+    if (n <= 0) { hit_eof = 1; break; }
+    for (ssize_t i = 0; i < n && row < limit; i++) {
       unsigned char c = (unsigned char)buf[i];
+      pos++;
       if (c == '\n') {
         putchar('\n');
         row++;
         col = 0;
+        line++;
+        saw_any_in_line = 0;
       } else if (c == '\t') {
         int tw = 8 - (col & 7);
         for (int k = 0; k < tw && col < g_cols; k++) {
           putchar(' ');
           col++;
         }
+        saw_any_in_line = 1;
       } else if (c < 0x20 || c == 0x7f) {
         if (col < g_cols) { putchar('?'); col++; }
+        saw_any_in_line = 1;
       } else {
         if (col < g_cols) { putchar((char)c); col++; }
+        saw_any_in_line = 1;
       }
     }
   }
-  /* Pad remaining rows so the status bar always sits at the bottom. */
-  while (row < limit_rows) {
+
+  /* If we hit EOF mid-line (no trailing newline), the partial line still
+   * occupied a visual row — count it so the viewport math stays honest. */
+  if (hit_eof && saw_any_in_line) {
+    row++;
+    line++;
+  }
+
+  /* Pad the viewport so the status bar always sits on the last row. */
+  while (row < limit) {
     putchar('\n');
     row++;
   }
+
+  g_next_off = pos;
+  g_next_line = line;
+  g_eof = hit_eof;
 }
 
+/* ── Status bar ────────────────────────────────────────────────────────── */
+
 static void draw_status(void) {
-  /* Status bar on the last row, reverse-video.  L-1 just shows the
-   * filename and persona + geometry; position/percent come with L-2. */
+  unsigned pct = 0;
+  if (g_filesize > 0) {
+    long base = g_eof ? g_filesize : g_next_off;
+    pct = (unsigned)((base * 100) / g_filesize);
+    if (pct > 100) pct = 100;
+  } else {
+    pct = 100;
+  }
+
   printf("\033[%d;1H", g_rows);
   fputs(C_REV, stdout);
   if (g_more_mode) {
     fputs(C_BYELLOW, stdout);
     fputs("--More--", stdout);
-    fputs(C_RST C_REV, stdout);
-    fputs(" ", stdout);
+    fputs(C_RST C_REV " ", stdout);
   }
   fputs(C_BCYAN, stdout);
   fputs(g_filename ? g_filename : "(stdin)", stdout);
   fputs(C_RST C_REV, stdout);
-  printf("  %u bytes  %dx%d  ", (unsigned)g_filesize, g_cols, g_rows);
+  fputs("  ", stdout);
+  fputs(C_BYELLOW, stdout);
+  printf("line %u", (unsigned)g_top_line);
+  fputs(C_RST C_REV " · ", stdout);
+  fputs(C_BYELLOW, stdout);
+  printf("%u%%", pct);
+  fputs(C_RST C_REV, stdout);
+  if (g_eof) {
+    fputs("  ", stdout);
+    fputs(C_BGREEN, stdout);
+    fputs(g_more_mode ? "(END — any key)" : "(END)", stdout);
+    fputs(C_RST C_REV, stdout);
+  }
+  fputs("  ", stdout);
   fputs(C_DIM "(q to quit)" C_RST, stdout);
-  fputs("\033[K", stdout);            /* clear to EOL inside reverse */
+  fputs("\033[K", stdout);
   fputs(C_RST, stdout);
   fflush(stdout);
+}
+
+static void redraw(void) {
+  draw_view(g_top_off, g_top_line);
+  draw_status();
+}
+
+/* ── Navigation ───────────────────────────────────────────────────────── */
+
+static void page_forward(void) {
+  if (g_eof) return;
+  g_top_off = g_next_off;
+  g_top_line = g_next_line;
+  redraw();
+}
+
+static void line_forward(void) {
+  /* Advance to the next line: scan from g_top_off for the first '\n',
+   * set g_top_off to the byte after it.  If no newline before EOF,
+   * we're at the last line — do nothing. */
+  if (g_eof && g_next_off >= g_filesize) return;
+  lseek(g_fd, g_top_off, 0);
+  char buf[256];
+  ssize_t n;
+  long pos = g_top_off;
+  int found = 0;
+  while ((n = read(g_fd, buf, sizeof(buf))) > 0) {
+    for (ssize_t i = 0; i < n; i++) {
+      pos++;
+      if (buf[i] == '\n') { found = 1; break; }
+    }
+    if (found) break;
+  }
+  if (!found) return;
+  g_top_off = pos;
+  g_top_line++;
+  redraw();
 }
 
 /* ── Main loop ─────────────────────────────────────────────────────────── */
@@ -234,21 +332,34 @@ static void draw_status(void) {
 static int run(void) {
   term_get_winsize();
   term_raw();
-  draw_first_screen();
-  draw_status();
+  redraw();
 
   for (;;) {
-    int k = read_key();
-    if (k == 'q' || k == 0x03 /* ^C */) break;
-    /* Any other key: ignore in L-1; L-2 will wire paging here.
-     * Re-query winsize each iteration so SIGWINCH-less terminals
-     * still pick up resizes between key presses. */
     int prev_rows = g_rows, prev_cols = g_cols;
-    term_get_winsize();
-    if (g_rows != prev_rows || g_cols != prev_cols) {
-      draw_first_screen();
-      draw_status();
+
+    int k = read_key();
+
+    /* `q` and Ctrl-C always quit. */
+    if (k == 'q' || k == 0x03) break;
+
+    /* `more` mode: at EOF, any keypress exits (matches real `more`). */
+    if (g_more_mode && g_eof) break;
+
+    /* Forward paging.  Both modes accept Space / f / PgDn / Down. */
+    if (k == ' ' || k == 'f' || k == LKEY_PGDN) {
+      page_forward();
+      if (g_more_mode && g_eof) {
+        /* Reached EOF while paging: redraw to surface "(END)" then wait
+         * one more keystroke before quitting, so the user actually sees
+         * the last screen. */
+        continue;
+      }
+    } else if (k == '\n' || k == '\r' || k == 'j' || k == LKEY_DOWN) {
+      line_forward();
     }
+
+    term_get_winsize();
+    if (g_rows != prev_rows || g_cols != prev_cols) redraw();
   }
   return 0;
 }
@@ -257,10 +368,13 @@ static int run(void) {
 
 static void usage(int more_mode) {
   if (more_mode) {
-    fputs("Usage: more FILE\n", stdout);
+    fputs("Usage: more FILE\n"
+          "  Page forward through FILE.  Space=next screen, Enter=one line,\n"
+          "  q=quit (auto-exits at EOF).\n", stdout);
   } else {
     fputs("Usage: less FILE\n"
-          "  Interactive pager.  Press q to quit.\n", stdout);
+          "  Interactive pager.  Space/f=page forward, Enter/j=line forward,\n"
+          "  k=line back, q=quit.\n", stdout);
   }
 }
 
@@ -286,15 +400,12 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  /* File size via lseek(SEEK_END) — keeps the loader-format dependency
-   * out of the inner loop and matches what `wc -c` would report. */
   g_filesize = lseek(g_fd, 0, 2 /* SEEK_END */);
   if (g_filesize < 0) g_filesize = 0;
 
   int rc = run();
 
   term_restore();
-  /* Cursor to a clean line below the pager before returning to the shell. */
   fputs("\033[" "0m", stdout);
   printf("\033[%d;1H\n", g_rows);
   fflush(stdout);
