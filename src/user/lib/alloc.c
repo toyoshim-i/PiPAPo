@@ -111,7 +111,21 @@ static int uc_heap_extend(size_t want) {
     return 1;
   }
 
-  free((char *)block + sizeof(uc_block_t));
+  /* The new region sits above every existing block (brk only grows up
+   * and the free list is address-sorted), so append at the tail and
+   * coalesce with that tail if they are physically adjacent.  Avoids
+   * routing the brk-derived pointer through free() — which GCC
+   * -Wfree-nonheap-object refuses to accept regardless of whether
+   * `free` here resolves to the local allocator. */
+  uc_free_t *tail = uc_heap_head;
+  while (tail->next) tail = tail->next;
+  if (blocks_adjacent(&tail->hdr, &block->hdr)) {
+    tail->hdr.size =
+        (uint16_t)(tail->hdr.size + sizeof(uc_block_t) + block->hdr.size);
+  } else {
+    tail->next = block;
+    block->prev = tail;
+  }
   return 1;
 }
 
