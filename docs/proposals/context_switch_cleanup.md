@@ -46,14 +46,17 @@ The detailed architecture material was moved out of this proposal:
 2. Get reliable `xtensa_cc` hardware test runs for the blocking-continuation
    suite.  The build works, but the flash/monitor path can fail before tests
    start.
-3. Audit non-syscall Xtensa `sched_switch()` callers.  Syscall-path blocking
+3. Keep syscall-epilogue switch behavior behind an architecture capability.
+   Xtensa uses this for `sys_exit()` because the syscall body returns to an
+   epilogue that switches after seeing `current->state != PROC_RUNNABLE`.
+4. Audit non-syscall Xtensa `sched_switch()` callers.  Syscall-path blocking
    runs on the fixed kstack through `xtensa_syscall_on_kstack()`.  Any future
    process-continuation path outside that wrapper must either run on the fixed
    kstack or be documented as bootstrap/idle-only.
-4. Use common `KSTACK_USAGE_TRACK` measurements before shrinking stack sizes.
+5. Use common `KSTACK_USAGE_TRACK` measurements before shrinking stack sizes.
    m68k currently uses 2 KB process slots with a TODO to shrink to 1 KB if the
    high-water margin is safe.
-5. Keep the deferred subsystem stack-use work in
+6. Keep the deferred subsystem stack-use work in
    [`kernel_stack_use.md`](kernel_stack_use.md).  Much of that effort may be
    obsoleted by moving subsystem work to userland.
 

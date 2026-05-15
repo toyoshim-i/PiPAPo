@@ -51,7 +51,7 @@ _Static_assert(offsetof(pcb_t, state) == PCB_STATE_OFFSET,
 #if defined(__ia16__)
 /* Shifted by 8 bytes when the 4 stub-save fields below were inserted at
  * offsets 10-16.  Must match trap.S. */
-#define PCB_SVC_NEEDS_RESTART_OFFSET 524u
+#define PCB_SVC_NEEDS_RESTART_OFFSET 526u
 _Static_assert(offsetof(pcb_t, syscall_needs_restart) ==
                    PCB_SVC_NEEDS_RESTART_OFFSET,
                "PCB_SVC_NEEDS_RESTART_OFFSET must match trap.S");
@@ -281,7 +281,12 @@ page_id_t proc_user_stack_page_id(const pcb_t *p) {
 void *proc_user_stack_base(const pcb_t *p) {
   page_id_t page_id = proc_user_stack_page_id(p);
   if (page_id == PAGE_ID_INVALID) return NULL;
+#if defined(__ia16__)
+  (void)page_id;
+  return NULL;
+#else
   return mem_region_page_to_ptr(page_id);
+#endif
 }
 
 void proc_clear_page_tracking(pcb_t *p) {

@@ -20,6 +20,7 @@
 /* Xtensa vfork builds the child frame on the fixed kstack slot. */
 #define ARCH_VFORK_COPY_PROCESS_STACK 0
 #define ARCH_VFORK_CHILD_FRAME_POINTER 0
+#define ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE 1
 
 /* Solicited/new-process frame layout used by switch.S. */
 #define XTENSA_SOL_EXIT_WORD 4u

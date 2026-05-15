@@ -32,7 +32,7 @@
   .code16
   .text
 
-  .equ PCB_SVC_NEEDS_RESTART_OFFSET, 524
+  .equ PCB_SVC_NEEDS_RESTART_OFFSET, 526
 
   .global i16_syscall_isr
   .global i16_trap_after_switch

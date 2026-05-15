@@ -17,6 +17,7 @@
 /* m68k vfork copies a fixed-kstack TRAP #0 frame directly. */
 #define ARCH_VFORK_COPY_PROCESS_STACK 0
 #define ARCH_VFORK_CHILD_FRAME_POINTER 0
+#define ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE 0
 
 /* Pointer to the saved d0-d7/a0-a6/SR/PC frame at SSP, captured by trap.S
  * at TRAP #0 entry.  signal_check / sys_rt_sigreturn read/overwrite the

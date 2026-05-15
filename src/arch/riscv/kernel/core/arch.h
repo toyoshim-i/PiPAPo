@@ -18,6 +18,7 @@
 /* RISC-V vfork copies a fixed-kstack trap frame and patches saved a0. */
 #define ARCH_VFORK_COPY_PROCESS_STACK 0
 #define ARCH_VFORK_CHILD_FRAME_POINTER 1
+#define ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE 0
 
 /* Pointer to the saved trap frame at the base of the current kernel trap
  * stack frame, captured by trap.S in the ecall (syscall) path.

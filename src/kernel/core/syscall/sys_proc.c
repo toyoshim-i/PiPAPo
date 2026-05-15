@@ -39,6 +39,10 @@
 
 #define TRACE_PHASE_ENTER 0
 #define TRACE_PHASE_EXIT 1
+
+#ifndef ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE
+#define ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE 0
+#endif
 #define TRACE_MODE_MASK \
   (PPAP_TRACE_MODE_PPAP_SYSCALL | PPAP_TRACE_MODE_SUBSYS_CALL)
 
@@ -1500,10 +1504,10 @@ void kernel_panic_halt(uint8_t status) { target_qemu_poweroff(status); }
  *     the zombie.  Orphans are reparented to init (step 6), ensuring
  *     init can always reap them.
  *
- * Note: sys_exit runs inside SVC_Handler (Handler mode).  sched_switch()
- * only pends PendSV, which tail-chains after SVC returns.  There is no
- * need for an infinite loop — the ZOMBIE process will never be scheduled
- * again because sched_next() only picks PROC_RUNNABLE processes.
+ * Note: after the process is marked ZOMBIE, either sys_exit switches away
+ * directly or the architecture's syscall epilogue performs the switch.  There
+ * is no need for an infinite loop — the ZOMBIE process will never be
+ * scheduled again because sched_next() only picks PROC_RUNNABLE processes.
  */
 long sys_exit(long status) {
   /* Guard against double-exit.  Some user-space _Exit() paths issue
@@ -1511,10 +1515,10 @@ long sys_exit(long status) {
    * call can reach here if the context switch after the first exit
    * doesn't happen before the ecall return path re-executes. */
   if (current->state == PROC_ZOMBIE) {
-#if defined(__xtensa__)
-    /* On Xtensa, syscall handler performs the post-syscall switch when it
-     * sees !PROC_RUNNABLE. Triggering a nested cooperative yield here can
-     * bounce back to user stub loops. */
+#if ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE
+    /* The syscall epilogue performs the post-syscall switch when it sees
+     * !PROC_RUNNABLE. Triggering a nested cooperative yield here can bounce
+     * back to user stub loops on such architectures. */
     return 0;
 #else
     sched_switch();
@@ -1617,8 +1621,8 @@ long sys_exit(long status) {
   proc_kstack_usage_report();
 #endif
   current->state = PROC_ZOMBIE;
-#if defined(__xtensa__)
-  /* Xtensa: return to syscall handler and let it switch away based on
+#if ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE
+  /* Return to the syscall epilogue and let it switch away based on
    * current->state != PROC_RUNNABLE. */
   return 0;
 #else
@@ -1917,10 +1921,9 @@ long sys_vfork(uint32_t *frame) {
   current->state = PROC_BLOCKED;
   child->state = PROC_RUNNABLE;
 
-  /* 9. Yield — PendSV will switch to child after SVC returns.
-   * Note: sched_switch() only pends PendSV (can't preempt SVC), so the
-   * code below still executes.  This is harmless — the parent is BLOCKED,
-   * so PendSV tail-chains and switches it out after our SVC return. */
+  /* 9. Yield to the child.  Some architectures switch immediately here;
+   * others switch from the syscall/trap return path.  The parent is BLOCKED,
+   * so it will not be selected again until the child exits or execs. */
   sched_switch();
 
   /* Clear stale flags left by the child's syscalls while we were blocked.

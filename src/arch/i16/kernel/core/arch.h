@@ -16,6 +16,7 @@
 /* ia16 vfork has a split real-mode frame and shares the user stack. */
 #define ARCH_VFORK_COPY_PROCESS_STACK 0
 #define ARCH_VFORK_CHILD_FRAME_POINTER 0
+#define ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE 0
 
 /* -- Context switch trigger ---------------------------------------------
  *

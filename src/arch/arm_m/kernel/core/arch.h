@@ -21,6 +21,7 @@
 /* ARM-M vfork still manufactures the child frame on a copied process stack. */
 #define ARCH_VFORK_COPY_PROCESS_STACK 1
 #define ARCH_VFORK_CHILD_FRAME_POINTER 1
+#define ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE 0
 
 extern volatile uint32_t arm_exc_return[2];
 extern volatile uint32_t svc_saved_msp[2];
