@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 
+#include "common/signal.h"
 #include "kernel/common/ioregs.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/arch.h"
@@ -41,12 +42,53 @@ volatile uint32_t rv32_trap_frame_sp = 0;
  */
 #define CRASH_LOG ((volatile uint32_t *)0x20005F00u)
 
+/* Classify a synchronous exception so a user-mode fault can exit the
+ * process with status 128 + signal (matching the m68k / arm_m crash
+ * handlers).  Returns 0 for causes that are never a user-space signal. */
+static int riscv_classify_fault(uint32_t mcause) {
+  switch (mcause) {
+    case 0: /* Instruction address misaligned */
+    case 1: /* Instruction access fault */
+      return SIGSEGV;
+    case 2: /* Illegal instruction */
+      return SIGILL;
+    case 3: /* Breakpoint */
+      return SIGILL;
+    case 4: /* Load address misaligned */
+    case 6: /* Store/AMO address misaligned */
+      return SIGBUS;
+    case 5: /* Load access fault */
+    case 7: /* Store/AMO access fault */
+      return SIGSEGV;
+    default:
+      return 0;
+  }
+}
+
 static volatile int exception_reentry_guard;
 
 void riscv_exception_handler(uint32_t mcause, uint32_t mepc, uint32_t mtval,
                              uint32_t saved_fp, uint32_t saved_sp,
                              uint32_t saved_gp) {
-  /* Disable all interrupts to prevent further traps */
+  /* mstatus.MPP at trap entry tells us whether the fault came from
+   * user code (0b00) or kernel code (0b11).  trap.S clears MIE but
+   * leaves MPP intact, so reading mstatus here is still authoritative. */
+  uint32_t mstatus;
+  __asm__ volatile("csrr %0, mstatus" : "=r"(mstatus));
+  int from_user = ((mstatus >> 11) & 0x3u) == 0u;
+  int sig = riscv_classify_fault(mcause);
+
+  if (from_user && sig && current && current->pid != 0) {
+    /* User process fault: deliver as exit status 128 + sig.  Leave
+     * MIE / MTIE alone so the timer keeps preempting the next process
+     * scheduled by sys_exit's sched_switch. */
+    sys_exit(128 + sig); /* marks proc ZOMBIE and yields — no return */
+    /* sys_exit never returns; if it somehow does, fall through to panic */
+  }
+
+  /* Kernel-mode fault (or user fault we can't classify) — fatal.
+   * Disable all interrupts so the panic diagnostic isn't interleaved
+   * with timer ISRs. */
   csr_clear(mstatus, MSTATUS_MIE);
   csr_clear(mie, MIE_MTIE);
 

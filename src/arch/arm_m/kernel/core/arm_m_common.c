@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 
+#include "common/signal.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/boot.h"
 #include "kernel/core/proc/proc.h"
@@ -45,12 +46,6 @@ int arm_can_kernel_sched_switch(void) {
   return current && current->state == PROC_BLOCKED &&
          syscall_restart[core_id()] == 0;
 }
-
-/* POSIX signal numbers */
-#define SIGILL 4
-#define SIGBUS 7
-#define SIGFPE 8
-#define SIGSEGV 11
 
 /*
  * Determine the fault type by inspecting the faulting Thumb instruction.

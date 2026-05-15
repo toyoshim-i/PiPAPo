@@ -212,11 +212,9 @@ int main(void)
 #endif
     };
     tests[t++] = (test_entry_t){ "/bin/test_vfork", TEST_ENABLED };
-    /* test_fault: ia16 routes faults to panic; rv32 kernel trap handler
-     * terminates the whole system on illegal-instruction instead of
-     * delivering SIGILL to the offending process. */
+    /* test_fault: ia16 routes faults to panic. */
     tests[t++] = (test_entry_t){ "/bin/test_fault",
-#if defined(__ia16__) || defined(__riscv)
+#if defined(__ia16__)
         TEST_DISABLED
 #else
         TEST_ENABLED

@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 
+#include "common/signal.h"
 #include "kernel/common/ioregs.h" /* SR_USER */
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/arch.h"
@@ -38,13 +39,6 @@ volatile uint32_t m68k_trap_frame_sp = 0;
 /* Forward declarations */
 long sys_exit(long status);
 long sys_kill(long pid, long sig);
-
-/* POSIX signal numbers */
-#define SIGILL 4
-#define SIGBUS 7
-#define SIGFPE 8
-#define SIGSEGV 11
-#define SIGABRT 6
 
 /* Fault type → description and POSIX signal */
 static const char *fault_name(int fault_type) {

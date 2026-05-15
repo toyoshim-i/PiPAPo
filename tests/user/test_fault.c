@@ -14,17 +14,22 @@
  *   m68k: Both tests work. ILLEGAL opcode 0x4AFC, DIVS.W by zero.
  *   ARM:  illegal_insn works (UDF 0xDEAD). divzero skipped on
  *         Cortex-M0+ (no hardware divide instruction).
+ *   rv32: illegal_insn uses the "unimp" 32-bit encoding (csrrw to a
+ *         reserved CSR).  divzero skipped — RV32IMAC has no hardware
+ *         divide trap (div by zero returns -1, no exception).
  */
 
 #include "utest.h"
-
-/* ── Fault triggers (child process) ──────────────────────────────────────── */
 
 static void __attribute__((noreturn)) do_illegal_insn(void)
 {
 #if defined(__m68k__)
     /* 0x4AFC is the m68k ILLEGAL instruction */
     __asm__ volatile (".short 0x4afc");
+#elif defined(__riscv)
+    /* `unimp` pseudo-instruction: csrrw x0, cycle, x0 with a reserved
+     * write to a read-only CSR — guaranteed illegal instruction trap. */
+    __asm__ volatile (".4byte 0xc0001073");
 #else
     /* 0xDEAD is a permanently undefined Thumb encoding (UDF range 0xDExx) */
     __asm__ volatile (".short 0xdead");
@@ -49,6 +54,7 @@ static void __attribute__((noreturn)) do_divzero(void)
     (void)result;
 #else
     /* Cortex-M0+ has no hardware divide — SDIV/UDIV are ARMv7-M+.
+     * RV32IMAC's `div` returns -1 on div-by-zero without trapping.
      * Exit 99 to signal "not applicable on this arch". */
 #endif
     _exit(99);
