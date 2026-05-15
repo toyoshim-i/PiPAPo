@@ -4,13 +4,15 @@
  * argv[0] decides the persona: invoked as "more" → forward-only, exits
  * at EOF; invoked as anything else → full less behavior.
  *
- * Current scope (L-2): persona detect, raw mode, lazy forward paging by
- * streamed reads (no full line index yet), reverse-video status bar with
- * filename / line / percent / EOF marker, `more` auto-exits when the
- * viewport reaches EOF.
+ * Current scope (L-3): persona detect, raw mode, forward + backward
+ * paging through a lazy line-offset index (read-on-demand, no full
+ * scan up front), reverse-video status bar with filename / line /
+ * percent / EOF marker.  `less` accepts j/k/Space/b/g/G plus arrow
+ * and PgUp/PgDn equivalents; `more` stays forward-only and auto-exits
+ * at EOF.
  *
- * Backward paging, search, line numbers, env vars and the help overlay
- * land in later phases.  See docs/proposals/less_pager.md.
+ * Search, line numbers, env vars and the help overlay land in later
+ * phases.  See docs/proposals/less_pager.md.
  */
 
 #include "lib/uclib.h"
@@ -50,6 +52,20 @@ static long g_top_line = 1;
 static long g_next_off;
 static long g_next_line;
 static int  g_eof;
+
+/* Lazy line-offset index.  g_lines[i] is the byte offset where line
+ * (i + 1) starts; g_lines[0] is always 0.  Backed by a fixed-size BSS
+ * array — most PPAP apps that need a heap seed `uc_heap_init` with a
+ * static pool, and an index of this shape is just as well served by a
+ * plain array.  Past IDX_MAX, navigation that needs an unindexed line
+ * clamps to the highest indexed line — `G` on a 50 K-line log lands
+ * at the cap. */
+#define IDX_MAX 4096
+
+static uint32_t g_lines[IDX_MAX];
+static unsigned g_lines_count;   /* number of valid entries */
+static long     g_scan_off;      /* file bytes examined for newlines */
+static int      g_index_full;    /* 1 once g_scan_off >= g_filesize */
 
 static struct termios g_saved_tios;
 static int g_raw_active;
@@ -180,6 +196,53 @@ static int read_key(void) {
   return LKEY_NONE;
 }
 
+/* ── Lazy line-offset index ───────────────────────────────────────────── */
+
+static void idx_init(void) {
+  g_lines[0] = 0;
+  g_lines_count = 1;
+  g_scan_off = 0;
+  g_index_full = 0;
+}
+
+static int idx_append(uint32_t off) {
+  if (g_lines_count >= IDX_MAX) return 0;
+  g_lines[g_lines_count++] = off;
+  return 1;
+}
+
+/* Ensure g_lines_count > target_idx, reading the file forward from
+ * g_scan_off and appending an entry after each '\n'.  Stops on EOF, at
+ * the cap, or once target_idx is indexed.  Pass UINT_MAX-ish to index
+ * the whole file (used by `G`). */
+static void idx_extend(unsigned target_idx) {
+  if (g_index_full) return;
+  if (g_lines_count > target_idx) return;
+
+  lseek(g_fd, g_scan_off, 0);
+  char buf[256];
+  while (g_lines_count <= target_idx) {
+    ssize_t n = read(g_fd, buf, sizeof(buf));
+    if (n <= 0) { g_index_full = 1; break; }
+    for (ssize_t i = 0; i < n; i++) {
+      g_scan_off++;
+      if (buf[i] == '\n') {
+        /* A newline at the very last byte of the file means no new line
+         * begins after it — don't index a phantom line. */
+        if (g_scan_off < g_filesize) {
+          if (!idx_append((uint32_t)g_scan_off)) {
+            /* Hit IDX_MAX; navigation past this point clamps to the
+             * highest indexed line.  Stop scanning to save time. */
+            return;
+          }
+          if (g_lines_count > target_idx) return;
+        }
+      }
+    }
+    if (g_scan_off >= g_filesize) { g_index_full = 1; break; }
+  }
+}
+
 /* ── Renderer ─────────────────────────────────────────────────────────── */
 
 /* Render up to (g_rows - 1) logical lines starting at byte offset
@@ -297,34 +360,52 @@ static void redraw(void) {
 
 /* ── Navigation ───────────────────────────────────────────────────────── */
 
-static void page_forward(void) {
-  if (g_eof) return;
-  g_top_off = g_next_off;
-  g_top_line = g_next_line;
+/* Move the viewport so its top is at `target` (1-based line number).
+ * Extends the index as needed and clamps to the highest indexed line
+ * (which equals the last line in the file once g_index_full is set,
+ * or the IDX_MAX cap on huge files). */
+static void goto_line(long target) {
+  if (target < 1) target = 1;
+  /* g_lines[target - 1] holds the offset of `target`; ensure indexed. */
+  idx_extend((unsigned)(target - 1));
+  if ((unsigned)target > g_lines_count) target = (long)g_lines_count;
+  g_top_line = target;
+  g_top_off = (long)g_lines[target - 1];
   redraw();
 }
 
+static void page_forward(void) {
+  if (g_eof) return;
+  goto_line(g_top_line + (g_rows - 1));
+}
+
+static void page_back(void) {
+  goto_line(g_top_line - (g_rows - 1));
+}
+
 static void line_forward(void) {
-  /* Advance to the next line: scan from g_top_off for the first '\n',
-   * set g_top_off to the byte after it.  If no newline before EOF,
-   * we're at the last line — do nothing. */
   if (g_eof && g_next_off >= g_filesize) return;
-  lseek(g_fd, g_top_off, 0);
-  char buf[256];
-  ssize_t n;
-  long pos = g_top_off;
-  int found = 0;
-  while ((n = read(g_fd, buf, sizeof(buf))) > 0) {
-    for (ssize_t i = 0; i < n; i++) {
-      pos++;
-      if (buf[i] == '\n') { found = 1; break; }
-    }
-    if (found) break;
-  }
-  if (!found) return;
-  g_top_off = pos;
-  g_top_line++;
-  redraw();
+  goto_line(g_top_line + 1);
+}
+
+static void line_back(void) {
+  if (g_top_line <= 1) return;
+  goto_line(g_top_line - 1);
+}
+
+static void goto_first(void) {
+  goto_line(1);
+}
+
+/* `G` — scan the whole file (up to IDX_MAX) and land with the last
+ * line at the bottom of the viewport.  On files that exceed IDX_MAX
+ * we land at the cap, which is honest about what we can navigate. */
+static void goto_last(void) {
+  idx_extend((unsigned)-1);     /* fully index */
+  long last = (long)g_lines_count;
+  long target = last - (g_rows - 2);
+  if (target < 1) target = 1;
+  goto_line(target);
 }
 
 /* ── Main loop ─────────────────────────────────────────────────────────── */
@@ -356,6 +437,14 @@ static int run(void) {
       }
     } else if (k == '\n' || k == '\r' || k == 'j' || k == LKEY_DOWN) {
       line_forward();
+    } else if (!g_more_mode && (k == 'b' || k == LKEY_PGUP)) {
+      page_back();
+    } else if (!g_more_mode && (k == 'k' || k == LKEY_UP)) {
+      line_back();
+    } else if (!g_more_mode && (k == 'g' || k == LKEY_HOME)) {
+      goto_first();
+    } else if (!g_more_mode && (k == 'G' || k == LKEY_END)) {
+      goto_last();
     }
 
     term_get_winsize();
@@ -373,8 +462,14 @@ static void usage(int more_mode) {
           "  q=quit (auto-exits at EOF).\n", stdout);
   } else {
     fputs("Usage: less FILE\n"
-          "  Interactive pager.  Space/f=page forward, Enter/j=line forward,\n"
-          "  k=line back, q=quit.\n", stdout);
+          "  Interactive pager.\n"
+          "    Space, f, PgDn, Down   forward one screen / line\n"
+          "    Enter, j               forward one line\n"
+          "    b, PgUp                back one screen\n"
+          "    k, Up                  back one line\n"
+          "    g, Home                jump to first line\n"
+          "    G, End                 jump to last line\n"
+          "    q, Ctrl-C              quit\n", stdout);
   }
 }
 
@@ -402,6 +497,8 @@ int main(int argc, char *argv[]) {
 
   g_filesize = lseek(g_fd, 0, 2 /* SEEK_END */);
   if (g_filesize < 0) g_filesize = 0;
+
+  idx_init();
 
   int rc = run();
 
