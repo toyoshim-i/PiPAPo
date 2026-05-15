@@ -46,7 +46,6 @@ This index is the entry point for project documentation.
   - [`proposals/pizero_port.md`](proposals/pizero_port.md) — Raspberry Pi Zero (future)
   - [`proposals/cardcomputer_port.md`](proposals/cardcomputer_port.md) — M5Stack CardComputer (Xtensa)
   - [`proposals/msdos_subsystem.md`](proposals/msdos_subsystem.md) — MS-DOS personality subsystem
-  - [`proposals/context_switch_cleanup.md`](proposals/context_switch_cleanup.md) — Context-switch and kernel-stack cleanup
   - [`proposals/i8086_ecpu.md`](proposals/i8086_ecpu.md) — i8086 eCPU emulator
   - [`proposals/gdb_rsp_stub.md`](proposals/gdb_rsp_stub.md) — GDB Remote Serial Protocol stub
 

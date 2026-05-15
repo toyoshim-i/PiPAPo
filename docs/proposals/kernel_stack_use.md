@@ -37,7 +37,7 @@ cleanup plan.
 - Common PPAP syscall paths are not the main stack-risk area now.
 - Any remaining pressure is expected to be in subsystem bridges, host shims,
   loaders, or emulator-facing glue.
-- `docs/proposals/context_switch_cleanup.md` tracks the broader
+- `docs/kernel/context_switch.md` and `docs/kernel/stack.md` document the
   per-process-kernel-stack context-switch model.
 
 ## Dropped Work

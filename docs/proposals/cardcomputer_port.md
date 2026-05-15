@@ -273,10 +273,10 @@ both consoles, including Ctrl-C interrupt delivery via
   symptom no longer reproduces during interactive boot but the
   underlying race may still be latent.  True preemptive switching
   in the interrupt return path, plus a focused investigation of
-  the saved-frame race, is the Xtensa scheduler-stability work
-  tracked in
-  [`docs/proposals/context_switch_cleanup.md`](context_switch_cleanup.md)
-  Phase 4 (Migrate Xtensa).
+  the saved-frame race, was addressed by the fixed-kstack context-switch
+  cleanup.  The steady-state Xtensa switch model is documented in
+  [`docs/kernel/context_switch.md`](../kernel/context_switch.md) and
+  [`docs/kernel/stack.md`](../kernel/stack.md).
 
 - **User-space loader is RAM-only; tight pool causes OOM cascades
   during the on-target test suite**: every `exec` on xtensa_cc
@@ -565,6 +565,6 @@ This table covers cross-cutting concerns:
 - [Xtensa architecture details](../targets/xtensa.md)
 - [ESP-IDF SPI Master Driver](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-reference/peripherals/spi_master.html)
   — used by CC-4b's first-cut SPI2 transport.
-- [Context-switch cleanup proposal](context_switch_cleanup.md)
-  Phase 4 — tracks the Xtensa scheduler-stability work referenced
-  under Known Gaps.
+- [Context-switching](../kernel/context_switch.md) and
+  [kernel stacks](../kernel/stack.md) — document the fixed-kstack
+  scheduler model used by xtensa_cc.

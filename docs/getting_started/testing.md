@@ -435,8 +435,8 @@ coverage is not exhaustive yet.
   None of the four newly-`TEST_DISABLED` real failures (`test_env`,
   `test_tmpfs`, `test_cpm`, `test_sos`) were observable before the
   leak fix — all were masked by OOM-cascade exit-127s.  They are
-  recorded here as a baseline for the kernel-stack refactoring
-  tracked in `docs/proposals/context_switch_cleanup.md` Phase 4.
+  recorded here as a baseline for the remaining xtensa_cc subsystem
+  and loader work.
 
   The user-space loader is still RAM-only.  At boot `/proc/meminfo`
   reports ~72 KB free (≈18 pages); the experimental `user_xip.ld` /

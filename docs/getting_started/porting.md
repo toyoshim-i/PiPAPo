@@ -75,8 +75,8 @@ explicitly replay-safe syscalls should use the restart path.
 
 See [`../kernel/context_switch.md`](../kernel/context_switch.md),
 [`../kernel/stack.md`](../kernel/stack.md), and
-[`../proposals/context_switch_cleanup.md`](../proposals/context_switch_cleanup.md)
-for the current architecture-by-architecture model.
+[`../kernel/memory.md`](../kernel/memory.md) for the current
+architecture-by-architecture model.
 
 ## Compiler Flags
 
