@@ -4,13 +4,13 @@
  * argv[0] decides the persona: invoked as "more" → forward-only, exits
  * at EOF; invoked as anything else → full less behavior.
  *
- * Current scope (L-4): persona detect, raw mode, forward + backward
- * paging through a lazy line-offset index, literal `/pat` and `?pat`
- * search with n/N repeat and reverse-video hit highlighting in the
- * viewport.  `less` accepts j/k/Space/b/g/G/PgUp/PgDn plus search;
- * `more` stays forward-only and auto-exits at EOF.
+ * Current scope (L-5, polish complete): persona detect, raw mode,
+ * forward + backward paging via a lazy line-offset index, literal
+ * `/pat` and `?pat` search with n/N repeat + reverse-video hit
+ * highlighting, optional dim left-side line-number gutter (-N), wrap
+ * vs chop (-S), TABS / LESS environment variables, full-screen help
+ * overlay (h).  `more` stays forward-only and auto-exits at EOF.
  *
- * Line numbers, env vars and the help overlay land in later phases.
  * See docs/proposals/less_pager.md.
  */
 
@@ -89,6 +89,14 @@ static char  g_msg[MAX_MSG + 1];
  * pass without keeping a sliding window over the fd. */
 #define VIEW_BUFSZ 4096
 static char g_view_buf[VIEW_BUFSZ];
+
+/* Display options.  All three can be toggled live; their initial
+ * state is set by the LESS environment variable (-N, -S, -M) before
+ * argv flags get a chance to override. */
+static int g_show_lineno;    /* -N: prefix each line with its 1-based number */
+static int g_chop_long;      /* -S: truncate long lines instead of wrapping */
+static int g_long_status;    /* -M: include total line count in the status */
+static int g_tab_width = 8;  /* TABS env var, 1..16 */
 
 static struct termios g_saved_tios;
 static int g_raw_active;
@@ -268,15 +276,83 @@ static void idx_extend(unsigned target_idx) {
 
 /* ── Renderer ─────────────────────────────────────────────────────────── */
 
+/* Compute the width of the optional left-side line-number gutter,
+ * including its trailing space.  Width tracks the digit count of the
+ * highest indexed line so the gutter doesn't churn as `G` discovers a
+ * wider count.  Returns 0 when -N is off. */
+static int gutter_width(void) {
+  if (!g_show_lineno) return 0;
+  unsigned ln = g_lines_count ? g_lines_count : 1;
+  int digits = 1;
+  while (ln >= 10) { ln /= 10; digits++; }
+  return digits + 1; /* digits + one space */
+}
+
 /* Render up to (g_rows - 1) logical lines starting at byte offset
  * `start_off`.  Reads the viewport's bytes into g_view_buf in one shot
- * so the matcher can highlight `g_pattern` hits inline.  Long lines
- * are truncated at g_cols (wrap toggle is a later phase).
+ * so the matcher can highlight `g_pattern` hits inline.  In chop mode
+ * (-S) long lines are truncated at the right edge; otherwise they wrap
+ * onto the next visual row.  Tabs expand to the next multiple of
+ * g_tab_width (TABS env var, default 8).
  *
  * If g_view_buf isn't large enough to cover (g_rows - 1) lines, the
  * renderer stops at the buffer end — g_next_off advances by what was
  * shown, so the next page-down continues from there.  4 KB easily
  * covers any sane text-file viewport. */
+/* Emit the dim line-number gutter at the current cursor position.
+ * When `is_continuation` is true (a wrap continuation row) the number
+ * is replaced with blanks so the eye doesn't read it as a new line. */
+static void emit_gutter(long ln, int width, int is_continuation) {
+  if (width <= 0) return;
+  fputs(C_DIM, stdout);
+  if (is_continuation) {
+    for (int i = 0; i < width; i++) putchar(' ');
+  } else {
+    char buf[12];
+    int n = 0;
+    unsigned v = (unsigned)ln;
+    if (v == 0) { buf[n++] = '0'; }
+    else { while (v > 0 && n < (int)sizeof(buf)) { buf[n++] = (char)('0' + v % 10); v /= 10; } }
+    int pad = width - 1 - n;
+    for (int i = 0; i < pad; i++) putchar(' ');
+    for (int i = n - 1; i >= 0; i--) putchar(buf[i]);
+    putchar(' ');
+  }
+  fputs(C_RST, stdout);
+}
+
+/* Rendering state passed through the per-cell helper.  Kept compact
+ * because the renderer's inner loop pivots on these fields. */
+typedef struct render_state {
+  int  row, col;
+  int  hl_left;
+  int  gw;
+  int  content_cols;
+  int  limit;
+  long line;
+  int  saw_any_in_line;
+} render_state_t;
+
+/* Print one visible cell, handling wrap-vs-chop and SGR continuity
+ * across wraps.  Returns 1 when the row budget is exhausted and the
+ * caller must stop rendering, 0 otherwise. */
+static int draw_cell(render_state_t *s, char ch) {
+  if (s->col >= s->content_cols) {
+    if (g_chop_long) return 0;       /* truncate: silently drop the byte */
+    if (s->hl_left > 0) fputs(C_RST, stdout);
+    putchar('\n');
+    s->row++;
+    if (s->row >= s->limit) return 1;
+    emit_gutter(s->line, s->gw, 1);
+    s->col = 0;
+    if (s->hl_left > 0) fputs(C_REV, stdout);
+  }
+  putchar(ch);
+  s->col++;
+  s->saw_any_in_line = 1;
+  return 0;
+}
+
 static void draw_view(long start_off, long start_line) {
   fputs("\033[2J\033[H", stdout);
 
@@ -285,7 +361,6 @@ static void draw_view(long start_off, long start_line) {
   if (vb_len < 0) vb_len = 0;
   int read_to_eof = (start_off + vb_len >= g_filesize);
 
-  /* Pre-scan the buffer for pattern matches — naive O(n·m) substring. */
   int hl_starts[MAX_HL];
   int hl_count = 0;
   if (g_pat_len > 0 && vb_len >= g_pat_len) {
@@ -298,72 +373,72 @@ static void draw_view(long start_off, long start_line) {
     }
   }
 
-  int row = 0;
-  int col = 0;
-  int limit = g_rows - 1;
-  long line = start_line;
-  int saw_any_in_line = 0;
-  int hl_idx = 0;
-  int hl_left = 0;
-  ssize_t i;
+  render_state_t s = {0};
+  s.gw = gutter_width();
+  s.content_cols = g_cols - s.gw;
+  if (s.content_cols < 1) s.content_cols = 1;
+  s.limit = g_rows - 1;
+  s.line = start_line;
 
-  for (i = 0; i < vb_len && row < limit; i++) {
-    if (hl_left == 0 && hl_idx < hl_count && (int)i == hl_starts[hl_idx]) {
+  emit_gutter(s.line, s.gw, 0);
+
+  int hl_idx = 0;
+  ssize_t i;
+  int budget_exhausted = 0;
+
+  for (i = 0; i < vb_len && s.row < s.limit && !budget_exhausted; i++) {
+    if (s.hl_left == 0 && hl_idx < hl_count && (int)i == hl_starts[hl_idx]) {
       fputs(C_REV, stdout);
-      hl_left = g_pat_len;
+      s.hl_left = g_pat_len;
     }
     unsigned char c = (unsigned char)g_view_buf[i];
     if (c == '\n') {
-      if (hl_left > 0) {
+      if (s.hl_left > 0) {
         fputs(C_RST, stdout);
-        hl_left = 0;
+        s.hl_left = 0;
         hl_idx++;
       }
       putchar('\n');
-      row++;
-      col = 0;
-      line++;
-      saw_any_in_line = 0;
+      s.row++;
+      s.col = 0;
+      s.line++;
+      s.saw_any_in_line = 0;
+      if (s.row < s.limit) emit_gutter(s.line, s.gw, 0);
       continue;
     }
     if (c == '\t') {
-      int tw = 8 - (col & 7);
-      for (int k = 0; k < tw && col < g_cols; k++) {
-        putchar(' ');
-        col++;
+      int target = ((s.col / g_tab_width) + 1) * g_tab_width;
+      while (s.col < target) {
+        if (draw_cell(&s, ' ')) { budget_exhausted = 1; break; }
+        if (g_chop_long && s.col >= s.content_cols) break;
       }
-      saw_any_in_line = 1;
     } else if (c < 0x20 || c == 0x7f) {
-      if (col < g_cols) { putchar('?'); col++; }
-      saw_any_in_line = 1;
+      if (draw_cell(&s, '?')) budget_exhausted = 1;
     } else {
-      if (col < g_cols) { putchar((char)c); col++; }
-      saw_any_in_line = 1;
+      if (draw_cell(&s, (char)c)) budget_exhausted = 1;
     }
-    if (hl_left > 0) {
-      hl_left--;
-      if (hl_left == 0) {
+    if (s.hl_left > 0) {
+      s.hl_left--;
+      if (s.hl_left == 0) {
         fputs(C_RST, stdout);
         hl_idx++;
       }
     }
   }
-  /* Close out any in-flight highlight that ran off the page or hit the
-   * buffer end, so the status bar SGR stays clean. */
-  if (hl_left > 0) fputs(C_RST, stdout);
+  if (s.hl_left > 0) fputs(C_RST, stdout);
 
   int hit_eof = (i >= vb_len) && read_to_eof;
-  if (hit_eof && saw_any_in_line) {
-    row++;
-    line++;
+  if (hit_eof && s.saw_any_in_line) {
+    s.row++;
+    s.line++;
   }
-  while (row < limit) {
+  while (s.row < s.limit) {
     putchar('\n');
-    row++;
+    s.row++;
   }
 
   g_next_off = start_off + (long)i;
-  g_next_line = line;
+  g_next_line = s.line;
   g_eof = hit_eof;
 }
 
@@ -391,7 +466,11 @@ static void draw_status(void) {
   fputs(C_RST C_REV, stdout);
   fputs("  ", stdout);
   fputs(C_BYELLOW, stdout);
-  printf("line %u", (unsigned)g_top_line);
+  if (g_long_status && g_index_full) {
+    printf("line %u/%u", (unsigned)g_top_line, (unsigned)g_lines_count);
+  } else {
+    printf("line %u", (unsigned)g_top_line);
+  }
   fputs(C_RST C_REV " · ", stdout);
   fputs(C_BYELLOW, stdout);
   printf("%u%%", pct);
@@ -624,6 +703,61 @@ static void search_jump(int dir) {
   goto_line(line);
 }
 
+/* ── Help overlay ──────────────────────────────────────────────────────── */
+
+/* Lines printed by the `h` overlay.  Each row is two columns: the key
+ * column in cyan and the description in default text.  Lifted to file
+ * scope so the renderer doesn't have to walk a per-call string table. */
+static const char *const HELP_ROWS[] = {
+    "Space, f, PgDn, Down|forward one screen / line",
+    "Enter, j|forward one line",
+    "b, PgUp|back one screen",
+    "k, Up|back one line",
+    "g, Home|jump to first line",
+    "G, End|jump to last line",
+    "/pat, ?pat|search forward / backward (literal)",
+    "n, N|repeat search forward / backward",
+    "-N|toggle line numbers",
+    "-S|toggle chop / wrap long lines",
+    "h|this help (any key to dismiss)",
+    "q, Ctrl-C|quit",
+    NULL,
+};
+
+static void show_help(void) {
+  fputs("\033[2J\033[H", stdout);
+  fputs(C_REV C_BCYAN "  less — help  " C_RST "\n\n", stdout);
+
+  /* Find the widest key column so descriptions line up cleanly. */
+  int key_w = 0;
+  for (int i = 0; HELP_ROWS[i]; i++) {
+    const char *sep = HELP_ROWS[i];
+    int n = 0;
+    while (*sep && *sep != '|') { sep++; n++; }
+    if (n > key_w) key_w = n;
+  }
+
+  for (int i = 0; HELP_ROWS[i]; i++) {
+    const char *p = HELP_ROWS[i];
+    const char *bar = p;
+    while (*bar && *bar != '|') bar++;
+    int klen = (int)(bar - p);
+    fputs("  " C_BCYAN, stdout);
+    for (int j = 0; j < klen; j++) putchar(p[j]);
+    fputs(C_RST, stdout);
+    for (int j = klen; j < key_w + 2; j++) putchar(' ');
+    if (*bar == '|') fputs(bar + 1, stdout);
+    putchar('\n');
+  }
+
+  printf("\n" C_DIM "  press any key to return" C_RST);
+  fflush(stdout);
+
+  /* Wait for any keypress, then bounce back to the previous viewport. */
+  (void)read_key();
+  redraw();
+}
+
 /* ── Main loop ─────────────────────────────────────────────────────────── */
 
 static int run(void) {
@@ -681,6 +815,14 @@ static int run(void) {
       search_jump(g_search_dir ? g_search_dir : +1);
     } else if (!g_more_mode && k == 'N') {
       search_jump(g_search_dir ? -g_search_dir : -1);
+    } else if (!g_more_mode && k == '-') {
+      /* Two-char toggles: -N, -S.  Read the next key in raw mode. */
+      int k2 = read_key();
+      if (k2 == 'N') { g_show_lineno = !g_show_lineno; redraw(); }
+      else if (k2 == 'S') { g_chop_long = !g_chop_long; redraw(); }
+      else { draw_status(); }
+    } else if (!g_more_mode && k == 'h') {
+      show_help();
     } else {
       /* Unknown key — repaint the status to absorb the cleared msg. */
       draw_status();
@@ -701,22 +843,54 @@ static void usage(int more_mode) {
           "  q=quit (auto-exits at EOF).\n", stdout);
   } else {
     fputs("Usage: less FILE\n"
-          "  Interactive pager.\n"
-          "    Space, f, PgDn, Down   forward one screen / line\n"
-          "    Enter, j               forward one line\n"
-          "    b, PgUp                back one screen\n"
-          "    k, Up                  back one line\n"
-          "    g, Home                jump to first line\n"
-          "    G, End                 jump to last line\n"
-          "    /pat                   search forward for pat\n"
-          "    ?pat                   search backward for pat\n"
-          "    n, N                   repeat search forward / backward\n"
-          "    q, Ctrl-C              quit\n", stdout);
+          "  Interactive pager.  Press `h` inside for the full key list.\n"
+          "Environment:\n"
+          "  TABS     tab expansion width (1..16, default 8)\n"
+          "  LESS     startup flags applied before argv:\n"
+          "             -N   show line numbers\n"
+          "             -S   chop long lines (default = wrap)\n"
+          "             -M   show total line count in the status\n", stdout);
   }
+}
+
+/* Apply a single flag character from `LESS` or argv to global state.
+ * Unknown letters are silently ignored — matches the proposal's "no
+ * whining" stance and keeps the surface easy to extend. */
+static void apply_flag(char f) {
+  switch (f) {
+    case 'N': g_show_lineno = 1; break;
+    case 'S': g_chop_long = 1; break;
+    case 'M': g_long_status = 1; break;
+    default: break;
+  }
+}
+
+/* Parse the LESS environment variable.  Tokens are either bare letters
+ * ("NSM") or dash-prefixed ("-N -S"), separated by whitespace.  We
+ * read it byte-by-byte to avoid pulling in strtok. */
+static void parse_less_env(void) {
+  const char *s = getenv("LESS");
+  if (!s) return;
+  for (; *s; s++) {
+    if (*s == '-' || *s == ' ' || *s == '\t' || *s == ',') continue;
+    apply_flag(*s);
+  }
+}
+
+static void parse_tabs_env(void) {
+  const char *s = getenv("TABS");
+  if (!s) return;
+  int v = 0;
+  for (; *s >= '0' && *s <= '9'; s++) v = v * 10 + (*s - '0');
+  if (v >= 1 && v <= 16) g_tab_width = v;
 }
 
 int main(int argc, char *argv[]) {
   g_more_mode = (strcmp(basename_of(argv[0]), "more") == 0);
+
+  /* Env-var defaults first, so command-line flags can still override. */
+  parse_tabs_env();
+  parse_less_env();
 
   if (argc < 2 || strcmp(argv[1], "--help") == 0) {
     usage(g_more_mode);
