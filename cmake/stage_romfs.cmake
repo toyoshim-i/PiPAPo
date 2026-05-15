@@ -71,6 +71,9 @@ file(CREATE_LINK "push" "${STAGING}/bin/sh" SYMBOLIC)
 # --- /bin/vi → pi ---
 file(CREATE_LINK "pi" "${STAGING}/bin/vi" SYMBOLIC)
 
+# --- /bin/more → less ---
+file(CREATE_LINK "less" "${STAGING}/bin/more" SYMBOLIC)
+
 # --- Install rogue (if available) ---
 if(ROGUE AND EXISTS "${ROGUE}")
     file(COPY "${ROGUE}" DESTINATION "${STAGING}/bin")
