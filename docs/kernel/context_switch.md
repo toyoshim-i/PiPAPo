@@ -124,5 +124,7 @@ is the exec/vfork-child path and jumps directly to the entry PC after loading
 the user SP.
 
 Syscalls are handled from the illegal-instruction exception path.  If a
-syscall blocks or a preemption is pending, the handler calls `sched_switch()`
-before returning through the Xtensa exception dispatcher.
+syscall blocks or a preemption is pending, the PPAP syscall body calls
+`sched_switch()` while running on `pcb_t.kernel_sp` through the
+`xtensa_syscall_on_kstack()` wrapper.  The ESP-IDF exception frame and final
+`rfe` return path stay on the original exception stack.

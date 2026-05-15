@@ -43,7 +43,7 @@ The common defaults are:
 | `ia16` | Fixed region per process, SS=0 kernel stack | `sp` = saved kernel-stack SP, `kernel_sp` = slot top, plus entry-stub shadows | Timer INT 08h and `i16_ctx_switch()` save `SS:SP` on the kernel stack and restore through a shared IRET tail |
 | `m68k` | Fixed region per process, SSP kernel stack | `sp` = saved SSP frame, `usp` = user stack pointer, `kernel_sp` = slot top | TRAP/timer paths save full frames on SSP, call `sched_next()`, then restore incoming SSP/USP |
 | `riscv` | Fixed region per process, `mscratch` kernel stack | `sp` = trap-frame SP, `kernel_sp` = `mscratch` kernel-stack top | Trap entry swaps `sp` with `mscratch`; `riscv_ctx_switch()` swaps trap-frame SPs and trap return refreshes `mscratch` |
-| `xtensa` | Fixed region reserved and initialized, but live switch frames still use the process stack | `sp` = solicited switch frame, `kernel_sp` = fixed slot top | `xtensa_do_yield()` spills register windows, saves SP, calls `sched_next()`, and restores the incoming solicited frame |
+| `xtensa` | Fixed region per process for new-process frames and syscall continuations | `sp` = solicited switch frame, `kernel_sp` = fixed slot top | `xtensa_do_yield()` spills register windows, saves SP, calls `sched_next()`, and restores the incoming solicited frame |
 
 ## ARM Cortex-M
 
@@ -161,10 +161,18 @@ Xtensa has a fixed kstack region reserved and initialized through
 `pcb_t.kernel_sp`.  Because ESP-IDF owns the final linker script for
 `xtensa_cc`, the region is aligned arch-owned BSS instead of a target `.ld`
 section.  Manufactured new-process frames (`exec` initial frames and `vfork`
-child frames) are built on the fixed kstack slot.  The live cooperative switch
-path has not moved yet: `pcb_t.sp` can still point at a solicited switch frame
-on the process stack.  Because the ESP32-S3 uses the windowed ABI, a
-cooperative switch must spill all register windows before saving SP.
+child frames) are built on the fixed kstack slot.
+
+Syscalls enter through ESP-IDF's exception dispatcher.  PPAP leaves ESP-IDF's
+incoming `XtExcFrame` and final `rfe` return path on the original exception
+stack, then calls `xtensa_syscall_body()` through
+`xtensa_syscall_on_kstack()`.  That wrapper uses Xtensa `movsp` to switch only
+the PPAP syscall body to `pcb_t.kernel_sp`.  If the syscall blocks or consumes
+a pending preemption, `sched_switch()` runs below that body frame, so the live
+solicited switch frame is also on the fixed kstack.
+
+Because the ESP32-S3 uses the windowed ABI, a cooperative switch must spill all
+register windows before saving SP.
 
 `xtensa_cc` currently reserves 2 KB user-process slots:
 
@@ -172,11 +180,11 @@ cooperative switch must spill all register windows before saving SP.
 PROC_KSTACK_SIZE=2048u
 ```
 
-`xtensa_do_yield()` builds a solicited frame, saves return PC and PS, spills
-windows via the Xtensa HAL, disables interrupts for the SP handoff, calls
-`xtensa_ctx_switch(current_sp)`, and restores the incoming frame.  A fresh
-process uses a marked "new-process" frame so the restore path can jump to the
-entry point directly instead of using `retw`.
+`xtensa_do_yield()` builds a solicited frame on the current kernel stack,
+saves return PC and PS, spills windows via the Xtensa HAL, disables interrupts
+for the SP handoff, calls `xtensa_ctx_switch(current_sp)`, and restores the
+incoming frame.  A fresh process uses a marked "new-process" frame so the
+restore path can jump to the entry point directly instead of using `retw`.
 
 The solicited-frame metadata begins after the 16-byte ABI scratch area:
 
@@ -193,10 +201,9 @@ The exit marker selects the restore path.  Solicited frames restore PS and PC
 and return with `retw`; new-process frames load entry, PS, `a0`, `a3`, and user
 SP, then jump directly with `jx`.
 
-Syscalls are dispatched from the Xtensa illegal-instruction exception handler.
-If the syscall blocks or a preemption is pending, the handler calls
-`sched_switch()`, which runs the same solicited-frame switch path and then
-returns to the exception dispatcher for `rfe`.
+Non-syscall Xtensa `sched_switch()` callers must either already be running on
+the fixed kstack or be limited to bootstrap/idle paths where no user process
+kernel continuation is being suspended.
 
 ## Restart Versus Continuation
 

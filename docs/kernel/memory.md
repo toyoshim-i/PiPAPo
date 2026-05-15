@@ -186,8 +186,9 @@ directly against `page.c`.
 page_id_t user_pages[USER_PAGES_MAX];  /* PAGE_ID_INVALID = empty */
 ```
 
-This is the single source of truth for all page-backed process memory:
-data region, brk growth, mmap allocations, and user stack (RISC-V).
+This is the single source of truth for growable page-backed process memory:
+data region, brk growth, and mmap allocations.  Dedicated user-stack pages are
+tracked separately through `pcb_t.user_stack_page` on split-stack native CPUs.
 
 - Set by loaders via `proc_track_page()` / `proc_track_page_range()`.
 - Freed on exit via `proc_release_tracked_pages()`.
@@ -240,18 +241,19 @@ Each process owns:
   on demand by `sys_brk()`.
 - **mmap pages** — `user_pages[]` high slots (top-down), allocated by
   `sys_mmap2()` for anonymous mappings.
-- **Process stack page** — `stack_page_id`, one 4 KB page, if the process
-  image needs page-pool-backed stack storage.  On ARM this is the PSP stack.
-  Native m68k and RISC-V ELF processes do not allocate it for kernel
-  continuations; those use fixed kstack slots instead.
-- **User stack page** (m68k and RISC-V) — `user_stack_page` (m68k) or a
-  dedicated page in `user_pages[]` (RISC-V), one 4 KB page.
-- **Fixed kernel-stack slot** (ARM, ia16, m68k, RISC-V, and staged Xtensa) —
-  a per-process slot in the target-reserved `__kstack_region_base` region,
+- **Process stack/storage page** — `stack_page_id`, one 4 KB page, if the
+  process or subsystem needs legacy page-pool-backed stack/storage.  Native
+  split-stack ELF processes no longer use this for kernel continuations.
+- **User stack page** — `user_stack_page`, one 4 KB page for native
+  split-stack ELF processes (`arm_m`, m68k, RISC-V, and Xtensa).  The shared
+  ELF loader decides this from the selected CPU's
+  `CPU_OPS_SEPARATE_USER_STACK` capability.  m68k also tracks the live user
+  SP in `pcb_t.usp`; RISC-V stores the live user SP in trap frames.
+- **Fixed kernel-stack slot** (ARM, ia16, m68k, RISC-V, and Xtensa) — a
+  per-process slot in the target-reserved `__kstack_region_base` region,
   initialized into `pcb_t.kernel_sp`.  These slots are reserved outside the
   page pool and are not included in `/proc/meminfo` or `/proc/<pid>/stat`
-  vsize/rss.  Xtensa reserves the slots as migration staging; its live
-  syscall/switch frames still move in a later cleanup step.
+  vsize/rss.
 
 All page-backed entries above come from the same global page pool.
 
@@ -261,7 +263,8 @@ All page-backed entries above come from the same global page pool.
 sys_exit:
   1. image_release_owned_segments()  <- frees OWNED text/staged segments
   2. proc_release_tracked_pages()    <- frees user_pages[] (data, brk, mmap)
-  3. free stack_page_id              <- process stack page, if allocated
+  3. free stack_page_id              <- legacy process storage, if allocated
+  4. free user_stack_page            <- native split-stack user stack
 ```
 
 No duplicate-tracking, no overlap check.  Each page has exactly one
@@ -275,9 +278,10 @@ When `execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
 
 1. **Pre-allocate process stacks** — architectures that use `stack_page_id`
    allocate one page first to prevent the LIFO free-stack from interfering
-   with contiguous allocation below.  m68k and RISC-V allocate separate user
-   stack storage and build kernel frames on fixed kstack slots instead of
-   allocating `stack_page_id` for continuations.
+   with contiguous allocation below.  Split-stack native CPUs advertise
+   `CPU_OPS_SEPARATE_USER_STACK`; those processes allocate separate user stack
+   storage and build kernel frames on fixed kstack slots instead of allocating
+   `stack_page_id` for continuations.
 
 2. **Allocate contiguous data pages** — `mem_region_alloc()` scans the page
    pool from the bottom and allocates N adjacent pages for the data segment
@@ -303,8 +307,9 @@ When `execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
 
 7. **Build the initial stack frame** — `proc_setup_stack()` writes a synthetic
    exception frame onto the architecture's saved-context stack so that the
-   first context switch enters the process at the ELF entry point.  For
-   RISC-V this is the fixed kstack slot.
+   first context switch enters the process at the ELF entry point.  On
+   fixed-kstack architectures this frame is built on the kernel-stack slot,
+   with the user stack pointer recorded in the architecture frame.
 
 ---
 
@@ -362,26 +367,31 @@ top-down to avoid collision with brk growth).
 
 **Stacks are fixed at 4 KB (one page) and cannot grow.**
 
-- On ARM, the process stack (PSP) is a single pre-allocated page.
-- On m68k, the user stack (USP) is a single pre-allocated page, separate
-  from the kernel stack.
-- On RISC-V, the user stack is a dedicated page in `user_pages[]`, separate
-  from the fixed kernel-stack slot swapped via `mscratch` on trap entry/exit.
+- On ARM, the user process stack (PSP) is a single `user_stack_page`.
+- On m68k, the user stack (USP) is a single `user_stack_page`, separate from
+  the fixed kernel stack.
+- On RISC-V, the user stack is a single `user_stack_page`, separate from the
+  fixed kernel-stack slot swapped via `mscratch` on trap entry/exit.
+- On Xtensa, the user stack is a single `user_stack_page`; syscall bodies and
+  their cooperative switch frames run on the fixed kstack.
+- On ia16, user and kernel stacks are part of the real-mode process model and
+  do not use a separate `user_stack_page`.
 
 There are no guard pages and no automatic stack expansion.  If a process
 overflows its stack:
 
 - On ARM, the MPU may catch the access if it falls outside the configured
-  region (region 2 covers the process stack page), triggering a MemManage
+  region (region 2 covers the user stack page), triggering a MemManage
   fault.
 - On m68k, the overflow silently corrupts adjacent memory.
 - On RISC-V, PMP is currently configured for full access, so overflow
   silently corrupts adjacent memory (same as m68k).
 
-The kernel stack (MSP on ARM, SSP on m68k, mscratch-based on RISC-V) is also
-fixed-size and comes from a fixed per-process kstack region: 2 KB on m68k
-today, 4 KB on RISC-V, and target-specific sizes on ARM.  TODO: measure m68k
-fixed-kstack high-water marks and shrink to 1 KB if the runtime margin is safe.
+The kernel stack (MSP on ARM, SS=0 on ia16, SSP on m68k, mscratch-based on
+RISC-V, and Xtensa's syscall kstack) is also fixed-size and comes from a fixed
+per-process kstack region: 2 KB on m68k today, 4 KB on RISC-V, and
+target-specific sizes on ARM and Xtensa.  TODO: measure m68k fixed-kstack
+high-water marks and shrink to 1 KB if the runtime margin is safe.
 
 ---
 
@@ -529,7 +539,19 @@ On trap return:
 2. If `TF_USER_SP = 0`: returning to M-mode (nested) — restore registers,
    deallocate trap frame, `mret`.
 
-### 11.4 Summary
+### 11.4 Xtensa (ESP32-S3)
+
+Xtensa uses ESP-IDF's exception entry and the windowed ABI.  PPAP keeps the
+ESP-IDF exception frame on the original exception stack, then switches only the
+PPAP syscall body to the process fixed kstack with `xtensa_syscall_on_kstack()`.
+If the syscall blocks, the solicited `xtensa_do_yield()` frame is built below
+that syscall body on the fixed kstack.
+
+Manufactured exec/vfork child frames are also built on the fixed kstack.  The
+separate `user_stack_page` remains the user `a1` stack restored by the
+new-process frame.
+
+### 11.5 Summary
 
 ```
 ARM:   User code ──SVC──→ [hw saves on PSP] ──→ handler on MSP ──→ [hw restores PSP]
@@ -540,11 +562,15 @@ m68k:  User code ──TRAP──→ [hw saves SR+PC on SSP] ──→ handler o
 
 RISCV: User code ──ecall─→ [sw swap sp↔mscratch] ──→ handler on ksp ──→ [sw swap back]
        User code ──IRQ───→ [sw swap sp↔mscratch] ──→ handler on ksp ──→ [sw swap back]
+
+XTENSA: User code ──ILL──→ [ESP-IDF exception frame] ──→ PPAP body on ksp ──→ rfe
 ```
 
 ARM separates user and kernel stacks in hardware (PSP vs MSP).  m68k uses
-a single supervisor stack with USP only accessible in user mode.  RISC-V
-uses a software swap via `mscratch` to achieve the same separation.
+a single supervisor stack with USP only accessible in user mode.  RISC-V uses
+a software swap via `mscratch` to achieve the same separation.  Xtensa keeps
+ESP-IDF's exception frame in place and switches the PPAP syscall body onto the
+fixed kstack.
 
 ---
 
