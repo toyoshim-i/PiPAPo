@@ -205,6 +205,22 @@ Non-syscall Xtensa `sched_switch()` callers must either already be running on
 the fixed kstack or be limited to bootstrap/idle paths where no user process
 kernel continuation is being suspended.
 
+The current non-syscall callers are classified as follows:
+
+- `kernel/core/main.c` calls `sched_switch()` once after `sched_start()` for
+  the initial PID 1 handoff, and from the idle loop after `sched_idle_poll()`.
+  Both are bootstrap/idle paths, not suspended process continuations.
+- `xtensa_fault_handler()` marks a faulting user process zombie and switches
+  away before returning to the faulting instruction.  This is exception
+  cleanup, not a resumable kernel continuation.
+- Blocking VFS, syscall, and subsystem paths entered from a native Xtensa
+  syscall run under `xtensa_syscall_on_kstack()`, so their `sched_switch()`
+  frames live on the fixed kstack.
+
+Any new Xtensa process-continuation path that can block outside the syscall
+wrapper needs an equivalent fixed-kstack entry helper before calling
+`sched_switch()`.
+
 ## Restart Versus Continuation
 
 The kernel has two blocking models:

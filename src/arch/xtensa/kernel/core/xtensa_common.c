@@ -244,6 +244,8 @@ static void xtensa_fault_handler(XtExcFrame *frame) {
     mod_vfs.klogf("  pid=%u comm=%s — killed\n", current->pid, current->comm);
     current->state = PROC_ZOMBIE;
     current->exit_status = 128 + 11; /* SIGSEGV */
+    /* This is exception cleanup, not a resumable process continuation.
+     * Normal blocking syscalls switch under xtensa_syscall_on_kstack(). */
     /* Must actually switch — arch_yield() only sets a flag, which
      * wouldn't be checked before rfe returns to the faulting instr. */
     sched_switch();

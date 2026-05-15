@@ -157,16 +157,17 @@ void kmain(void) {
   sched_start();
 
   /* Run one immediate handoff so PID 1 starts without waiting for the
-   * first timer preemption tick. */
+   * first timer preemption tick.  This is a bootstrap handoff, not a
+   * suspended process continuation. */
   sched_switch();
 
   /* Idle thread — wake on every interrupt, flush LCD if needed, sleep.
    *
    * sched_idle_poll() returns non-zero if any of the polled work raised
    * an arch_yield() (e.g. tty_rx_notify woke a blocked reader on a
-   * polled-input target).  Honor it immediately so the wakeup does not
-   * have to wait for the next timer tick.  On Cortex-M PendSV self-pends
-   * via NVIC and arch_yield_consume() always returns 0. */
+   * polled-input target).  Honor it immediately from the idle path so the
+   * wakeup does not have to wait for the next timer tick.  On Cortex-M
+   * PendSV self-pends via NVIC and arch_yield_consume() always returns 0. */
   for (;;) {
     if (sched_idle_poll()) sched_switch();
     arch_wfi();
