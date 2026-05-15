@@ -462,12 +462,11 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   proc_image_segment_t data_region = {0};
 
   /* --- 2. Allocate stacks --- */
-  int need_process_stack = cpu_ops->arch_id != CPU_ARCH_RISCV;
-#if defined(__m68k__)
-  if (cpu_ops->arch_id == CPU_ARCH_M68K) need_process_stack = 0;
-#endif
   int need_user_stack =
-      (cpu_ops->arch_id == CPU_ARCH_M68K || cpu_ops->arch_id == CPU_ARCH_RISCV);
+      cpu_ops->arch_id == CPU_ARCH_ARM || cpu_ops->arch_id == CPU_ARCH_ARMV6 ||
+      cpu_ops->arch_id == CPU_ARCH_M68K || cpu_ops->arch_id == CPU_ARCH_RISCV ||
+      cpu_ops->arch_id == CPU_ARCH_XTENSA;
+  int need_process_stack = !need_user_stack;
 
   if (need_process_stack) {
     if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
@@ -481,7 +480,6 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
     p->stack_page_id = PAGE_ID_INVALID;
   }
 
-  /* m68k and RISC-V use a separate user-mode stack */
   if (need_user_stack) {
     if (mem_region_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
                          PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {

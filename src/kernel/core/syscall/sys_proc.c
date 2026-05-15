@@ -1662,7 +1662,7 @@ long sys_vfork(uint32_t *frame) {
     return -(long)ENOMEM;
   }
   void *stack = stack_region.base;
-  child->stack_page_id = mem_region_ptr_to_page(stack);
+  child->user_stack_page = stack;
 #endif
 #if ARCH_VFORK_CHILD_FRAME_POINTER
   uint32_t *child_frame = NULL;
@@ -1744,11 +1744,11 @@ long sys_vfork(uint32_t *frame) {
     mem_region_page_write(ax_page, ax_off, &zero, 2);
   }
 #elif ARCH_VFORK_COPY_PROCESS_STACK
-  memcpy(stack, mem_region_page_to_ptr(current->stack_page_id), PAGE_SIZE);
+  void *parent_stack = proc_user_stack_base(current);
+  memcpy(stack, parent_stack, PAGE_SIZE);
 
   /* Calculate child's frame position at the same offset as parent's */
-  uintptr_t frame_off = (uintptr_t)frame - (uintptr_t)mem_region_page_to_ptr(
-                                               current->stack_page_id);
+  uintptr_t frame_off = (uintptr_t)frame - (uintptr_t)parent_stack;
   child_frame = (uint32_t *)((uint8_t *)stack + frame_off);
 #endif
 

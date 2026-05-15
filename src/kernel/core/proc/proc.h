@@ -103,6 +103,11 @@ uint32_t proc_tracked_page_count(const pcb_t *p);
 /* Return nonzero if addr is inside any tracked page-backed user page. */
 int proc_page_backed_contains(const pcb_t *p, uintptr_t addr);
 
+/* Return the named user-stack page, falling back to stack_page_id for
+ * process types that still use that legacy field as user stack storage. */
+page_id_t proc_user_stack_page_id(const pcb_t *p);
+void *proc_user_stack_base(const pcb_t *p);
+
 /* Clear page-backed tracking slots without freeing underlying pages. */
 void proc_clear_page_tracking(pcb_t *p);
 
@@ -135,10 +140,10 @@ void proc_release_private_tracked_pages_from_array(
  * Set up an initial kernel stack frame for a new process so that the
  * architecture context-switch path can restore it on the first switch.
  *
- * Pre-condition: p->stack_page_id must already reference a 4 KB stack backing
- * page on architectures that use one.  m68k, RISC-V, and Xtensa build the
- * initial frame on p->kernel_sp instead.  After this call p->sp is set and
- * the process is ready to be made PROC_RUNNABLE.
+ * Pre-condition: proc_user_stack_base(p) must resolve to a 4 KB user/process
+ * stack backing page on architectures that use one.  m68k, RISC-V, and
+ * Xtensa build the initial frame on p->kernel_sp instead.  After this call
+ * p->sp is set and the process is ready to be made PROC_RUNNABLE.
  *
  * On entry to `entry`, all callee-saved registers are zero, r0-r3 are zero,
  * and lr = 0xFFFFFFFD (EXC_RETURN: Thread mode, PSP, basic frame).

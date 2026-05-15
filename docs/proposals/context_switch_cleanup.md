@@ -113,6 +113,9 @@ Done:
 - RISC-V native ELF processes no longer allocate the old placeholder
   `stack_page_id` page; the user stack is tracked through
   `pcb_t.user_stack_page`.
+- ARM-M and Xtensa native ELF processes also track their user stack through
+  `pcb_t.user_stack_page`; `stack_page_id` remains for kernel bootstrap,
+  idle-thread, and subsystem-owned stack storage.
 - `sys_vfork()` no longer uses an opt-out architecture list for its copied
   process-stack path.  Each architecture now declares the vfork stack-frame
   behavior it needs through positive `ARCH_VFORK_*` capability macros.
@@ -191,29 +194,25 @@ measurement-driven sizing.
 The user-mode stack page is a separate concern from the per-process kernel
 stack that the rest of this proposal addresses.  It is a page-pool-backed
 page owned by the process for the duration of its life (or until `execve()`
-replaces the image).  Each architecture currently tracks it differently:
+replaces the image).  Native split-stack architectures now track that page
+with the same named PCB field:
 
 | arch    | user-stack page lives in                                   |
 |---------|------------------------------------------------------------|
-| `arm_m` | `pcb_t::stack_page_id` (originally PSP, now solely the user stack after the kernel-stack migration) |
+| `arm_m` | `pcb_t::user_stack_page` for native user processes         |
 | `ia16`  | n/a — real-mode does not split user and kernel stacks      |
 | `m68k`  | `pcb_t::user_stack_page` plus `pcb_t::usp`                 |
 | `riscv` | `pcb_t::user_stack_page` plus trap-frame user SP           |
-| `xtensa`| normal process stack uses `stack_page_id`; copied vfork child user stacks use `pcb_t::user_stack_page`; live syscall switch frames use the fixed kstack |
+| `xtensa`| `pcb_t::user_stack_page`; live syscall switch frames use the fixed kstack |
 
-The free sites in `sys_proc.c` mirror that fragmentation: every reference to
-`user_stack_page` in `sys_exit()`, the vfork-child cleanup branch, and the
-post-`execve()` old-stack cleanup is now common.  ARM still uses
-`stack_page_id` for its user PSP page, and normal Xtensa processes still use
-`stack_page_id` for their user stack.
-
-When this work is picked up, the four post-Phase-2 architectures
-(`arm_m`, `m68k`, `riscv`, `xtensa`) converge on a single named field
-(`pcb_t::user_stack_page` is the obvious candidate, since it already
-exists for m68k) and the `#if defined(__m68k__)` guards on the lifecycle
-sites are dropped.  `ia16` keeps its current real-mode arrangement
-unchanged — the strict memory limit makes adding a separate user-stack
-page expensive, and there is no kernel/user split to reflect.
+The free sites in `sys_proc.c` are common: `sys_exit()`, the vfork-child
+cleanup branch, and the post-`execve()` old-stack cleanup all handle
+`user_stack_page` without architecture guards.  ARM still uses `stack_page_id`
+for kernel and idle-thread bootstrap stacks, and subsystem loaders may still
+use `stack_page_id` for subsystem-owned process storage.  `ia16` keeps its
+current real-mode arrangement unchanged — the strict memory limit makes adding
+a separate user-stack page expensive, and there is no kernel/user split to
+reflect.
 
 This unification interacts with
 [`no_stack_copy_on_vfork.md`](no_stack_copy_on_vfork.md), which proposes
@@ -227,11 +226,8 @@ vfork-specific second copy.  The naming-and-tracking cleanup is still
 needed in that world, just simplified — there is one user-stack page per
 process to track, not one per process plus a per-vfork copy.
 
-The original Xtensa per-vfork page leak has been fixed standalone by tracking
-the copied child stack in the same magic slot used by RISC-V.  The broader
-unification is still useful because that slot does not name the page's role,
-and it will be easier to reason about after live Xtensa switch frames move off
-the process stack.
+The original Xtensa per-vfork page leak is fixed by tracking copied child
+stacks through `pcb_t.user_stack_page`.
 
 ## Step-by-Step Fixed-Kstack Migration
 

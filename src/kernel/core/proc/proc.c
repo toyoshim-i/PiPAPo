@@ -272,6 +272,18 @@ int proc_page_backed_contains(const pcb_t *p, uintptr_t addr) {
   return 0;
 }
 
+page_id_t proc_user_stack_page_id(const pcb_t *p) {
+  if (!p) return PAGE_ID_INVALID;
+  if (p->user_stack_page) return mem_region_ptr_to_page(p->user_stack_page);
+  return p->stack_page_id;
+}
+
+void *proc_user_stack_base(const pcb_t *p) {
+  page_id_t page_id = proc_user_stack_page_id(p);
+  if (page_id == PAGE_ID_INVALID) return NULL;
+  return mem_region_page_to_ptr(page_id);
+}
+
 void proc_clear_page_tracking(pcb_t *p) {
   if (!p) return;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++)
@@ -388,7 +400,7 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
     sp[XTENSA_SOL_SP_WORD] = user_sp ? (uint32_t)user_sp : 0u;
     p->sp = (uint32_t)(uintptr_t)sp;
 #else
-    uint8_t *stack_base = (uint8_t *)mem_region_page_to_ptr(p->stack_page_id);
+    uint8_t *stack_base = (uint8_t *)proc_user_stack_base(p);
     if (user_sp)
       sp = (uint32_t *)(void *)user_sp;
     else
