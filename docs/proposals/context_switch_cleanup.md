@@ -116,6 +116,8 @@ Done:
 - ARM-M and Xtensa native ELF processes also track their user stack through
   `pcb_t.user_stack_page`; `stack_page_id` remains for kernel bootstrap,
   idle-thread, and subsystem-owned stack storage.
+- The shared ELF loader now asks `cpu_ops_t` whether the CPU uses a separate
+  user stack instead of keeping its own architecture list.
 - `sys_vfork()` no longer uses an opt-out architecture list for its copied
   process-stack path.  Each architecture now declares the vfork stack-frame
   behavior it needs through positive `ARCH_VFORK_*` capability macros.

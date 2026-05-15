@@ -462,10 +462,7 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   proc_image_segment_t data_region = {0};
 
   /* --- 2. Allocate stacks --- */
-  int need_user_stack =
-      cpu_ops->arch_id == CPU_ARCH_ARM || cpu_ops->arch_id == CPU_ARCH_ARMV6 ||
-      cpu_ops->arch_id == CPU_ARCH_M68K || cpu_ops->arch_id == CPU_ARCH_RISCV ||
-      cpu_ops->arch_id == CPU_ARCH_XTENSA;
+  int need_user_stack = (cpu_ops->flags & CPU_OPS_SEPARATE_USER_STACK) != 0u;
   int need_process_stack = !need_user_stack;
 
   if (need_process_stack) {

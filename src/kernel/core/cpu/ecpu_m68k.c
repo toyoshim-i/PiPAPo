@@ -1486,6 +1486,7 @@ static void ecpu_m68k_write32(cpu_state_t *state, uint32_t addr, uint32_t val) {
 const cpu_ops_t ecpu_m68k_ops = {
     .name = "m68k",
     .arch_id = CPU_ARCH_M68K,
+    .flags = CPU_OPS_SEPARATE_USER_STACK,
     .create_state = ecpu_m68k_create_state,
     .init = (void *)ecpu_m68k_init,
     .run = (void *)ecpu_m68k_run,

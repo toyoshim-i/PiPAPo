@@ -60,9 +60,12 @@ typedef int (*cpu_trap_handler_t)(cpu_state_t* cpu, int trap_type,
                                   uint32_t param, void* ctx);
 
 /* ── Core operations table ───────────────────────────────────────────── */
+#define CPU_OPS_SEPARATE_USER_STACK (1u << 0)
+
 typedef struct cpu_ops {
   const char* name;
   int arch_id;
+  uint32_t flags;
 
   // Allocate and initialize a CPU state structure.
   // For native CPUs, this might be minimal. For eCPUs, this allocates the
