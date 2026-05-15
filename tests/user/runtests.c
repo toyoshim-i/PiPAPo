@@ -203,14 +203,10 @@ int main(void)
     int t = 0;
 
     tests[t++] = (test_entry_t){ "/bin/test_exec", TEST_ENABLED };
-    /* test_elf unit-tests the ELF32 parser; pcxt uses elf16_loader.
-     * rv32: the parser rejects the test inputs with -ENOEXEC at
-     * test_elf.c:78 and :134.  xtensa: same parser failure mode. */
+    /* test_elf unit-tests the ELF32 parser; pcxt uses elf16_loader. */
     tests[t++] = (test_entry_t){ "/bin/test_elf",
 #if defined(__ia16__)
         TEST_UNSUPPORTED
-#elif defined(__riscv) || defined(__xtensa__)
-        TEST_DISABLED
 #else
         TEST_ENABLED
 #endif

@@ -42,9 +42,16 @@ static void init_valid_ehdr(elf32_ehdr_t *h)
 #if defined(__m68k__)
     h->e_ident[EI_DATA] = ELFDATA2MSB;
     h->e_machine = EM_68K;
+#elif defined(__xtensa__)
+    h->e_ident[EI_DATA] = ELFDATA2LSB;
+    h->e_machine = EM_XTENSA;
+#elif defined(__riscv)
+    h->e_ident[EI_DATA] = ELFDATA2LSB;
+    h->e_machine = EM_RISCV;
 #else
     h->e_ident[EI_DATA] = ELFDATA2LSB;
     h->e_machine = EM_ARM;
+    h->e_flags = EF_ARM_EABI_VER5 | EF_ARM_ABI_FLOAT_SOFT;
 #endif
     h->e_type = ET_EXEC;
     h->e_version = 1;
@@ -53,9 +60,6 @@ static void init_valid_ehdr(elf32_ehdr_t *h)
     h->e_phentsize = sizeof(elf32_phdr_t);
     h->e_phnum = 1;
     h->e_ehsize = sizeof(elf32_ehdr_t);
-#if !defined(__m68k__)
-    h->e_flags = EF_ARM_EABI_VER5 | EF_ARM_ABI_FLOAT_SOFT;
-#endif
 }
 
 static void init_load_phdr(elf32_phdr_t *ph)
@@ -110,6 +114,7 @@ static void test_validate_wrong_machine(void)
 {
     elf32_ehdr_t h;
     init_valid_ehdr(&h);
+    /* Any architecture that isn't the build target. */
 #if defined(__m68k__)
     h.e_machine = EM_ARM;
 #else
@@ -150,7 +155,7 @@ static void test_validate_no_phoff(void)
     UT_ASSERT_EQ(elf_validate(&h), -(int)ENOEXEC);
 }
 
-#if !defined(__m68k__)
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
 static void test_validate_wrong_eabi_version(void)
 {
     elf32_ehdr_t h;
@@ -381,7 +386,7 @@ int main(void)
     test_validate_et_dyn_accepted();
     test_validate_no_program_headers();
     test_validate_no_phoff();
-#if !defined(__m68k__)
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
     test_validate_wrong_eabi_version();
 #endif
 
