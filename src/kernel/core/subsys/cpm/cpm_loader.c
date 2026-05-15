@@ -11,6 +11,8 @@
 
 #include "kernel/core/subsys/cpm/cpm_loader.h"
 
+#include <string.h>
+
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/cpu/ecpu_z80.h"
@@ -21,10 +23,6 @@
 #include "kernel/core/subsys/cpm/cpm_bridge.h"
 #include "kernel/core/subsys/cpm/cpm_host.h"
 #include "kernel/core/subsys/subsys.h"
-#if defined(__m68k__)
-#include "kernel/common/ioregs.h"
-#endif
-#include <string.h>
 
 /* Z80 address space: 64KB = 16 × 4KB pages */
 #define Z80_MEM_PAGES 16
@@ -199,22 +197,11 @@ static int cpm_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   /* ── 7. Set up kernel-mode entry point ─────────────────────────────
    *
    * Unlike ELF which runs in user mode, CP/M .COM programs run via
-   * the Z80 emulator in kernel mode.  proc_setup_stack() sets the
-   * stack frame so the scheduler will "return" into cpm_run_process.
+   * the Z80 emulator in kernel mode.  proc_setup_kernel_stack() builds
+   * a frame whose restored privilege level is supervisor / M-mode so
+   * the run loop can touch IRQ-save helpers without trapping.
    */
-  proc_setup_stack(p, cpm_run_process, 0);
-
-#if defined(__m68k__)
-  /* CP/M runs the Z80 emulator in kernel context on m68k.
-   * Force the initial RTE frame to supervisor mode so low-level
-   * helpers that touch SR (irq save/restore) do not trap. */
-  {
-    uint8_t *exc = (uint8_t *)(uintptr_t)p->sp + 15u * sizeof(uint32_t);
-    *(uint16_t *)(void *)exc = SR_SUPV_IRQ;
-    p->usp = (uint32_t)(uintptr_t)mem_region_page_to_ptr(p->stack_page_id) +
-             PAGE_SIZE;
-  }
-#endif
+  proc_setup_kernel_stack(p, cpm_run_process);
 
   return 0;
 }

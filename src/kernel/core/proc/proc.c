@@ -418,3 +418,53 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
 
   p->ticks_remaining = PROC_DEFAULT_TICKS;
 }
+
+/* Privileged-mode entry — same layout as proc_setup_stack with
+ * user_sp = 0, but routed through arch_build_initial_frame_kernel so
+ * the restored privilege level matches a kernel-mode entry point. */
+void proc_setup_kernel_stack(pcb_t *p, void (*entry)(void)) {
+  uint32_t *sp;
+
+#if defined(__ia16__)
+  /* i16 has no privilege separation; CP/M / S-OS are not wired up on
+   * pcxt today, so no kernel-mode subsystem entry hits this path. */
+  (void)p;
+  (void)entry;
+  return;
+#elif defined(__riscv)
+  sp = (uint32_t *)(uintptr_t)p->kernel_sp;
+  sp = arch_build_initial_frame_kernel(sp, entry);
+  sp[32] = 0u; /* TF_USER_SP — unused for kernel-mode entry */
+  p->sp = (uint32_t)(uintptr_t)sp;
+#elif defined(__m68k__)
+  sp = (uint32_t *)(uintptr_t)p->kernel_sp;
+  sp = arch_build_initial_frame_kernel(sp, entry);
+  p->sp = (uint32_t)(uintptr_t)sp;
+  /* Kernel-mode loops run on the same page; mirror the old per-loader
+   * fix-up that set usp to the stack-page top. */
+  if (p->stack_page_id != PAGE_ID_INVALID) {
+    p->usp = (uint32_t)(uintptr_t)mem_region_page_to_ptr(p->stack_page_id) +
+             PAGE_SIZE;
+  }
+#elif defined(__xtensa__)
+  sp = (uint32_t *)(uintptr_t)p->kernel_sp;
+  sp = arch_build_initial_frame_kernel(sp, entry);
+  sp[XTENSA_SOL_SP_WORD] = 0u;
+  p->sp = (uint32_t)(uintptr_t)sp;
+#else
+  uint8_t *stack_base = (uint8_t *)proc_user_stack_base(p);
+  sp = (uint32_t *)(stack_base + PAGE_SIZE);
+  sp = arch_build_initial_frame_kernel(sp, entry);
+  p->sp = (uint32_t)(uintptr_t)sp;
+#endif
+
+  p->ticks_remaining = PROC_DEFAULT_TICKS;
+}
+
+/* Default: same frame as arch_build_initial_frame.  Archs that need a
+ * privileged-mode entry frame (rv32, m68k) override this with a strong
+ * symbol in their per-arch <arch>_common.c. */
+__attribute__((weak)) uint32_t *arch_build_initial_frame_kernel(
+    uint32_t *sp, void (*entry)(void)) {
+  return arch_build_initial_frame(sp, entry);
+}

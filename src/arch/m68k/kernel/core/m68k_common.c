@@ -232,3 +232,15 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
   for (int i = 0; i < 15; i++) *--sp = 0u;
   return sp; /* pcb_t.sp points to d0 */
 }
+
+/* Supervisor entry: same frame shape but SR.S = 1 (IPL=0) so RTE leaves
+ * the CPU in supervisor mode.  Used by emulator subsystem run loops
+ * that toggle IRQs or otherwise touch SR (which a user-mode RTE would
+ * trap on). */
+uint32_t *arch_build_initial_frame_kernel(uint32_t *sp, void (*entry)(void)) {
+  *--sp = (uint32_t)entry;
+  sp = (uint32_t *)((uint8_t *)sp - 2);
+  *(uint16_t *)sp = SR_SUPV_IRQ;
+  for (int i = 0; i < 15; i++) *--sp = 0u;
+  return sp;
+}

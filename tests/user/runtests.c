@@ -334,7 +334,7 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_cpm",
 #if defined(__ia16__)
         TEST_UNSUPPORTED
-#elif defined(__riscv) || defined(__xtensa__)
+#elif defined(__xtensa__)
         TEST_DISABLED
 #else
         TEST_ENABLED
@@ -343,7 +343,7 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_sos",
 #if defined(__ia16__)
         TEST_UNSUPPORTED
-#elif defined(__riscv) || defined(__xtensa__)
+#elif defined(__xtensa__)
         TEST_DISABLED
 #else
         TEST_ENABLED

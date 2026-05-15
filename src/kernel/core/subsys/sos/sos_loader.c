@@ -6,6 +6,8 @@
  * done here; the in-memory image setup is delegated to sos_host.c.
  */
 
+#include <string.h>
+
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/cpu/ecpu_z80.h"
@@ -17,10 +19,6 @@
 #include "kernel/core/subsys/sos/sos_bridge.h"
 #include "kernel/core/subsys/sos/sos_host.h"
 #include "kernel/core/subsys/subsys.h"
-#if defined(__m68k__)
-#include "kernel/common/ioregs.h"
-#endif
-#include <string.h>
 
 /* ── Detection ─────────────────────────────────────────────────────────── */
 
@@ -144,16 +142,7 @@ static int sos_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   }
 
   /* ── 7. Set up kernel-mode entry point ─────────────────────────────── */
-  proc_setup_stack(p, sos_run_process, 0);
-
-#if defined(__m68k__)
-  {
-    uint8_t *exc = (uint8_t *)(uintptr_t)p->sp + 15u * sizeof(uint32_t);
-    *(uint16_t *)(void *)exc = SR_SUPV_IRQ;
-    p->usp = (uint32_t)(uintptr_t)mem_region_page_to_ptr(p->stack_page_id) +
-             PAGE_SIZE;
-  }
-#endif
+  proc_setup_kernel_stack(p, sos_run_process);
 
   return 0;
 }

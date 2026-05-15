@@ -167,7 +167,7 @@ static int m68k_emu_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   p->subsys_data = state;
 
   /* ── 8. Set kernel-mode entry point ────────────────────────────────── */
-  proc_setup_stack(p, ppap_m68k_run_process, 0);
+  proc_setup_kernel_stack(p, ppap_m68k_run_process);
 
   return 0;
 }

@@ -244,3 +244,13 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
   /* sp[32] = 0; — already zeroed, caller sets it via proc_setup_stack */
   return sp;
 }
+
+/* M-mode entry: same trap-frame shape but mstatus.MPP = 11 (M-mode) so
+ * mret resumes the kernel-mode subsystem loop (cpm_run_process,
+ * sos_run_process, *_emu_run_process) in M-mode.  U-mode entry would
+ * trap on the first kernel-only CSR access (e.g. mstatus read). */
+uint32_t *arch_build_initial_frame_kernel(uint32_t *sp, void (*entry)(void)) {
+  sp = arch_build_initial_frame(sp, entry);
+  sp[31] = (3u << 11) | (1u << 7); /* MPP = M, MPIE = 1 */
+  return sp;
+}

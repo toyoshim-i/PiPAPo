@@ -155,10 +155,27 @@ void proc_release_private_tracked_pages_from_array(
 void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp);
 
 /*
+ * Variant for subsystems whose "process" is a kernel-mode entry point
+ * (Z80/m68k emulator loops in cpm_loader, sos_loader, m68k_emu_loader,
+ * r_loader).  Builds a frame that returns in privileged mode so the
+ * entry can touch CSRs / IRQ-protected state without trapping.
+ */
+void proc_setup_kernel_stack(pcb_t *p, void (*entry)(void));
+
+/*
  * Build the initial stack frame for a new process so that the
  * context-switch path can restore it on first schedule.
  * Provided by each architecture (switch.S / arch_common.c).
  */
 uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void));
+
+/*
+ * Privileged-mode variant: same shape as arch_build_initial_frame but
+ * the restored mode is supervisor / M-mode instead of user.  Default
+ * (weak) implementation in proc.c just delegates to the user-mode
+ * builder; archs that distinguish privilege levels (rv32, m68k) provide
+ * a strong override.
+ */
+uint32_t *arch_build_initial_frame_kernel(uint32_t *sp, void (*entry)(void));
 
 #endif /* PPAP_KERNEL_CORE_PROC_PROC_H */

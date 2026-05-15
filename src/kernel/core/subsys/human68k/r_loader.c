@@ -193,7 +193,7 @@ static int r_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   p->image.entry = X68K_PMB_SIZE;
   p->subsys = SUBSYS_PPAP;
   p->subsys_data = st;
-  proc_setup_stack(p, m68k_emu_run_process, 0);
+  proc_setup_kernel_stack(p, m68k_emu_run_process);
 
   (void)args;
   return 0;
