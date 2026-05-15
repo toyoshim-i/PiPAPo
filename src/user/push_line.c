@@ -648,8 +648,17 @@ static int do_complete(char *buf, int len, int pos, int *pos_out,
 static int render_prompt(const char *ps1, char *out, int out_size) {
   if (!ps1) ps1 = "push$ ";
 
-  int i = 0;
+  int i = 0;        /* byte index into out (raw, includes non-printing) */
+  int vis = 0;      /* visible column count (for cursor positioning) */
+  int nonprint = 0; /* inside \[ ... \] non-printing region */
   const char *p = ps1;
+
+#define EMIT(ch)                  \
+  do {                            \
+    out[i++] = (ch);              \
+    if (!nonprint) vis++;         \
+  } while (0)
+
   while (*p && i < out_size - 1) {
     if (*p == '\\' && p[1]) {
       p++;
@@ -658,14 +667,14 @@ static int render_prompt(const char *ps1, char *out, int out_size) {
           /* Current directory */
           char cwd[PATH_BUF];
           if (getcwd(cwd, sizeof(cwd)) > 0) {
-            for (int j = 0; cwd[j] && i < out_size - 1; j++) out[i++] = cwd[j];
+            for (int j = 0; cwd[j] && i < out_size - 1; j++) EMIT(cwd[j]);
           }
           break;
         }
         case 'u': {
           /* Username — just use "root" for now */
           const char *u = "root";
-          for (int j = 0; u[j] && i < out_size - 1; j++) out[i++] = u[j];
+          for (int j = 0; u[j] && i < out_size - 1; j++) EMIT(u[j]);
           break;
         }
         case 'h': {
@@ -678,34 +687,39 @@ static int render_prompt(const char *ps1, char *out, int out_size) {
             if (n > 0) {
               /* Strip trailing newline */
               if (hn[n - 1] == '\n') n--;
-              for (int j = 0; j < n && i < out_size - 1; j++) out[i++] = hn[j];
+              for (int j = 0; j < n && i < out_size - 1; j++) EMIT(hn[j]);
             }
           } else {
-            out[i++] = '?';
+            EMIT('?');
           }
           break;
         }
         case '$':
-          out[i++] = '$'; /* always $ (no root check) */
+          EMIT('$'); /* always $ (no root check) */
           break;
         case 'e':
-          out[i++] = '\033'; /* ESC character for ANSI sequences */
+          EMIT('\033'); /* ESC character for ANSI sequences */
           break;
         case '[':
+          nonprint = 1;
+          break;
         case ']':
-          /* \[ and \] mark non-printing sequences (ignored for now) */
+          nonprint = 0;
           break;
         default:
-          out[i++] = *p;
+          EMIT(*p);
           break;
       }
       p++;
     } else {
-      out[i++] = *p++;
+      EMIT(*p);
+      p++;
     }
   }
   out[i] = '\0';
-  return i;
+  return vis;
+
+#undef EMIT
 }
 
 /* ── SIGINT handler ──────────────────────────────────────────────────── */
