@@ -38,7 +38,7 @@ static void puts_fd(int fd, const char *s) {
   write(fd, s, len);
 }
 
-static void put_u32(int fd, unsigned v) {
+static void put_u32(int fd, uint32_t v) {
   char buf[10];
   int i = 0;
   if (v == 0) {
@@ -46,9 +46,9 @@ static void put_u32(int fd, unsigned v) {
     return;
   }
   /* Subtract powers of 10 (no libgcc division in freestanding) */
-  static const unsigned pw[] = {1000000000, 100000000, 10000000, 1000000,
-                                100000,     10000,     1000,     100,
-                                10,         1};
+  static const uint32_t pw[] = {
+      1000000000u, 100000000u, 10000000u, 1000000u, 100000u,
+      10000u,      1000u,      100u,      10u,      1u};
   int started = 0;
   for (int p = 0; p < 10; p++) {
     unsigned d = 0;

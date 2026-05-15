@@ -24,6 +24,13 @@ PPAP now uses one long-term context-switch contract:
 - Non-syscall Xtensa `sched_switch()` callers have been audited.  The remaining
   callers outside `xtensa_syscall_on_kstack()` are bootstrap, idle, or
   exception-cleanup paths rather than resumable process continuations.
+- Syscall-exit switching is guarded by the
+  `ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE` capability.  Xtensa enables it because
+  its syscall body can switch after `sys_exit()` marks the process zombie;
+  other architectures switch directly inside `sys_exit()`.
+- The userland empty-pipe blocking regression passes on the runnable emulator
+  targets as of 2026-05-15: `qemu_arm`, `qemu_m68k`, `qemu_rv32`, and `pcxt`
+  with the generated HDD test image.
 
 The common fixed-region kstack helper initializes `pcb_t.kernel_sp` from the
 target-reserved `__kstack_region_base` area.  ARM-M, ia16, m68k, RISC-V, and
@@ -43,19 +50,13 @@ The detailed architecture material was moved out of this proposal:
 
 ## Remaining Follow-Ups
 
-1. Keep the userland empty-pipe blocking test passing on all runnable targets.
-   It is the main regression test for continuation blocking without adding
-   test-only kernel code.
-2. Get reliable `xtensa_cc` hardware test runs for the blocking-continuation
+1. Get reliable `xtensa_cc` hardware test runs for the blocking-continuation
    suite.  The build works, but the flash/monitor path can fail before tests
    start.
-3. Keep syscall-epilogue switch behavior behind an architecture capability.
-   Xtensa uses this for `sys_exit()` because the syscall body returns to an
-   epilogue that switches after seeing `current->state != PROC_RUNNABLE`.
-4. Use common `KSTACK_USAGE_TRACK` measurements before shrinking stack sizes.
+2. Use common `KSTACK_USAGE_TRACK` measurements before shrinking stack sizes.
    m68k currently uses 2 KB process slots with a TODO to shrink to 1 KB if the
    high-water margin is safe.
-5. Keep the deferred subsystem stack-use work in
+3. Keep the deferred subsystem stack-use work in
    [`kernel_stack_use.md`](kernel_stack_use.md).  Much of that effort may be
    obsoleted by moving subsystem work to userland.
 

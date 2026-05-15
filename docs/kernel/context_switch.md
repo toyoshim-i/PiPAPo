@@ -128,3 +128,9 @@ syscall blocks or a preemption is pending, the PPAP syscall body calls
 `sched_switch()` while running on `pcb_t.kernel_sp` through the
 `xtensa_syscall_on_kstack()` wrapper.  The ESP-IDF exception frame and final
 `rfe` return path stay on the original exception stack.
+
+Xtensa also enables `ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE`.  `sys_exit()`
+marks the process zombie and returns to the Xtensa syscall epilogue, which
+observes `current->state != PROC_RUNNABLE` and performs the switch from the
+fixed-kstack syscall body.  Other architectures leave this capability disabled
+and switch directly inside `sys_exit()`.

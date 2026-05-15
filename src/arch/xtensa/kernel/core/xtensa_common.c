@@ -184,7 +184,6 @@ void xtensa_syscall_body(XtExcFrame *frame) {
    *  - preemption pending (timer slice expired)
    *  - current process blocked (e.g. read() with no data)
    */
-  /* Context switch via cooperative yield. */
   if (switch_pending ||
       (current && current->state != PROC_RUNNABLE && !current->is_idle)) {
     switch_pending = 0;
