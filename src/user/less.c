@@ -4,15 +4,14 @@
  * argv[0] decides the persona: invoked as "more" → forward-only, exits
  * at EOF; invoked as anything else → full less behavior.
  *
- * Current scope (L-3): persona detect, raw mode, forward + backward
- * paging through a lazy line-offset index (read-on-demand, no full
- * scan up front), reverse-video status bar with filename / line /
- * percent / EOF marker.  `less` accepts j/k/Space/b/g/G plus arrow
- * and PgUp/PgDn equivalents; `more` stays forward-only and auto-exits
- * at EOF.
+ * Current scope (L-4): persona detect, raw mode, forward + backward
+ * paging through a lazy line-offset index, literal `/pat` and `?pat`
+ * search with n/N repeat and reverse-video hit highlighting in the
+ * viewport.  `less` accepts j/k/Space/b/g/G/PgUp/PgDn plus search;
+ * `more` stays forward-only and auto-exits at EOF.
  *
- * Search, line numbers, env vars and the help overlay land in later
- * phases.  See docs/proposals/less_pager.md.
+ * Line numbers, env vars and the help overlay land in later phases.
+ * See docs/proposals/less_pager.md.
  */
 
 #include "lib/uclib.h"
@@ -66,6 +65,30 @@ static uint32_t g_lines[IDX_MAX];
 static unsigned g_lines_count;   /* number of valid entries */
 static long     g_scan_off;      /* file bytes examined for newlines */
 static int      g_index_full;    /* 1 once g_scan_off >= g_filesize */
+
+/* Search state.  g_pattern is a NUL-terminated literal string (no
+ * regex); g_pat_len is its length for fast inner-loop comparison.
+ * g_search_dir is +1 for forward (last /pat), -1 for backward (?pat),
+ * used by `n` / `N`.  g_msg holds a transient status message such as
+ * "Pattern not found" that overlays the right side of the status bar
+ * until the next non-search keystroke. */
+#define MAX_PAT 64
+#define MAX_HL  32          /* per-viewport highlight cap */
+#define MAX_MSG 48
+
+static char  g_pattern[MAX_PAT + 1];
+static int   g_pat_len;
+static int   g_search_dir;    /* +1 forward, -1 backward, 0 = no pattern */
+static long  g_last_match_off;/* byte offset of last successful hit, -1 if none */
+static char  g_msg[MAX_MSG + 1];
+
+/* Buffer for the current viewport's raw bytes — sized large enough for
+ * any realistic 24×80 text screen (1920 visible cells; we cap at 4 KB
+ * to absorb long-line tails that get truncated visually).  Loading the
+ * page in one shot lets us do match-highlighting in a single render
+ * pass without keeping a sliding window over the fd. */
+#define VIEW_BUFSZ 4096
+static char g_view_buf[VIEW_BUFSZ];
 
 static struct termios g_saved_tios;
 static int g_raw_active;
@@ -246,67 +269,100 @@ static void idx_extend(unsigned target_idx) {
 /* ── Renderer ─────────────────────────────────────────────────────────── */
 
 /* Render up to (g_rows - 1) logical lines starting at byte offset
- * `start_off`.  Long lines are truncated at g_cols (wrap toggle is a
- * later phase).  Updates g_next_off / g_next_line / g_eof as side
- * effects so the main loop can advance the viewport for the next page. */
+ * `start_off`.  Reads the viewport's bytes into g_view_buf in one shot
+ * so the matcher can highlight `g_pattern` hits inline.  Long lines
+ * are truncated at g_cols (wrap toggle is a later phase).
+ *
+ * If g_view_buf isn't large enough to cover (g_rows - 1) lines, the
+ * renderer stops at the buffer end — g_next_off advances by what was
+ * shown, so the next page-down continues from there.  4 KB easily
+ * covers any sane text-file viewport. */
 static void draw_view(long start_off, long start_line) {
   fputs("\033[2J\033[H", stdout);
 
   lseek(g_fd, start_off, 0);
+  ssize_t vb_len = read(g_fd, g_view_buf, VIEW_BUFSZ);
+  if (vb_len < 0) vb_len = 0;
+  int read_to_eof = (start_off + vb_len >= g_filesize);
 
-  char buf[256];
-  ssize_t n;
-  int row = 0;
-  int col = 0;
-  int limit = g_rows - 1;
-  long pos = start_off;
-  long line = start_line;
-  int saw_any_in_line = 0;
-  int hit_eof = 0;
-
-  while (row < limit) {
-    n = read(g_fd, buf, sizeof(buf));
-    if (n <= 0) { hit_eof = 1; break; }
-    for (ssize_t i = 0; i < n && row < limit; i++) {
-      unsigned char c = (unsigned char)buf[i];
-      pos++;
-      if (c == '\n') {
-        putchar('\n');
-        row++;
-        col = 0;
-        line++;
-        saw_any_in_line = 0;
-      } else if (c == '\t') {
-        int tw = 8 - (col & 7);
-        for (int k = 0; k < tw && col < g_cols; k++) {
-          putchar(' ');
-          col++;
-        }
-        saw_any_in_line = 1;
-      } else if (c < 0x20 || c == 0x7f) {
-        if (col < g_cols) { putchar('?'); col++; }
-        saw_any_in_line = 1;
-      } else {
-        if (col < g_cols) { putchar((char)c); col++; }
-        saw_any_in_line = 1;
+  /* Pre-scan the buffer for pattern matches — naive O(n·m) substring. */
+  int hl_starts[MAX_HL];
+  int hl_count = 0;
+  if (g_pat_len > 0 && vb_len >= g_pat_len) {
+    for (ssize_t i = 0; i + g_pat_len <= vb_len && hl_count < MAX_HL; i++) {
+      int match = 1;
+      for (int j = 0; j < g_pat_len; j++) {
+        if (g_view_buf[i + j] != g_pattern[j]) { match = 0; break; }
       }
+      if (match) hl_starts[hl_count++] = (int)i;
     }
   }
 
-  /* If we hit EOF mid-line (no trailing newline), the partial line still
-   * occupied a visual row — count it so the viewport math stays honest. */
+  int row = 0;
+  int col = 0;
+  int limit = g_rows - 1;
+  long line = start_line;
+  int saw_any_in_line = 0;
+  int hl_idx = 0;
+  int hl_left = 0;
+  ssize_t i;
+
+  for (i = 0; i < vb_len && row < limit; i++) {
+    if (hl_left == 0 && hl_idx < hl_count && (int)i == hl_starts[hl_idx]) {
+      fputs(C_REV, stdout);
+      hl_left = g_pat_len;
+    }
+    unsigned char c = (unsigned char)g_view_buf[i];
+    if (c == '\n') {
+      if (hl_left > 0) {
+        fputs(C_RST, stdout);
+        hl_left = 0;
+        hl_idx++;
+      }
+      putchar('\n');
+      row++;
+      col = 0;
+      line++;
+      saw_any_in_line = 0;
+      continue;
+    }
+    if (c == '\t') {
+      int tw = 8 - (col & 7);
+      for (int k = 0; k < tw && col < g_cols; k++) {
+        putchar(' ');
+        col++;
+      }
+      saw_any_in_line = 1;
+    } else if (c < 0x20 || c == 0x7f) {
+      if (col < g_cols) { putchar('?'); col++; }
+      saw_any_in_line = 1;
+    } else {
+      if (col < g_cols) { putchar((char)c); col++; }
+      saw_any_in_line = 1;
+    }
+    if (hl_left > 0) {
+      hl_left--;
+      if (hl_left == 0) {
+        fputs(C_RST, stdout);
+        hl_idx++;
+      }
+    }
+  }
+  /* Close out any in-flight highlight that ran off the page or hit the
+   * buffer end, so the status bar SGR stays clean. */
+  if (hl_left > 0) fputs(C_RST, stdout);
+
+  int hit_eof = (i >= vb_len) && read_to_eof;
   if (hit_eof && saw_any_in_line) {
     row++;
     line++;
   }
-
-  /* Pad the viewport so the status bar always sits on the last row. */
   while (row < limit) {
     putchar('\n');
     row++;
   }
 
-  g_next_off = pos;
+  g_next_off = start_off + (long)i;
   g_next_line = line;
   g_eof = hit_eof;
 }
@@ -347,7 +403,15 @@ static void draw_status(void) {
     fputs(C_RST C_REV, stdout);
   }
   fputs("  ", stdout);
-  fputs(C_DIM "(q to quit)" C_RST, stdout);
+  if (g_msg[0]) {
+    fputs(C_BYELLOW, stdout);
+    fputs(g_msg, stdout);
+    fputs(C_RST C_REV, stdout);
+  } else {
+    fputs(C_DIM, stdout);
+    fputs(g_more_mode ? "(q to quit)" : "(/ search · q quit)", stdout);
+    fputs(C_RST, stdout);
+  }
   fputs("\033[K", stdout);
   fputs(C_RST, stdout);
   fflush(stdout);
@@ -356,6 +420,130 @@ static void draw_status(void) {
 static void redraw(void) {
   draw_view(g_top_off, g_top_line);
   draw_status();
+}
+
+/* ── Search ───────────────────────────────────────────────────────────── */
+
+/* Reads a pattern interactively at the status bar.  `prefix` is the
+ * leading character displayed in green ('/' or '?').  Returns the
+ * length committed by Enter (0 ⇒ empty pattern → caller treats as
+ * cancel); returns -1 if the user pressed ESC / Ctrl-C. */
+static int prompt_pattern(char prefix) {
+  char buf[MAX_PAT + 1];
+  int len = 0;
+
+  /* Switch to a cursor-visible state so the user can see where they're
+   * typing; the body of the file is past row g_rows-1 anyway. */
+  fputs("\033[?25h", stdout);
+  printf("\033[%d;1H\033[K", g_rows);
+  fputs(C_BGREEN, stdout);
+  putchar(prefix);
+  fputs(C_RST, stdout);
+  fflush(stdout);
+
+  for (;;) {
+    int k = read_key();
+    if (k == LKEY_ESC || k == 0x03) {
+      fputs("\033[?25l", stdout);
+      return -1;
+    }
+    if (k == '\n' || k == '\r') {
+      fputs("\033[?25l", stdout);
+      buf[len] = 0;
+      if (len > 0) memcpy(g_pattern, buf, (size_t)(len + 1));
+      g_pat_len = len;
+      return len;
+    }
+    if (k == 0x7f || k == 0x08) {       /* DEL / backspace */
+      if (len > 0) {
+        len--;
+        fputs("\b \b", stdout);
+        fflush(stdout);
+      }
+      continue;
+    }
+    /* Only accept printable ASCII into the pattern. */
+    if (k >= 0x20 && k < 0x7f && len < MAX_PAT) {
+      buf[len++] = (char)k;
+      putchar((char)k);
+      fflush(stdout);
+    }
+  }
+}
+
+/* Find the next pattern occurrence starting at `from_off` going in
+ * `dir` (+1 forward, -1 backward).  Returns the match's byte offset
+ * or -1 if none. */
+static long find_pattern(long from_off, int dir) {
+  if (g_pat_len <= 0 || g_filesize <= 0) return -1;
+  if (g_pat_len > (int)sizeof(g_view_buf)) return -1;
+
+  if (dir > 0) {
+    if (from_off < 0) from_off = 0;
+    long pos = from_off;
+    while (pos < g_filesize) {
+      lseek(g_fd, pos, 0);
+      ssize_t n = read(g_fd, g_view_buf, VIEW_BUFSZ);
+      if (n <= 0) return -1;
+      for (ssize_t i = 0; i + g_pat_len <= n; i++) {
+        int match = 1;
+        for (int j = 0; j < g_pat_len; j++) {
+          if (g_view_buf[i + j] != g_pattern[j]) { match = 0; break; }
+        }
+        if (match) return pos + i;
+      }
+      /* Overlap by pat_len-1 so a match straddling chunks is found. */
+      if (n < g_pat_len) return -1;
+      pos += n - (g_pat_len - 1);
+    }
+    return -1;
+  }
+
+  /* Backward: scan the whole file in chunks, remember the last match
+   * strictly before `from_off`.  O(filesize) but our 4 KB index cap
+   * already limits us to files we can stream comfortably. */
+  long last = -1;
+  long pos = 0;
+  while (pos < from_off) {
+    lseek(g_fd, pos, 0);
+    ssize_t n = read(g_fd, g_view_buf, VIEW_BUFSZ);
+    if (n <= 0) break;
+    long limit_in_chunk = n;
+    if (pos + limit_in_chunk > from_off) limit_in_chunk = from_off - pos;
+    for (ssize_t i = 0; i + g_pat_len <= limit_in_chunk; i++) {
+      int match = 1;
+      for (int j = 0; j < g_pat_len; j++) {
+        if (g_view_buf[i + j] != g_pattern[j]) { match = 0; break; }
+      }
+      if (match) last = pos + i;
+    }
+    if (n < g_pat_len) break;
+    pos += n - (g_pat_len - 1);
+  }
+  return last;
+}
+
+/* Translate a byte offset to its 1-based line number.  Caller must
+ * ensure the line is already indexed (we extend up to the offset). */
+static long offset_to_line(long off) {
+  /* Extend the index until either off is covered or we've indexed
+   * everything.  g_scan_off advances monotonically and is always
+   * ≥ start of the highest indexed line. */
+  while (!g_index_full && g_scan_off <= off && g_lines_count < IDX_MAX) {
+    /* Pull one more chunk through idx_extend by asking for the next
+     * unindexed line — idx_extend stops at the cap. */
+    unsigned before = g_lines_count;
+    idx_extend(g_lines_count);
+    if (g_lines_count == before) break;  /* no progress → cap or EOF */
+  }
+  /* Linear scan from the top is fine for IDX_MAX = 4096; a binary
+   * search would shave microseconds. */
+  long line = 1;
+  for (unsigned i = 1; i < g_lines_count; i++) {
+    if ((long)g_lines[i] <= off) line = (long)(i + 1);
+    else break;
+  }
+  return line;
 }
 
 /* ── Navigation ───────────────────────────────────────────────────────── */
@@ -408,6 +596,34 @@ static void goto_last(void) {
   goto_line(target);
 }
 
+/* Run a search in `dir` (+1 forward, -1 backward).  The starting byte
+ * is one past the previous hit when there is one (so `n` advances),
+ * or the current viewport top on a fresh search.  Updates g_msg with
+ * "Pattern not found" on a miss, otherwise leaves the message empty. */
+static void search_jump(int dir) {
+  if (g_pat_len <= 0) {
+    snprintf(g_msg, sizeof(g_msg), "No previous pattern");
+    draw_status();
+    return;
+  }
+  long from;
+  if (g_last_match_off < 0) {
+    from = g_top_off;
+  } else {
+    from = (dir > 0) ? g_last_match_off + g_pat_len : g_last_match_off;
+  }
+  long hit = find_pattern(from, dir);
+  if (hit < 0) {
+    snprintf(g_msg, sizeof(g_msg), "Pattern not found");
+    draw_status();
+    return;
+  }
+  g_last_match_off = hit;
+  long line = offset_to_line(hit);
+  g_msg[0] = 0;
+  goto_line(line);
+}
+
 /* ── Main loop ─────────────────────────────────────────────────────────── */
 
 static int run(void) {
@@ -425,6 +641,10 @@ static int run(void) {
 
     /* `more` mode: at EOF, any keypress exits (matches real `more`). */
     if (g_more_mode && g_eof) break;
+
+    /* Any keystroke clears a sticky status message; search_jump() may
+     * set a new one back on miss. */
+    g_msg[0] = 0;
 
     /* Forward paging.  Both modes accept Space / f / PgDn / Down. */
     if (k == ' ' || k == 'f' || k == LKEY_PGDN) {
@@ -445,6 +665,25 @@ static int run(void) {
       goto_first();
     } else if (!g_more_mode && (k == 'G' || k == LKEY_END)) {
       goto_last();
+    } else if (!g_more_mode && (k == '/' || k == '?')) {
+      int rc = prompt_pattern((char)k);
+      if (rc > 0) {
+        g_search_dir = (k == '/') ? +1 : -1;
+        /* Fresh pattern: anchor the search at the current viewport
+         * rather than continuing from a stale prior hit elsewhere. */
+        g_last_match_off = -1;
+        search_jump(g_search_dir);
+      } else {
+        /* Cancelled / empty: just redraw to clear the prompt row. */
+        draw_status();
+      }
+    } else if (!g_more_mode && k == 'n') {
+      search_jump(g_search_dir ? g_search_dir : +1);
+    } else if (!g_more_mode && k == 'N') {
+      search_jump(g_search_dir ? -g_search_dir : -1);
+    } else {
+      /* Unknown key — repaint the status to absorb the cleared msg. */
+      draw_status();
     }
 
     term_get_winsize();
@@ -469,6 +708,9 @@ static void usage(int more_mode) {
           "    k, Up                  back one line\n"
           "    g, Home                jump to first line\n"
           "    G, End                 jump to last line\n"
+          "    /pat                   search forward for pat\n"
+          "    ?pat                   search backward for pat\n"
+          "    n, N                   repeat search forward / backward\n"
           "    q, Ctrl-C              quit\n", stdout);
   }
 }
@@ -499,6 +741,7 @@ int main(int argc, char *argv[]) {
   if (g_filesize < 0) g_filesize = 0;
 
   idx_init();
+  g_last_match_off = -1;
 
   int rc = run();
 
