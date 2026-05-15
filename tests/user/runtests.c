@@ -250,18 +250,7 @@ int main(void)
         TEST_ENABLED
 #endif
     };
-    /* test_orphan: on rv32 the leak assertion at test_orphan.c:105
-     * fails (more than 12 KB user_pages still unaccounted for after
-     * orphans exit); the test process returns 0 anyway so the runner
-     * logs PASS, but the leaked memory then causes later tests to
-     * OOM. */
-    tests[t++] = (test_entry_t){ "/bin/test_orphan",
-#if defined(__riscv)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_orphan", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_id", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_fs", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_rw", TEST_ENABLED };
