@@ -53,34 +53,11 @@ void m68k_syscall_entry(uint32_t *regs) {
   uint32_t a4 = regs[5]; /* d5 = arg 5 */
   uint32_t a5 = regs[8]; /* a0 = arg 6 */
 
-  /* Save original d1 (first arg) for potential restart.
-   * These are C locals on the process stack, so they survive context
-   * switches (TRAP #1 / timer ISR) — unlike the globals m68k_saved_nr
-   * and syscall_saved_arg0 which leak between processes. */
-  uint32_t saved_d1 = regs[1];
+  syscall_restart_loop(&regs[1], nr, a4, a5);
 
-  current->syscall_needs_restart = 0;
-
-  syscall_dispatch(&regs[1], nr, a4, a5);
-
-  /* syscall_dispatch wrote return value to regs[1] (frame[0]).
-   * Move it to d0 (regs[0]) for the Linux m68k ABI. */
+  /* Move the return value from frame[0] (d1 slot) to d0 (Linux m68k ABI). */
   regs[0] = regs[1];
 
-  /* Handle restart: blocking syscalls (read, waitpid, sleep, etc.)
-   * set current->syscall_needs_restart = 1 before yielding.  When woken,
-   * we loop here to re-execute the syscall with original arguments.
-   * The per-process flag is safe across context switches, unlike the
-   * global syscall_restart which gets corrupted by other processes. */
-  while (current->syscall_needs_restart) {
-    current->syscall_needs_restart = 0;
-    regs[0] = nr;
-    regs[1] = saved_d1;
-    syscall_dispatch(&regs[1], nr, a4, a5);
-    regs[0] = regs[1];
-  }
-
-  /* Check pending signals before returning to user mode */
   signal_check(regs);
 }
 

@@ -209,7 +209,11 @@ _trap_entry:
     # Re-enable interrupts during syscall processing (same as ARM SVC)
     csrs    mstatus, 0x8            # set MIE
 
-    # Call syscall_dispatch(frame, nr, a4, a5)
+    # Call syscall_restart_loop(frame, nr, a4, a5).
+    # Wrapper that handles blocking-syscall restart in C using the
+    # per-process flag current->syscall_needs_restart.  sched_switch() is
+    # synchronous on rv32, so the global syscall_restart[] / syscall_saved_arg0[]
+    # are unsafe across processes — see syscall.c for the loop.
     #   frame = &trap_frame[8] = sp+32 (points to saved a0 in trap frame)
     #   nr    = saved a7 (trap frame offset 60 = x17)
     #   a4    = saved a4 (trap frame offset 48 = x14)
@@ -218,9 +222,9 @@ _trap_entry:
     lw      a1, 60(sp)              # nr = saved a7 (x17)
     lw      a2, 48(sp)              # a4 = saved x14 (a4)
     lw      a3, 52(sp)              # a5 = saved x15 (a5)
-    call    syscall_dispatch
+    call    syscall_restart_loop
 
-    # syscall_dispatch writes return value into frame[0] = saved a0.
+    # syscall_restart_loop writes the final return value into frame[0].
 
     # Deliver any pending user-handler signal before returning to user.
     # signal_check rewrites this trap frame's (mepc, sp, a0, ra) so the
@@ -243,23 +247,8 @@ _trap_entry:
     j       .Ltrap_return
 .Lno_exec:
 
-    # ── Check syscall_restart (blocking syscall needs re-execution) ─────
-    # If syscall_restart is set, rewind mepc by 4 (back to ecall) and
-    # restore the original a0 from syscall_saved_arg0, so the syscall
-    # re-executes with original arguments when the process resumes.
-    la      t0, syscall_restart
-    lw      t1, 0(t0)
-    beqz    t1, .Lno_restart
-    sw      zero, 0(t0)
-    # Rewind mepc by 4 (ecall is 4 bytes)
-    lw      t1, TF_MEPC(sp)
-    addi    t1, t1, -4
-    sw      t1, TF_MEPC(sp)
-    # Restore original a0
-    la      t0, syscall_saved_arg0
-    lw      t1, 0(t0)
-    sw      t1, 32(sp)             # frame[0] = saved a0 at sp+32
-.Lno_restart:
+    # Note: syscall restart is handled in C by syscall_restart_loop (called
+    # above instead of syscall_dispatch).  No asm rewind needed here.
 
     # ── Check switch_pending ──────────────────────────────────
     la      t0, switch_pending

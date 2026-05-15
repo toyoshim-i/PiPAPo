@@ -144,12 +144,15 @@ void xtensa_syscall_body(XtExcFrame *frame) {
   /* Advance PC past the 3-byte ILL instruction */
   frame->pc += 3;
 
-  /* syscall_dispatch(frame, nr, a4, a5):
+  /* syscall_restart_loop(frame, nr, a4, a5):
    *   frame[0..3] = a2,a3,a4,a5 (contiguous in XtExcFrame)
    *   nr          = a7 (syscall number)
-   *   a4, a5      = 5th/6th args */
-  syscall_dispatch((uint32_t *)&frame->a2, (uint32_t)frame->a7,
-                   (uint32_t)frame->a4, (uint32_t)frame->a5);
+   *   a4, a5      = 5th/6th args
+   * The wrapper loops on current->syscall_needs_restart per process —
+   * sched_switch() is synchronous on xtensa, so the global syscall_restart[]
+   * / syscall_saved_arg0[] pair are not safe across processes. */
+  syscall_restart_loop((uint32_t *)&frame->a2, (uint32_t)frame->a7,
+                       (uint32_t)frame->a4, (uint32_t)frame->a5);
 
   /* exec_pending: execve built a new-process frame at current->sp.
    * Reload the frame's PC/PS/SP so rfe jumps to the new program.
@@ -161,13 +164,6 @@ void xtensa_syscall_body(XtExcFrame *frame) {
     frame->ps = nf[XTENSA_SOL_PS_WORD];
     frame->a1 = nf[XTENSA_SOL_SP_WORD];
     frame->a2 = 0;
-  }
-
-  /* syscall_restart: blocking syscall needs re-execution */
-  if (syscall_restart[0]) {
-    syscall_restart[0] = 0;
-    frame->pc -= 3; /* rewind to SYSCALL instruction */
-    frame->a2 = syscall_saved_arg0[0];
   }
 
   /* Context switch via cooperative yield.

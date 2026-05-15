@@ -479,3 +479,27 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
 #endif
   frame[0] = (uint32_t)ret; /* write return value into stacked r0 */
 }
+
+/* Run syscall_dispatch and re-dispatch while the process asks for a restart.
+ *
+ * Used by archs where sched_switch() is synchronous (m68k, rv32, xtensa).
+ * Those archs cannot rely on the global syscall_restart[] /
+ * syscall_saved_arg0[] pair the way ARM does (PendSV defers the switch until
+ * after the SVC handler's restart logic runs, so globals stay coherent there) —
+ * once we yield mid-trap, other processes' syscalls would clobber the globals
+ * before we resumed.
+ *
+ * Save the original arg0 in a C local (lives on the per-process kernel stack,
+ * survives context switches) and loop on the per-process flag
+ * current->syscall_needs_restart, which syscall_set_restart() asserts. */
+void syscall_restart_loop(uint32_t *frame, uint32_t nr, uint32_t a4,
+                          uint32_t a5) {
+  uint32_t saved_arg0 = frame[0];
+  current->syscall_needs_restart = 0;
+  syscall_dispatch(frame, nr, a4, a5);
+  while (current->syscall_needs_restart) {
+    current->syscall_needs_restart = 0;
+    frame[0] = saved_arg0;
+    syscall_dispatch(frame, nr, a4, a5);
+  }
+}

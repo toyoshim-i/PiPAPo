@@ -265,15 +265,7 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_id", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_fs", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_rw", TEST_ENABLED };
-    /* test_time: rv32 clock_gettime returns -EINVAL for the clock_ids
-     * this test uses. */
-    tests[t++] = (test_entry_t){ "/bin/test_time",
-#if defined(__riscv)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_time", TEST_ENABLED };
     /* test_iov: xtensa returns exit status 1; root cause not yet
      * investigated (writev/readv path on PSRAM-backed buffers). */
     tests[t++] = (test_entry_t){ "/bin/test_iov",
