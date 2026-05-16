@@ -11,13 +11,20 @@
 
 #include <stdint.h>
 
+#include "common/signal.h"
 #include "kernel/common/ioregs.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/esp_hooks.h"
 #include "kernel/core/proc/proc.h" /* arch.h: switch_pending, arch_sched_switch */
 #include "kernel/core/proc/sched.h"
+#include "kernel/core/signal/signal_check.h"
 #include "kernel/core/syscall/syscall.h"
 #include "xtensa_api.h"
+
+/* Published by xtensa_syscall_body so sys_rt_sigreturn can locate the
+ * live trap frame whose pc/ps/a1/a0/a2 it must restore.  Set at every
+ * syscall entry; not consulted outside the syscall path. */
+volatile uint32_t xtensa_trap_frame_sp = 0;
 
 /* Timer ready flag — set by xtensa_timer_init().
  * arch_preempt_enable() checks this to avoid enabling the timer interrupt
@@ -144,6 +151,11 @@ void xtensa_syscall_body(XtExcFrame *frame) {
   /* Advance PC past the 3-byte ILL instruction */
   frame->pc += 3;
 
+  /* Publish the trap-frame pointer so sys_rt_sigreturn can locate the
+   * pc/ps/a0/a1/a2 slots it needs to restore after a signal handler
+   * returns via the sa_restorer trampoline. */
+  xtensa_trap_frame_sp = (uint32_t)(uintptr_t)frame;
+
   /* syscall_restart_loop(frame, nr, a4, a5):
    *   frame[0..3] = a2,a3,a4,a5 (contiguous in XtExcFrame)
    *   nr          = a7 (syscall number)
@@ -153,6 +165,11 @@ void xtensa_syscall_body(XtExcFrame *frame) {
    * / syscall_saved_arg0[] pair are not safe across processes. */
   syscall_restart_loop((uint32_t *)&frame->a2, (uint32_t)frame->a7,
                        (uint32_t)frame->a4, (uint32_t)frame->a5);
+
+  /* Deliver any pending user-handler signal before returning to user.
+   * signal_check rewrites this frame's (pc, a0, a1, a2) so the rfe
+   * lands in the handler with sig number, sa_restorer, and a fresh sp. */
+  signal_check(frame);
 
   /* exec_pending: execve built a new-process frame at current->sp.
    * Reload the frame's PC/PS/SP so rfe jumps to the new program.
@@ -215,6 +232,25 @@ static const char *exccause_name(uint32_t cause) {
   return "Unknown";
 }
 
+/* Map an Xtensa EXCCAUSE to a POSIX signal so user-mode faults exit
+ * with status 128 + signal — matches the m68k / arm_m / rv32 crash
+ * handlers and the expectation in tests/user/test_fault.c. */
+static int xtensa_classify_exccause(uint32_t cause) {
+  switch (cause) {
+    case 0: /* IllegalInstruction */
+    case 8: /* Privileged */
+      return SIGILL;
+    case 6: /* IntegerDivideZero */
+      return SIGFPE;
+    case 9: /* LoadAlignment */
+      return SIGBUS;
+    case 2: /* InstructionFetchError */
+    case 3: /* LoadStoreError */
+    default:
+      return SIGSEGV;
+  }
+}
+
 /* Called for all unhandled exceptions (illegal insn, load/store error, etc.).
  * Prints crash info for debugging, kills user processes, halts on kernel
  * faults. */
@@ -236,9 +272,11 @@ static void xtensa_fault_handler(XtExcFrame *frame) {
       (unsigned long)(uint32_t)frame->a10, (unsigned long)(uint32_t)frame->a11);
 
   if (current && !current->is_idle) {
-    mod_vfs.klogf("  pid=%u comm=%s — killed\n", current->pid, current->comm);
+    int sig = xtensa_classify_exccause(cause);
+    mod_vfs.klogf("  pid=%u comm=%s — exit %u\n", current->pid, current->comm,
+                  (unsigned)(128u + (unsigned)sig));
     current->state = PROC_ZOMBIE;
-    current->exit_status = 128 + 11; /* SIGSEGV */
+    current->exit_status = 128 + sig;
     /* This is exception cleanup, not a resumable process continuation.
      * Normal blocking syscalls switch under xtensa_syscall_on_kstack(). */
     /* Must actually switch — arch_yield() only sets a flag, which

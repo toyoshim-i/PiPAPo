@@ -223,22 +223,11 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_pipe", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_brk", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_fd", TEST_ENABLED };
-    /* test_signal: xtensa signal delivery is stubbed (CC-3, deliver_signal()
-     * does not yet build a sigreturn frame on the user stack). */
-    tests[t++] = (test_entry_t){ "/bin/test_signal",
-#if defined(__xtensa__)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_signal", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_poll", TEST_ENABLED };
-    /* test_sleep_intr: nanosleep-interruption path is still open on ia16.
-     * xtensa: depends on signal delivery (CC-3 stub); the SIGUSR1 handler
-     * never runs and the killed-from-stub path leaks user pages, which
-     * cascades subsequent tests into OOM. */
+    /* test_sleep_intr: nanosleep-interruption path is still open on ia16. */
     tests[t++] = (test_entry_t){ "/bin/test_sleep_intr",
-#if defined(__ia16__) || defined(__xtensa__)
+#if defined(__ia16__)
         TEST_DISABLED
 #else
         TEST_ENABLED

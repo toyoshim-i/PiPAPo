@@ -30,6 +30,11 @@ static void __attribute__((noreturn)) do_illegal_insn(void)
     /* `unimp` pseudo-instruction: csrrw x0, cycle, x0 with a reserved
      * write to a read-only CSR — guaranteed illegal instruction trap. */
     __asm__ volatile (".4byte 0xc0001073");
+#elif defined(__xtensa__)
+    /* ILL.N (narrow illegal): 0xF06D — 16-bit reserved encoding that
+     * raises EXCCAUSE=0 (IllegalInstruction).  Distinct from PPAP's
+     * 24-bit 0x000000 syscall trap. */
+    __asm__ volatile (".short 0xf06d");
 #else
     /* 0xDEAD is a permanently undefined Thumb encoding (UDF range 0xDExx) */
     __asm__ volatile (".short 0xdead");

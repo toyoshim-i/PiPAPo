@@ -12,6 +12,8 @@
 #ifndef PPAP_ARCH_XTENSA_KERNEL_CORE_SIGNAL_SIGNAL_CHECK_H
 #define PPAP_ARCH_XTENSA_KERNEL_CORE_SIGNAL_SIGNAL_CHECK_H
 
-void signal_check(void);
+#include "xtensa_api.h" /* XtExcFrame */
+
+void signal_check(XtExcFrame *frame);
 
 #endif /* PPAP_ARCH_XTENSA_KERNEL_CORE_SIGNAL_SIGNAL_CHECK_H */
