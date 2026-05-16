@@ -20,7 +20,7 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     PPAP_SYS_HZ=240000000u
     PROC_KSTACK_SIZE=2048u
     PAGE_POOL_BASE=0x3FC90000u
-    PAGE_COUNT_MAX=24u
+    PAGE_COUNT_MAX=48u
 )
 
 # target_xtensa_cc.c's target_init_path() switches between /sbin/init

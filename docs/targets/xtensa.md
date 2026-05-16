@@ -144,19 +144,37 @@ ppap_sched_yield` in `sched.h`.
 
 ### ESP32-S3 SRAM split
 
-ESP32-S3 SRAM1 is split by the ESP-IDF linker between two buses:
+ESP32-S3 internal SRAM is split into three physical banks, not two:
 
-| Region | Address range | Bus | Access |
-|--------|--------------|-----|--------|
-| IRAM | `0x40370000`-`0x403DFFFF` | Instruction bus | Execute + 32-bit data R/W |
-| DRAM | `0x3FC88000`-`0x3FCFFFFF` | Data bus | Byte-level data R/W |
+| Bank | Size | IRAM alias | DRAM alias | Notes |
+|------|------|------------|------------|-------|
+| SRAM0 | 32 KB | `0x40370000`-`0x40377FFF` | none | Cache / instruction-only |
+| SRAM1 | 416 KB | `0x40378000`-`0x403DFFFF` | `0x3FC88000`-`0x3FCEFFFF` | **Dual-mapped** — same physical bytes accessible from either bus |
+| SRAM2 | 64 KB | none | `0x3FCF0000`-`0x3FCFFFFF` | Data-only |
 
-**IRAM and DRAM are NOT dual-mapped.** DRAM pages have no instruction bus
-access.
+The IRAM and DRAM aliases of SRAM1 point at the same physical RAM.
+Which alias you use determines which CPU bus and which cache services
+the access:
 
-For the current bring-up implementation, user text is loaded into IRAM.
-That is now considered an **interim strategy**, not the long-term memory
-model for the port.
+- IRAM alias → instruction bus → instruction cache, **32-bit aligned
+  loads/stores only**. Byte writes through this alias cause
+  `LoadStoreError` (cause=3).
+- DRAM alias → data bus → data cache, byte-granular reads and writes.
+
+So "executable" is not a per-page attribute on ESP32-S3 — it is the
+address range you reach the bytes through. ESP-IDF's heap tracks
+allocations by the alias the caller asked for (`MALLOC_CAP_EXEC` gives
+IRAM-alias pointers; `MALLOC_CAP_8BIT` gives DRAM-alias pointers).
+Freeing via the wrong alias is undefined; mixing reads and writes
+across the two aliases requires explicit cache management
+(`Cache_WriteBack_Addr` + `Cache_Invalidate_Addr`) to avoid the
+instruction cache serving stale bytes after a data-alias write.
+
+For the current bring-up implementation, user text is loaded into IRAM
+via the `MALLOC_CAP_EXEC` heap. That is now considered an **interim
+strategy**, not the long-term memory model for the port — the
+dual-mapping is what would let a future unification stage user text
+through a single SRAM1 region accessed via both aliases.
 
 ### IRAM restrictions
 
@@ -191,6 +209,134 @@ Under that model, IRAM is reserved for code that truly needs it:
 - latency-sensitive routines
 - bootstrap / transition stubs
 - fallback execution for code that cannot yet use the staged PSRAM path
+
+### Cooperative RAM use with ESP-IDF
+
+PPAP does **not** own any region of the ESP32-S3 SRAM by linker
+script.  ESP-IDF still owns its `.data`, `.bss`, FreeRTOS task stacks,
+driver buffers, and the runtime heap.  PPAP rents from that heap at
+boot via `heap_caps_malloc()` and then suballocates inside what it
+got.  That is what "cooperative" means in this port — the budget is
+not fixed by a link map, it is whatever ESP-IDF's heap is willing to
+hand over the first time `mm_init()` and `mem_region_init()` ask.
+
+The current xtensa_cc rentals (matching the `MM:` boot banner) are:
+
+| Arena | Bus / cap | Allocator | Default | Purpose |
+|-------|-----------|-----------|---------|---------|
+| `kernel` | DRAM, linker-reserved | ESP-IDF link map (`__bss_end`) | `~32 KB` | PPAP `.data` + `.bss` (kernel image — not allocated at runtime). |
+| `pages` | DRAM, `MALLOC_CAP_8BIT \| MALLOC_CAP_INTERNAL` | [page.c `mm_init()`](/src/kernel/core/mm/page.c) — slot-based 4 KB free stack | `PAGE_COUNT_MAX × PAGE_SIZE` = `192 KB` (48 × 4 KB) | Generic 4 KB pages, the **single DRAM pool** on xtensa.  Used for kernel stacks (one per PCB), user stack pages, `PPAP_MEM_RAM_DATA` allocations (ELF data/bss, eCPU state, `sys_brk` heap, tmpfs/UFS pages), and any FD-side buffers.  Multi-page requests use `mm_page_alloc_contiguous` (linear scan). |
+| `ram_text` | IRAM, `MALLOC_CAP_EXEC` | [mem_region.c `mem_region_xtensa_text_init`](/src/kernel/core/mm/mem_region.c) — linear free-list with 16-byte alignment | `MEM_REGION_RAM_TEXT_ARENA_SIZE` = `128 KB` | `PPAP_MEM_RAM_TEXT`: user ELF `.text` and other executable suballocations.  Kept separate from the page pool because xtensa user text MUST live in IRAM (instruction bus), and the page pool is DRAM (data bus).  The linear allocator can serve non-page-aligned sizes (e.g. an 1820-byte `.text` consumes 1824 bytes, not a full 4 KB page). |
+| `ext_text` | PSRAM (`MALLOC_CAP_SPIRAM`) | same linear arena | `512 KB` | Reserved for staged user text on chips with PSRAM.  CardComputer has no PSRAM, so this arena stays disabled (`psram unavailable; external arenas disabled`). |
+| `ext_rodata` | PSRAM | same | `256 KB` | Same — PSRAM staging for large rodata. |
+
+Totals on xtensa_cc (no PSRAM): about **352 KB of internal SRAM**
+under PPAP — 224 KB DRAM plus 128 KB IRAM.  ESP32-S3 has ~512 KB of
+internal SRAM, so ESP-IDF retains roughly the other ~160 KB for its
+own state (FreeRTOS tasks, driver buffers, the WiFi/BT subsystem on
+chips that use them, and the runtime heap PPAP draws from).
+
+Per-target tuning lives in
+[src/target/xtensa_cc/esp_idf/components/ppap_kernel/CMakeLists.txt](/src/target/xtensa_cc/esp_idf/components/ppap_kernel/CMakeLists.txt)
+as `target_compile_definitions`:
+
+- `PAGE_COUNT_MAX` — drives the `pages` arena (page allocator).
+- `MEM_REGION_RAM_TEXT_ARENA_SIZE` — drives `ram_text` (IRAM linear
+  arena).
+- `MEM_REGION_EXT_TEXT_ARENA_SIZE` / `MEM_REGION_EXT_RODATA_ARENA_SIZE`
+  — PSRAM-only, no-op on chips without PSRAM.
+
+Raising any of these widens the rental from ESP-IDF.  Both arenas
+**auto-downsize** at boot: if the requested size exceeds the largest
+contiguous free block ESP-IDF can hand over, `mm_init()` /
+`mem_region_linear_arena_init()` halve the request until
+`heap_caps_malloc` succeeds, and log the actual reserved size if it
+differs from the requested one (`page pool downsized to N pages` or
+`ram_text … KB reserved (requested … KB)`).
+
+### Why `+PAGE_SIZE` / `+MEM_REGION_ALIGN` slack on `heap_caps_malloc`?
+
+`heap_caps_malloc` returns a region aligned to its internal allocator
+metadata, not to PAGE_SIZE or to 16 B.  Each arena init asks for
+`requested_size + alignment - 1` and rounds the returned pointer up to
+the boundary it needs (`PAGE_SIZE` for the page-aligned arenas,
+`MEM_REGION_ALIGN = 16` for the linear arenas).  The slack is the
+worst-case adjustment so the *usable aligned* region is still at least
+`requested_size`.  Once aligned, the kernel records the new base and
+the prefix bytes are abandoned (never reachable but also never
+returned to the IDF heap).
+
+### Why there is no separate `ram_data` arena
+
+Earlier revisions kept a second `ram_data` arena alongside the page
+pool, also `MALLOC_CAP_8BIT` internal DRAM, also 4 KB-page-tracked.
+The two were sized independently (96 KB pages + 96 KB ram_data) on
+the theory that segregating stack-page churn from ELF / eCPU
+allocations would prevent fragmentation from blocking contiguous
+multi-page requests.
+
+In practice the split hurt more than it helped — neither pool
+individually had enough contiguous space for a binary that the
+merged pool would have served easily, which produced the original
+OOM cascade observed in `test_cpm` / `test_sos` (those tests failed
+at `execve` before reaching their internal asserts).  Xtensa now
+follows every other arch and routes `PPAP_MEM_RAM_DATA` through
+[`mem_region_alloc_page_backed`](/src/kernel/core/mm/mem_region.c) →
+`mm_page_alloc_contiguous`, drawing from the single page pool.  The
+freed-up 96 KB went straight into `PAGE_COUNT_MAX` (24 → 48), so the
+total DRAM rental is unchanged.
+
+`ram_text` remains separate because it has a hard functional reason:
+xtensa user text must live on the instruction bus (IRAM alias), not
+the data bus (DRAM alias) that the page pool comes from.
+
+### Release path and free-list cap
+
+`mem_region_linear_arena_free` (used by `ram_text` and the PSRAM
+arenas) returns the freed block to the arena's `free[]` array,
+address-sorted, and coalesces with adjacent neighbours on both sides.
+Tracking is correct in the normal case, with two caveats worth
+knowing:
+
+- **`MEM_REGION_FREE_MAX = 16` entries** caps the free list.  If
+  enough fragmented frees pile up that the count would exceed 16, the
+  arena logs `MM: <name> free-list overflow` and the freed block
+  becomes unreachable.  Recovery requires a coalesce-friendly free
+  pattern reducing the count below the cap.
+- **Arenas are never returned to ESP-IDF.**  Once `heap_caps_malloc`
+  hands the chunk to PPAP at boot, there is no path that calls
+  `heap_caps_free` on it.  A build that never exec's a user binary
+  still keeps the full `ram_text` arena tied up.  This matters if a
+  future feature wants to reclaim PPAP-owned SRAM for ESP-IDF (e.g.
+  switching off the test/runtime split at runtime).
+
+Page-pool frees (now including `PPAP_MEM_RAM_DATA`) go through
+`mm_page_free` — no free-list cap, no coalescing required because
+the allocator only tracks individual page slots.
+
+### Changing page attributes from PPAP
+
+ESP32-S3 has no MMU.  There is no per-page exec/data flag to toggle
+at runtime — the access semantics come from which alias (IRAM vs
+DRAM) you reach the bytes through (see [ESP32-S3 SRAM split](#esp32-s3-sram-split)).
+The Permission Management System (PMS) does support coarse-region
+exec/read/write control, but ESP-IDF locks down its configuration at
+boot and the regions are fixed at chip level.
+
+What this means concretely:
+
+- **No "make this page executable" call exists** for PPAP to make.
+- **To execute code in a SRAM1 page**, allocate it with
+  `MALLOC_CAP_EXEC` (forces an IRAM-alias pointer); write through the
+  DRAM alias of the same physical bytes if you need byte-level
+  stores, then `Cache_WriteBack_Addr` / `Cache_Invalidate_Addr`
+  before jumping to the IRAM alias to avoid the instruction cache
+  serving stale bytes.
+- **The current loader does not exercise this path** — it writes user
+  `.text` into IRAM via word-aligned copy loops (per
+  [IRAM restrictions](#iram-restrictions)) and reads through the same
+  IRAM alias.  Dual-alias use is on the table for a future unification
+  step but is not a per-page attribute change in the MMU sense.
 
 ### Page pool
 

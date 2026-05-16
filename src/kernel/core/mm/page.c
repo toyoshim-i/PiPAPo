@@ -140,13 +140,26 @@ void mm_init(void) {
   }
 #elif defined(__xtensa__)
   /* ESP-IDF owns the DRAM heap.  Allocate page pool from ESP-IDF so
-   * both systems agree on who owns what memory.  Use MALLOC_CAP_8BIT
-   * (cap 2) to get byte-accessible DRAM, NOT IRAM. */
+   * both systems agree on who owns what memory.
+   *
+   * Caps: MALLOC_CAP_8BIT (cap 2) for byte-accessible DRAM (not IRAM)
+   * + MALLOC_CAP_INTERNAL (cap 11) so we never silently fall back to
+   * PSRAM — PPAP page-walk macros assume internal-SRAM latencies.
+   *
+   * Auto-downsize: PAGE_COUNT_MAX may exceed the largest contiguous
+   * internal-DRAM block ESP-IDF can hand over.  Halve the request
+   * until heap_caps_malloc succeeds or we hit a one-page floor. */
   {
     extern void *heap_caps_malloc(unsigned int size, uint32_t caps);
-    uint32_t pool_bytes =
-        PAGE_COUNT_MAX * PAGE_SIZE + PAGE_SIZE; /* +1 page for alignment */
-    void *pool = heap_caps_malloc(pool_bytes, (1u << 2)); /* MALLOC_CAP_8BIT */
+    const uint32_t caps = (1u << 2) | (1u << 11); /* 8BIT | INTERNAL */
+    uint32_t want = PAGE_COUNT_MAX;
+    void *pool = (void *)0;
+    while (want >= 1u) {
+      uint32_t bytes = want * PAGE_SIZE + PAGE_SIZE; /* +1 page for alignment */
+      pool = heap_caps_malloc(bytes, caps);
+      if (pool) break;
+      want /= 2u;
+    }
     if (!pool) {
       mod_vfs.klogf("MM: FATAL — heap_caps_malloc failed for page pool\n");
       for (;;) __asm__ volatile("waiti 15");
@@ -155,9 +168,14 @@ void mm_init(void) {
     uintptr_t raw = (uintptr_t)pool;
     xtensa_pool_base = (raw + PAGE_SIZE - 1u) & ~((uintptr_t)PAGE_SIZE - 1u);
     /* Recalculate how many pages fit after alignment */
-    uintptr_t usable = (raw + pool_bytes) - xtensa_pool_base;
+    uintptr_t usable = (raw + want * PAGE_SIZE + PAGE_SIZE) - xtensa_pool_base;
     page_count = usable / PAGE_SIZE;
-    if (page_count > PAGE_COUNT_MAX) page_count = PAGE_COUNT_MAX;
+    if (page_count > want) page_count = want;
+    if (want < PAGE_COUNT_MAX) {
+      mod_vfs.klogf("MM:   page pool downsized to %lu pages (requested %lu)\n",
+                    (unsigned long)page_count,
+                    (unsigned long)(uint32_t)PAGE_COUNT_MAX);
+    }
   }
 #elif defined(__ia16__)
   {

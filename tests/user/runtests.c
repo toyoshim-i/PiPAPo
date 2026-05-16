@@ -310,14 +310,11 @@ int main(void)
         TEST_UNSUPPORTED
 #endif
     };
-    /* test_cpm / test_sos: subsystems not built for pcxt; on rv32 the
-     * Z80 eCPU path takes a load-access fault (mcause=5) early in
-     * execution and brings the whole kernel down.  On xtensa,
-     * test_cpm fails ~50 internal asserts — every CP/M file_open
-     * returns -1, so the companion .com binaries are either not
-     * staged into the xtensa_cc romfs or the CP/M subsystem path
-     * resolution is broken on xtensa; test_sos returns exit 127
-     * (binary load failing before main() runs). */
+    /* test_cpm / test_sos: subsystems not built for pcxt.  On xtensa
+     * the OOM-cascade that masked these has been resolved (page pool
+     * + ram_data unified), but they still fail downstream of the
+     * test_tmpfs failures: test_cpm writes its .com programs to
+     * /tmp at runtime, and tmpfs write currently returns 0 there. */
     tests[t++] = (test_entry_t){ "/bin/test_cpm",
 #if defined(__ia16__)
         TEST_UNSUPPORTED
