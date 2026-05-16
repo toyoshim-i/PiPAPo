@@ -1583,29 +1583,13 @@ static void blocking_io_integration_test(void)
         test_report("tty_signal_intr delivers SIGINT to fg_pgrp=0", ok);
     }
 
-    /* 5. Nanosleep re-entry with expired deadline — returns 0 immediately.
-     * NOTE: Cannot call sys_nanosleep with a fresh request from kernel
-     * context because it calls sched_yield() which blocks forever
-     * before the scheduler is started.  Instead, simulate the re-entry
-     * path by pre-setting sleep_until to an already-expired value.
+    /* 5. Nanosleep signal check — sig_pending returns -EINTR.
      *
-     * sched_get_ticks() is 0 here (scheduler not started), and
-     * sleep_until==0 is the "not sleeping" sentinel, so we use
-     * 0xFFFFFFFF which is "expired" via signed wrap-around:
-     *   (int32_t)(0 - 0xFFFFFFFF) = 1 >= 0 → expired. */
-    {
-        struct { long tv_sec; long tv_nsec; } ts = { 0, 1 };  /* 1 ns */
-        current->sleep_until = 0xFFFFFFFFu;  /* expired via wrap-around */
-        current->sig_pending = 0;
-        current->sig_blocked = 0;
-
-        long r = sys_nanosleep(&ts, NULL);
-        test_report("nanosleep expired re-entry returns 0", r == 0);
-        test_report("nanosleep clears sleep_until on expiry",
-                    current->sleep_until == 0);
-    }
-
-    /* 6. Nanosleep signal check — sig_pending returns -EINTR */
+     * The loop in sys_nanosleep checks sig_pending before sched_switch(),
+     * so a pre-pending signal causes EINTR on the very first iteration
+     * with no scheduler interaction.  Earlier kernel-context tests for
+     * "expired re-entry" exercised the old syscall_restart mechanism and
+     * were removed when sleep migrated to continuation blocking. */
     {
         struct { long tv_sec; long tv_nsec; } ts = { 1, 0 };
         current->sleep_until = 0;
@@ -1621,7 +1605,6 @@ static void blocking_io_integration_test(void)
         /* Clean up */
         current->sig_pending = 0;
         current->state = PROC_RUNNABLE;
-        syscall_restart[core_id()] = 0;
     }
 
     /* Summary */
