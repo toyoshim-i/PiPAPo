@@ -8,10 +8,11 @@
  *   - Poll all fds via file_ops->poll callback
  *   - If any events match, return immediately
  *   - If timeout is zero, return 0 (non-blocking poll)
- *   - Otherwise, block with syscall_restart; the process is woken by either:
- *     (a) data arrival (e.g. tty_rx_notify → sched_wakeup)
- *     (b) timeout expiry (sched_tick checks PROC_BLOCKED + sleep_until)
- *     (c) signal delivery (returns -EINTR)
+ *   - Otherwise, loop in kernel: set wait_channel, PROC_BLOCKED, sched_switch.
+ *     The process is woken by either:
+ *       (a) data arrival (e.g. tty_rx_notify → sched_wakeup)
+ *       (b) timeout expiry (sched_tick checks PROC_BLOCKED + sleep_until)
+ *       (c) signal delivery (loop returns -EINTR on next iteration)
  */
 
 #include <stdint.h>
@@ -45,71 +46,70 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds, uint32_t timeout_ticks,
   if (!fds && nfds > 0) return -(long)EINVAL;
   if (nfds > (uint32_t)FD_MAX) nfds = (uint32_t)FD_MAX;
 
-  /* Check all fds for ready events */
-  int ready = 0;
-  for (uint32_t i = 0; i < nfds; i++) {
-    fds[i].revents = 0;
-    int fd = fds[i].fd;
-    if (fd < 0) continue; /* negative fd → skip (Linux behaviour) */
-
-    if (fd >= FD_MAX || current->fd_map[fd] == FD_DESC_NONE) {
-      fds[i].revents = (short)POLLNVAL;
-      ready++;
-      continue;
-    }
-
-    int mask = mod_vfs.fd_poll(current->fd_map[fd]);
-
-    fds[i].revents = (short)(mask & (int)fds[i].events);
-    if (fds[i].revents) ready++;
-  }
-
-  if (ready > 0) {
-    current->sleep_until = 0;
-    return (long)ready;
-  }
-
-  /* Non-blocking poll (timeout == 0): return immediately */
-  if (has_timeout && timeout_ticks == 0) {
-    current->sleep_until = 0;
-    return 0;
-  }
-
-  /* Check if we've timed out (on syscall_restart re-entry) */
-  if (current->sleep_until != 0 &&
-      (int32_t)(mod_core.sched_get_ticks() - current->sleep_until) >= 0) {
-    current->sleep_until = 0;
-    return 0; /* timeout */
-  }
-
-  /* Check for pending signals */
-  if (current->sig_pending & ~current->sig_blocked) {
-    current->sleep_until = 0;
-    return -(long)EINTR;
-  }
-
-  /* Set up the deadline on first entry (sleep_until still 0) */
-  if (has_timeout && current->sleep_until == 0)
+  if (has_timeout && timeout_ticks > 0)
     current->sleep_until = mod_core.sched_get_ticks() + timeout_ticks;
 
-  /* Block: wait for data or timeout.
-   * Use the first polled fd's priv as wait channel — for tty fds this
-   * is the tty_dev_t*, matching what tty_rx_notify() wakes. */
-  current->wait_channel = NULL;
-  for (uint32_t i = 0; i < nfds; i++) {
-    int fd = fds[i].fd;
-    if (fd >= 0 && fd < FD_MAX && current->fd_map[fd] != FD_DESC_NONE) {
-      void *priv = mod_vfs.fd_get_priv(current->fd_map[fd]);
-      if (priv) {
-        current->wait_channel = priv;
-        break;
+  for (;;) {
+    /* Check all fds for ready events */
+    int ready = 0;
+    for (uint32_t i = 0; i < nfds; i++) {
+      fds[i].revents = 0;
+      int fd = fds[i].fd;
+      if (fd < 0) continue; /* negative fd → skip (Linux behaviour) */
+
+      if (fd >= FD_MAX || current->fd_map[fd] == FD_DESC_NONE) {
+        fds[i].revents = (short)POLLNVAL;
+        ready++;
+        continue;
+      }
+
+      int mask = mod_vfs.fd_poll(current->fd_map[fd]);
+
+      fds[i].revents = (short)(mask & (int)fds[i].events);
+      if (fds[i].revents) ready++;
+    }
+
+    if (ready > 0) {
+      current->sleep_until = 0;
+      return (long)ready;
+    }
+
+    /* Non-blocking poll (timeout == 0): return immediately */
+    if (has_timeout && timeout_ticks == 0) {
+      current->sleep_until = 0;
+      return 0;
+    }
+
+    /* Check if the deadline has elapsed */
+    if (has_timeout &&
+        (int32_t)(mod_core.sched_get_ticks() - current->sleep_until) >= 0) {
+      current->sleep_until = 0;
+      return 0; /* timeout */
+    }
+
+    /* Check for pending signals */
+    if (current->sig_pending & ~current->sig_blocked) {
+      current->sleep_until = 0;
+      return -(long)EINTR;
+    }
+
+    /* Block: wait for data or timeout.
+     * Use the first polled fd's priv as wait channel — for tty fds this
+     * is the tty_dev_t*, matching what tty_rx_notify() wakes. */
+    current->wait_channel = NULL;
+    for (uint32_t i = 0; i < nfds; i++) {
+      int fd = fds[i].fd;
+      if (fd >= 0 && fd < FD_MAX && current->fd_map[fd] != FD_DESC_NONE) {
+        void *priv = mod_vfs.fd_get_priv(current->fd_map[fd]);
+        if (priv) {
+          current->wait_channel = priv;
+          break;
+        }
       }
     }
+    current->state = PROC_BLOCKED;
+    mod_core.sched_switch();
   }
-  current->state = PROC_BLOCKED;
-  mod_core.syscall_set_restart();
-  mod_core.sched_switch();
-  return 0; /* ignored — SVC restores original args */
 }
 
 /* ── sys_poll (SYS_POLL = 168) ───────────────────────────────────────────────
