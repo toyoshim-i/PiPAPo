@@ -121,14 +121,27 @@ mod_core entry.
 
 One PR per group, easy to bisect.
 
-1. `sys_nanosleep` and the two sister sleep paths
-2. `sys_poll` / `select`
-3. `sys_waitpid`
-4. `trace_stop_current` (also removes the `__m68k__` `arch_yield()` branch)
+1. `sys_nanosleep` and the two sister sleep paths — **landed**.
+2. `sys_poll` / `select` — **landed**.
+3. `sys_waitpid` — **blocked**, see below.
+4. `trace_stop_current` — **blocked**, same reason.
 
 Each PR rewrites the body to a loop, removes the `syscall_set_restart()`
 call, and deletes the now-obsolete "re-entry" comments.  Test coverage:
 existing sleep, poll, waitpid, and ptrace tests on ARM, m68k, rv32, xtensa.
+
+**Blocked on:** [`arm_trap_frame_switch.md`](arm_trap_frame_switch.md)
+Phase A.  Attempting step 3 (waitpid) on ARM exposes a latent bug in
+`arm_kernel_sched_switch`'s restore path (uses `bx lr` to a saved C
+return address instead of `EXC_RETURN`, leaving exception-state
+bookkeeping skewed).  vfork tolerates a single use; chaining vfork +
+waitpid through one user-mode round-trip — which any CP/M-subsystem
+test does — hangs reliably.  Converting ARM SVC blocking to the same
+trap-frame swap that m68k / riscv / xtensa already use eliminates the
+mechanism, the bug, and the dependency.  Steps 3–4 resume immediately
+afterwards.  m68k, rv32, xtensa, ia16 are unaffected by this dependency
+and could in principle migrate first, but bundling under one ARM cleanup
+is cleaner.
 
 ### Phase 2 — Retire arch trap-return restart paths
 
@@ -182,3 +195,7 @@ existing sleep, poll, waitpid, and ptrace tests on ARM, m68k, rv32, xtensa.
   continuation-blocking loops introduced here are forward-compatible with
   a deadline-driven wakeup primitive; that work is tracked separately in
   `hires_timer.md`.
+- ARM's PendSV-centric scheduling shape is not changed by this proposal.
+  The latent issue it has only matters when chained Handler-mode blockings
+  occur, which is exactly what makes steps 3–4 hard.  See
+  `arm_trap_frame_switch.md` for the fix.
