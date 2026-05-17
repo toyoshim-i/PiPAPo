@@ -22,6 +22,7 @@
 #include "kernel/common/config.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/xtensa_cc.h"
+#include "kernel/core/mm/mem_helper.h"
 #include "kernel/vfs/driver/cc_kbd.h"
 #include "kernel/vfs/driver/fbcon.h"
 #include "kernel/vfs/driver/lcd_panel.h"
@@ -157,6 +158,13 @@ void vfs_notify(int event) {
        * the boot log read in the obvious order. */
       kbd_init();
       klogf("KBD: matrix scan enabled (60x16 console accepts input)\n");
+
+      /* Re-emit page-pool / arena sizing now that the serial monitor has
+       * attached.  mm_init's banner fired before reset → flash → monitor
+       * boot, so the test-harness capture (xtensa_cc_test_monitor.py)
+       * misses it; this call surfaces the same data inside the captured
+       * window so size and ram_text-alias status are visible at-test. */
+      mem_helper_log_state();
       break;
 
     case VFS_EVENT_IDLE:

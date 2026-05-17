@@ -51,6 +51,7 @@ set(ARCH_XTENSA_SOURCES
     ${_KS_ROOT}/src/arch/xtensa/kernel/core/trap.S
     ${_KS_ROOT}/src/arch/xtensa/kernel/core/switch.S
     ${_KS_ROOT}/src/arch/xtensa/kernel/core/kstack_region.c
+    ${_KS_ROOT}/src/arch/xtensa/kernel/core/mem_helper.c
     ${_KS_ROOT}/src/arch/xtensa/kernel/core/signal/signal_check.c
     ${_KS_ROOT}/src/arch/xtensa/kernel/core/xtensa_common.c
     ${_KS_ROOT}/src/arch/xtensa/kernel/core/smp.c
@@ -66,6 +67,7 @@ set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/kernel/core/mm/page.c
     ${_KS_ROOT}/src/kernel/core/mm/page_alloc.c
     ${_KS_ROOT}/src/kernel/core/mm/kmem.c
+    ${_KS_ROOT}/src/kernel/core/mm/mem_helper.c
     ${_KS_ROOT}/src/kernel/core/mm/mem_region.c
     ${_KS_ROOT}/src/kernel/core/proc/proc.c
     ${_KS_ROOT}/src/kernel/core/proc/kstack.c

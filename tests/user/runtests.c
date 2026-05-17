@@ -238,35 +238,10 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_fs", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_rw", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_time", TEST_ENABLED };
-    /* test_iov: xtensa returns exit status 1; root cause not yet
-     * investigated (writev/readv path on PSRAM-backed buffers). */
-    tests[t++] = (test_entry_t){ "/bin/test_iov",
-#if defined(__xtensa__)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_iov", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_stat", TEST_ENABLED };
-    /* test_env: setenv/unsetenv return -1 on xtensa at test_env.c:91,
-     * :93, :97; root cause not yet investigated. */
-    tests[t++] = (test_entry_t){ "/bin/test_env",
-#if defined(__xtensa__)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
-    /* test_tmpfs: on xtensa, write returns 0 and ENOSPC handling
-     * mismatches at multiple line offsets (test_tmpfs.c:34, :44, :95,
-     * :109, :144, :156); root cause not yet investigated. */
-    tests[t++] = (test_entry_t){ "/bin/test_tmpfs",
-#if defined(__xtensa__)
-        TEST_DISABLED
-#else
-        TEST_ENABLED
-#endif
-    };
+    tests[t++] = (test_entry_t){ "/bin/test_env", TEST_ENABLED };
+    tests[t++] = (test_entry_t){ "/bin/test_tmpfs", TEST_ENABLED };
     /* test_ufs runs only where a UFS root is mounted (pcxt today). */
     tests[t++] = (test_entry_t){ "/bin/test_ufs",
 #if defined(__ia16__)
@@ -310,11 +285,11 @@ int main(void)
         TEST_UNSUPPORTED
 #endif
     };
-    /* test_cpm / test_sos: subsystems not built for pcxt.  On xtensa
-     * the OOM-cascade that masked these has been resolved (page pool
-     * + ram_data unified), but they still fail downstream of the
-     * test_tmpfs failures: test_cpm writes its .com programs to
-     * /tmp at runtime, and tmpfs write currently returns 0 there. */
+    /* test_cpm / test_sos: subsystems not built for pcxt.  On xtensa the
+     * SRAM1 alias bug that previously masked them is fixed, but every
+     * Z80-trapped CP/M syscall path still returns 0-output or exit 127
+     * (see /ppap/tests/user/test_cpm.c failures).  Functional bugs in the
+     * Z80 emulator's CP/M bridge are out of scope here. */
     tests[t++] = (test_entry_t){ "/bin/test_cpm",
 #if defined(__ia16__)
         TEST_UNSUPPORTED

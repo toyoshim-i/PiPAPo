@@ -44,9 +44,10 @@ void *page_alloc_at(void *addr);
  * obtained from page_alloc(), or if it is freed more than once. */
 void page_free(void *page);
 
-/* Return the runtime page pool base linear address.  On Xtensa this is
- * dynamically allocated from ESP-IDF's heap; on other targets it equals
- * the compile-time PAGE_POOL_BASE. */
+/* Return the runtime page pool base linear address.  Set during
+ * mm_init: equals PAGE_POOL_BASE on targets with a fixed pool, or
+ * whatever mem_helper_init_pool wrote for targets that allocate
+ * the pool at boot. */
 uint32_t page_pool_base(void);
 
 /* Return the number of pages currently on the free stack. */

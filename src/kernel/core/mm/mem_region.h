@@ -1,10 +1,10 @@
 /*
  * mem_region.h — Memory-region allocation helpers
  *
- * Provides a small allocator boundary between loaders and target-specific
- * memory backends. Xtensa now uses this for PPAP-owned internal and
- * external arenas, while other classes keep their existing page-backed
- * behaviour.
+ * Provides a small allocator boundary between loaders and target-
+ * specific memory backends.  The default path is page-backed for
+ * every memory class; arches that need additional arenas plug in
+ * through the mem_helper hooks (see mem_helper.h).
  */
 
 #ifndef PPAP_KERNEL_CORE_MM_MEM_REGION_H

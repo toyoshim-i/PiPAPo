@@ -26,7 +26,10 @@
 
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/spinlock.h"
+#include "kernel/core/mm/mem_helper.h"
+#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page_alloc.h"
+#include "kernel/core/panic.h"
 
 /* ── Linker-provided symbols ────────────────────────────────────────────────
  */
@@ -115,20 +118,18 @@ static int pool_page_id_to_index(page_id_t id, uint32_t *index) {
 /* ── Public API ─────────────────────────────────────────────────────────────
  */
 
-/* On Xtensa, the page pool is allocated from ESP-IDF's heap at runtime
- * (see mm_init).  This variable stores the base address. */
-#if defined(__xtensa__)
-static uintptr_t xtensa_pool_base;
-#endif
+/* Aligned base of the runtime page pool.  Set during mm_init: for
+ * targets with a fixed/linker-located pool this stays at PAGE_POOL_BASE;
+ * targets that allocate the pool at boot overwrite it through
+ * mem_helper_init_pool. */
+static uintptr_t s_pool_base;
 
 void mm_init(void) {
   uintptr_t bss_end = (uintptr_t)&__bss_end;
   uintptr_t stack_top = (uintptr_t)&__stack_top;
   uintptr_t kern_used = bss_end - SRAM_KERNEL_BASE;
 
-  /* Detect available RAM and set runtime page_count.
-   * On m68k: probe RAM via bus error catching (two-phase: 1MB then 4KB).
-   * On ARM:  fixed RAM size, use compile-time PAGE_COUNT_MAX directly. */
+  /* Detect available RAM and set runtime page_count. */
 #if defined(__m68k__)
   {
     uint32_t probe_end = RAM_END;
@@ -138,45 +139,7 @@ void mm_init(void) {
     page_count = ram_bytes / PAGE_SIZE;
     if (page_count > PAGE_COUNT_MAX) page_count = PAGE_COUNT_MAX;
   }
-#elif defined(__xtensa__)
-  /* ESP-IDF owns the DRAM heap.  Allocate page pool from ESP-IDF so
-   * both systems agree on who owns what memory.
-   *
-   * Caps: MALLOC_CAP_8BIT (cap 2) for byte-accessible DRAM (not IRAM)
-   * + MALLOC_CAP_INTERNAL (cap 11) so we never silently fall back to
-   * PSRAM — PPAP page-walk macros assume internal-SRAM latencies.
-   *
-   * Auto-downsize: PAGE_COUNT_MAX may exceed the largest contiguous
-   * internal-DRAM block ESP-IDF can hand over.  Halve the request
-   * until heap_caps_malloc succeeds or we hit a one-page floor. */
-  {
-    extern void *heap_caps_malloc(unsigned int size, uint32_t caps);
-    const uint32_t caps = (1u << 2) | (1u << 11); /* 8BIT | INTERNAL */
-    uint32_t want = PAGE_COUNT_MAX;
-    void *pool = (void *)0;
-    while (want >= 1u) {
-      uint32_t bytes = want * PAGE_SIZE + PAGE_SIZE; /* +1 page for alignment */
-      pool = heap_caps_malloc(bytes, caps);
-      if (pool) break;
-      want /= 2u;
-    }
-    if (!pool) {
-      mod_vfs.klogf("MM: FATAL — heap_caps_malloc failed for page pool\n");
-      for (;;) __asm__ volatile("waiti 15");
-    }
-    /* Align pool start to page boundary */
-    uintptr_t raw = (uintptr_t)pool;
-    xtensa_pool_base = (raw + PAGE_SIZE - 1u) & ~((uintptr_t)PAGE_SIZE - 1u);
-    /* Recalculate how many pages fit after alignment */
-    uintptr_t usable = (raw + want * PAGE_SIZE + PAGE_SIZE) - xtensa_pool_base;
-    page_count = usable / PAGE_SIZE;
-    if (page_count > want) page_count = want;
-    if (want < PAGE_COUNT_MAX) {
-      mod_vfs.klogf("MM:   page pool downsized to %lu pages (requested %lu)\n",
-                    (unsigned long)page_count,
-                    (unsigned long)(uint32_t)PAGE_COUNT_MAX);
-    }
-  }
+  s_pool_base = PAGE_POOL_BASE;
 #elif defined(__ia16__)
   {
     uint32_t ram_top = i16_detect_ram();
@@ -188,20 +151,20 @@ void mm_init(void) {
       page_count = 0;
     }
   }
+  s_pool_base = PAGE_POOL_BASE;
 #else
   page_count = PAGE_COUNT_MAX;
+  s_pool_base = PAGE_POOL_BASE;
+  /* Targets that allocate the pool from a runtime heap override this
+   * and rewrite both page_count and s_pool_base. */
+  if (mem_helper_init_pool(&s_pool_base) < 0) panic("page pool init failed\n");
 #endif
 
   /* Build the free stack: push pages from the pool that don't overlap
    * with the kernel stack.  On QEMU (flat memory model) the initial
    * stack may extend into the page pool region.  Skip those pages. */
   uintptr_t stack_page_top = (stack_top + PAGE_SIZE - 1u) & ~(PAGE_SIZE - 1u);
-  uint32_t pool_base;
-#if defined(__xtensa__)
-  pool_base = xtensa_pool_base;
-#else
-  pool_base = page_pool_base();
-#endif
+  uint32_t pool_base = (uint32_t)s_pool_base;
   /* Hand the runtime page inventory to the pure allocator core.  Walk
    * pages in address order; when we hit a skipped-page boundary, flush
    * the run-in-progress as one add_range() call.  The allocator expects
@@ -351,13 +314,7 @@ void page_free(void *page) {
   }
 }
 
-uint32_t page_pool_base(void) {
-#if defined(__xtensa__)
-  return (uint32_t)xtensa_pool_base;
-#else
-  return PAGE_POOL_BASE;
-#endif
-}
+uint32_t page_pool_base(void) { return (uint32_t)s_pool_base; }
 
 uint32_t page_free_count(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);

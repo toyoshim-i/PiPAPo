@@ -11,6 +11,7 @@
 
 #include "ktest.h"
 #include "kernel/common/mem_region_kbuf.h"
+#include "kernel/core/mm/mem_helper.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/vfs/klog.h"
 #include "kernel/core/mm/page.h"
@@ -1792,6 +1793,34 @@ static void signal_stack_overflow_test(void)
           (unsigned)test_pass, (unsigned)test_fail);
 }
 
+/* ── Page-pool / arch-text physical-alias guard ─────────────────────────────
+ *
+ * Some chips expose the same physical SRAM via two different bus views
+ * (e.g. ESP32-S3's SRAM1 at both DRAM 0x3FC8_8000 and IRAM 0x4037_C000).
+ * When the kernel grabs the page pool from one view and an arch text
+ * arena from the other, the heap manager can hand out overlapping
+ * physical bytes — any page-pool write then corrupts user binary text.
+ * The pool-sizing loop in src/arch/<arch>/.../mem_helper.c rejects such
+ * grabs via mem_helper_pool_aliases_text(); this test re-runs the same
+ * check post-init so future kernel-image growth or layout changes
+ * can't regress the invariant silently. */
+static void pool_arch_text_alias_test(void)
+{
+    mod_vfs.klogf("\n=== Page pool vs arch-text alias guard ===\n");
+    test_pass = 0;
+    test_fail = 0;
+
+    uintptr_t pool_lo = (uintptr_t)page_pool_base();
+    uint32_t  pool_bytes = mem_region_total_bytes(PPAP_MEM_RAM_STACK);
+    uintptr_t pool_hi = pool_lo + pool_bytes;
+    test_report("page pool base reported", pool_lo != 0u);
+    test_report("page pool does not alias arch text arena",
+                !mem_helper_pool_aliases_text(pool_lo, pool_hi));
+
+    mod_vfs.klogf("Pool alias guard: %u passed, %u failed\n",
+          (unsigned)test_pass, (unsigned)test_fail);
+}
+
 /* ── Test runner ──────────────────────────────────────────────────────────── */
 
 void ktest_run_all(void)
@@ -1854,6 +1883,9 @@ void ktest_run_all(void)
     total_pass += test_pass; total_fail += test_fail;
 
     signal_stack_overflow_test();
+    total_pass += test_pass; total_fail += test_fail;
+
+    pool_arch_text_alias_test();
     total_pass += test_pass; total_fail += test_fail;
 
     /* Final summary */

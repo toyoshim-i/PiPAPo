@@ -5,6 +5,13 @@
 
 get_filename_component(PPAP_ROOT ${CMAKE_CURRENT_LIST_DIR}/../../../../../.. ABSOLUTE)
 
+# Subsystems compiled into the kernel.  test_cpm / test_sos need both
+# loaders plus the Z80 eCPU.  Human68k / m68k eCPU stay off pending
+# separate validation.
+set(PPAP_ENABLE_CPM       ON)
+set(PPAP_ENABLE_SOS       ON)
+set(PPAP_ENABLE_ECPU_Z80  ON)
+
 include(${PPAP_ROOT}/cmake/kernel.cmake)
 
 # ── Xtensa-CC target sources ─────────────────────────────────────────────────
@@ -41,6 +48,9 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     MEM_REGION_EXT_TEXT_ARENA_SIZE=524288u
     MEM_REGION_EXT_RODATA_ARENA_SIZE=262144u
     ENABLE_XTENSA_PSRAM_EXEC=1
+    PPAP_ENABLE_CPM=1
+    PPAP_ENABLE_SOS=1
+    PPAP_ENABLE_ECPU_Z80=1
 )
 
 # scripts/build.sh forwards --test as -DPPAP_TESTS=ON via idf.py.
