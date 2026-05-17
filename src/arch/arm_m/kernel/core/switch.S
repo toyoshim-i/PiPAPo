@@ -49,12 +49,17 @@
 @ PCB_SP_OFFSET: byte offset of the `sp` field inside pcb_t.
 @ MUST match offsetof(pcb_t, sp); verified by _Static_assert in proc.c.
 @
-@ Both paths save/restore kernel_sp.  At switch entry, MSP is wherever the
-@ outgoing handler or SVC continuation landed, typically inside the current
-@ process's kernel-stack slot.  Saving that MSP into kernel_sp preserves the
-@ slot's live top; restoring next->kernel_sp places MSP back into the incoming
-@ process's slot, so subsequent IRQ or SVC entry runs on that slot rather than
-@ the shared boot stack.
+@ pcb_t.kernel_sp is the IMMUTABLE slot top for each process, planted once
+@ by proc_kstack_init_slot() and never written by save paths.  PendSV and
+@ arm_kernel_sched_switch restore set MSP = kernel_sp so the incoming
+@ process resumes with MSP at a known-good location.  See the comment on
+@ pcb_t.kernel_sp in proc_info.h for why this field is one-purpose only.
+@
+@ The saved SW frame for a kernel-continuation switch lives on MSP at
+@ a depth that depends on the C call site of arm_kernel_sched_switch.
+@ Its base is stored in pcb_t.sp (alongside the embedded saved PSP at
+@ frame[+36]), distinguished from the Thread/PSP saved frame by the
+@ kernel_context flag.
 @ =============================================================================
 
 .equ PCB_SP_OFFSET,        32  @ offsetof(pcb_t, sp) — see proc.h
@@ -80,7 +85,13 @@ arm_kernel_sched_switch:
     cpsid i
 
 #if __ARM_ARCH >= 8
-    @ Save the in-flight kernel continuation on the current MSP.
+    @ Save the in-flight kernel continuation on the current MSP.  Layout:
+    @   [sp+0..28]  r4-r11
+    @   [sp+32]     saved lr (C return address)
+    @   [sp+36]     saved PSP (HW exception frame base on PSP)
+    @ Pushing PSP first puts it at the high end of the frame.
+    mrs  r0, psp
+    stmdb sp!, {r0}
     stmdb sp!, {r4-r11, lr}
 
     @ Compute &current_core[core_id].
@@ -91,12 +102,11 @@ arm_kernel_sched_switch:
     ldr  r2, =current_core
     adds r2, r2, r1
 
-    @ Save current MSP + PSP into the outgoing PCB and mark it as a
-    @ kernel continuation rather than a normal Thread/PSP frame.
+    @ Save the SW-frame base into the outgoing PCB and mark it as a kernel
+    @ continuation.  kernel_sp stays as the immutable slot top — see the
+    @ comment on pcb_t.kernel_sp in proc_info.h.
     ldr  r3, [r2]
-    mrs  r0, msp
-    str  r0, [r3, #PCB_KERNEL_SP_OFFSET]
-    mrs  r0, psp
+    mov  r0, sp
     str  r0, [r3, #PCB_SP_OFFSET]
     mov  r0, r3
     bl   arm_mark_kernel_context
@@ -136,25 +146,36 @@ arm_kernel_sched_switch:
     bx   lr
 
 .Larm_kernel_restore_kernel_v8:
-    ldr  r0, [r4, #PCB_SP_OFFSET]
-    msr  psp, r0
-    ldr  r0, [r4, #PCB_KERNEL_SP_OFFSET]
+    @ r4 = incoming pcb_t*.  Layout of saved kernel-continuation SW frame:
+    @   [sp+0..28]  r4-r11
+    @   [sp+32]     saved lr (C return address — bx target)
+    @   [sp+36]     saved PSP
+    ldr  r0, [r4, #PCB_SP_OFFSET]    @ r0 = SW frame base on MSP
     msr  msp, r0
-    ldmia sp!, {r4-r11, lr}
+    ldmia sp!, {r4-r11, lr}           @ restore r4-r11 and saved lr (C addr)
+    ldr  r0, [sp], #4                 @ pop saved PSP
+    msr  psp, r0
     cpsie i
     bx   lr
 #else
-    @ Save the in-flight kernel continuation on the current MSP.
-    sub  sp, #36
+    @ Save the in-flight kernel continuation on the current MSP.  Layout
+    @ (10 words = 40 bytes):
+    @   [sp+0..12]  r4-r7
+    @   [sp+16..28] r8-r11
+    @   [sp+32]     saved lr (C return address)
+    @   [sp+36]     saved PSP (HW exception frame base on PSP)
+    sub  sp, #40
     mov  r0, sp
-    stmia r0!, {r4-r7}
+    stmia r0!, {r4-r7}        @ r4-r7 at +0..12; r0 → +16
     mov  r4, r8
     mov  r5, r9
     mov  r6, r10
     mov  r7, r11
-    stmia r0!, {r4-r7}
+    stmia r0!, {r4-r7}        @ r8-r11 (via r4-r7) at +16..28; r0 → +32
     mov  r4, lr
-    str  r4, [r0]
+    str  r4, [r0]             @ saved lr at +32
+    mrs  r4, psp
+    str  r4, [r0, #4]         @ saved PSP at +36
 
     @ Compute &current_core[core_id].
     ldr  r1, =core_id_reg
@@ -164,12 +185,11 @@ arm_kernel_sched_switch:
     ldr  r2, =current_core
     adds r2, r2, r1
 
-    @ Save current MSP + PSP into the outgoing PCB and mark it as a
-    @ kernel continuation rather than a normal Thread/PSP frame.
+    @ Save the SW-frame base into the outgoing PCB and mark it as a kernel
+    @ continuation.  kernel_sp stays as the immutable slot top — see the
+    @ comment on pcb_t.kernel_sp in proc_info.h.
     ldr  r3, [r2]
     mov  r0, sp
-    str  r0, [r3, #PCB_KERNEL_SP_OFFSET]
-    mrs  r0, psp
     str  r0, [r3, #PCB_SP_OFFSET]
     mov  r0, r3
     bl   arm_mark_kernel_context
@@ -216,23 +236,28 @@ arm_kernel_sched_switch:
     bx   lr
 
 .Larm_kernel_restore_kernel_v6:
-    ldr  r0, [r4, #PCB_SP_OFFSET]
-    msr  psp, r0
-    ldr  r0, [r4, #PCB_KERNEL_SP_OFFSET]
+    @ r4 = incoming pcb_t*.  SW frame on MSP (10 words = 40 bytes):
+    @   [base+0..12]  r4-r7
+    @   [base+16..28] r8-r11
+    @   [base+32]     saved lr (C return address — bx target)
+    @   [base+36]     saved PSP
+    ldr  r0, [r4, #PCB_SP_OFFSET]    @ r0 = SW frame base on MSP
     msr  msp, r0
-    mov  r0, sp
+    mov  r0, sp                       @ r0 = MSP = frame base
     mov  r1, r0
-    adds r1, #16
-    ldmia r1!, {r4-r7}
+    adds r1, #16                      @ r1 → r8 area
+    ldmia r1!, {r4-r7}                @ load r8-r11 (via r4-r7); r1 → +32
     mov  r8,  r4
     mov  r9,  r5
     mov  r10, r6
     mov  r11, r7
-    ldr  r4, [r1]
+    ldr  r4, [r1]                     @ r4 = saved lr (C addr)
     mov  lr, r4
+    ldr  r4, [r1, #4]                 @ r4 = saved PSP
+    msr  psp, r4
     mov  r1, r0
-    ldmia r1!, {r4-r7}
-    adds r0, r0, #36
+    ldmia r1!, {r4-r7}                @ load real r4-r7
+    adds r0, r0, #40                  @ MSP += 40 (pop full frame)
     msr  msp, r0
     cpsie i
     bx   lr
@@ -277,11 +302,8 @@ PendSV_Handler:
     ldr  r3, [r2]             @ r3 = current PCB pointer
     str  r0, [r3, #PCB_SP_OFFSET]  @ current->sp = r0
 
-    @ ── Save outgoing MSP into current->kernel_sp ──────────────────────
-    @ The MSP value here is wherever the handler chain (SysTick → PendSV
-    @ tail-chain typically) landed inside the outgoing proc's kernel slot.
-    mrs  r4, msp
-    str  r4, [r3, #PCB_KERNEL_SP_OFFSET]
+    @ kernel_sp is the immutable slot top — do NOT update it here.  See
+    @ pcb_t.kernel_sp in proc_info.h.
 
     @ ── Call C scheduler to select next process ────────────────────────
     @ Preserve &current_core[core_id] (r2) and core_byte_offset (r1).
@@ -374,11 +396,8 @@ PendSV_Handler:
     ldr  r3, [r2]             @ r3 = current PCB pointer
     str  r0, [r3, #PCB_SP_OFFSET]  @ current->sp = r0
 
-    @ ── Save outgoing MSP into current->kernel_sp ──────────────────────
-    @ See M33 path above for rationale.  r4-r7 are scratch (saved on
-    @ PSP via the stmia above).
-    mrs  r4, msp
-    str  r4, [r3, #PCB_KERNEL_SP_OFFSET]
+    @ kernel_sp is the immutable slot top — do NOT update it here.  See
+    @ pcb_t.kernel_sp in proc_info.h.
 
     @ ── Call C scheduler to select next process ────────────────────────
     @ Preserve &current_core[core_id] (r2).  Outgoing EXC_RETURN was

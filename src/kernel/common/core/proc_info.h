@@ -96,12 +96,26 @@ typedef struct pcb {
    * (PCB_SP_OFFSET).  Do not reorder these fields.
    */
 #if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
+  /* These fields are arch-specific to ARM Cortex-M (MSP/PSP split).
+   * Other archs must NOT reuse the names for different concepts — keep the
+   * per-arch sections separate and add new fields rather than overloading.
+   */
   uint32_t r4, r5, r6, r7;   /* callee-saved low registers  (offsets 0-15)  */
   uint32_t r8, r9, r10, r11; /* callee-saved high registers (offsets 16-31) */
-  uint32_t sp;               /* saved PSP                   (offset 32)     */
-  uint32_t kernel_sp;        /* per-proc MSP (kernel stack) (offset 36)     */
-  uint32_t svc_msp;          /* original SVC entry MSP      (offset 40)     */
-  uint8_t kernel_context;    /* 1 = suspended inside kernel continuation    */
+  /* `sp` — saved software-frame base.  Lives on PSP when kernel_context==0
+   * (Thread-mode preempted) or on MSP when kernel_context==1 (suspended
+   * inside an SVC continuation).  PendSV / arm_kernel_sched_switch save
+   * paths write this field; matching restore paths read it. */
+  uint32_t sp; /* saved SW-frame base         (offset 32)     */
+  /* `kernel_sp` — IMMUTABLE slot top of this process's MSP slot, planted
+   * once by proc_kstack_init_slot() and never written by save paths.
+   * Used by SVC entry's MSP-into-slot swap and by PendSV's restore to set
+   * MSP back to a known-good value.  Treating this as a saved MSP would
+   * cause kernel_sp to ratchet downwards over many sched_switch cycles
+   * and eventually overflow the slot — see arm_trap_frame_switch.md.   */
+  uint32_t kernel_sp;     /* slot top (immutable)        (offset 36)     */
+  uint32_t svc_msp;       /* original SVC entry MSP      (offset 40)     */
+  uint8_t kernel_context; /* 1 = suspended inside kernel continuation    */
 #elif defined(__m68k__)
   uint32_t d2, d3, d4, d5, d6, d7; /* callee-saved data regs  (offsets 0-23) */
   uint32_t a2, a3, a4, a5, a6; /* callee-saved addr regs  (offsets 24-43)  */
