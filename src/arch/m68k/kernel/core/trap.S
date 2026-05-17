@@ -37,10 +37,7 @@
 |   [SP+62]  PC  (32-bit, exception frame)
 |
 | m68k_syscall_entry(regs) reads arguments from this frame and writes
-| the return value into regs[0] (the d0 slot).  It also handles syscall
-| restart internally (looping on current->syscall_needs_restart) instead of
-| using the global syscall_restart flag, which is unsafe on m68k because
-| nested TRAP handlers share globals across processes.
+| the return value into regs[0] (the d0 slot).
 |
 | Post-dispatch check:
 |   exec_pending — sys_execve loaded a new process image.

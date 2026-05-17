@@ -39,12 +39,10 @@ int arm_take_kernel_context(pcb_t *p) {
   return has_context;
 }
 
-/* Restart-style waits replay the syscall from the SVC boundary, so they use
- * PendSV after exception return.  Only non-restart blocked syscalls need the
- * direct MSP continuation switch. */
+/* Blocked syscalls always take the direct MSP continuation switch.  The
+ * restart-style fallback path is gone — see docs/proposals/no_restart.md. */
 int arm_can_kernel_sched_switch(void) {
-  return current && current->state == PROC_BLOCKED &&
-         syscall_restart[core_id()] == 0;
+  return current && current->state == PROC_BLOCKED;
 }
 
 /*

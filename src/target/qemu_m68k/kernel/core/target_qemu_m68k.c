@@ -53,7 +53,7 @@ void m68k_syscall_entry(uint32_t *regs) {
   uint32_t a4 = regs[5]; /* d5 = arg 5 */
   uint32_t a5 = regs[8]; /* a0 = arg 6 */
 
-  syscall_restart_loop(&regs[1], nr, a4, a5);
+  syscall_dispatch(&regs[1], nr, a4, a5);
 
   /* Move the return value from frame[0] (d1 slot) to d0 (Linux m68k ABI). */
   regs[0] = regs[1];

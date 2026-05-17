@@ -209,11 +209,7 @@ _trap_entry:
     # Re-enable interrupts during syscall processing (same as ARM SVC)
     csrs    mstatus, 0x8            # set MIE
 
-    # Call syscall_restart_loop(frame, nr, a4, a5).
-    # Wrapper that handles blocking-syscall restart in C using the
-    # per-process flag current->syscall_needs_restart.  sched_switch() is
-    # synchronous on rv32, so the global syscall_restart[] / syscall_saved_arg0[]
-    # are unsafe across processes — see syscall.c for the loop.
+    # Call syscall_dispatch(frame, nr, a4, a5).
     #   frame = &trap_frame[8] = sp+32 (points to saved a0 in trap frame)
     #   nr    = saved a7 (trap frame offset 60 = x17)
     #   a4    = saved a4 (trap frame offset 48 = x14)
@@ -222,9 +218,9 @@ _trap_entry:
     lw      a1, 60(sp)              # nr = saved a7 (x17)
     lw      a2, 48(sp)              # a4 = saved x14 (a4)
     lw      a3, 52(sp)              # a5 = saved x15 (a5)
-    call    syscall_restart_loop
+    call    syscall_dispatch
 
-    # syscall_restart_loop writes the final return value into frame[0].
+    # syscall_dispatch writes the final return value into frame[0].
 
     # Deliver any pending user-handler signal before returning to user.
     # signal_check rewrites this trap frame's (mepc, sp, a0, ra) so the
@@ -246,9 +242,6 @@ _trap_entry:
     csrw    mscratch, t1           # update mscratch for new kernel stack
     j       .Ltrap_return
 .Lno_exec:
-
-    # Note: syscall restart is handled in C by syscall_restart_loop (called
-    # above instead of syscall_dispatch).  No asm rewind needed here.
 
     # ── Check switch_pending ──────────────────────────────────
     la      t0, switch_pending

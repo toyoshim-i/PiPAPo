@@ -32,8 +32,6 @@
   .code16
   .text
 
-  .equ PCB_SVC_NEEDS_RESTART_OFFSET, 526
-
   .global i16_syscall_isr
   .global i16_trap_after_switch
   .global i16_trap_finish_scratch_frame
@@ -139,7 +137,7 @@ i16_syscall_isr:
    * from PCB's exec_user_ss/sp and switch to it. */
   movw  %ss:exec_pending, %ax
   testw %ax, %ax
-  jz    .Lcheck_restart
+  jz    .Lstore_ret
   movw  $0, %ss:exec_pending
   movw  %ss:current_core, %bx
   /* Build [user_SP, user_SS] at kernel_sp - 4.
@@ -150,27 +148,6 @@ i16_syscall_isr:
   pushw 8(%bx)                /* push exec_user_sp */
   subw  $34, %sp              /* reserve vfork-save slot (see .Lkstack_ready) */
   jmp   .Lmaybe_switch
-
-.Lcheck_restart:
-  /* Blocking syscalls rewind IP so INT 30h re-executes when resumed */
-  pushw %bx
-  movw  %ss:current_core, %bx
-  xorw  %ax, %ax
-  movb  %ss:PCB_SVC_NEEDS_RESTART_OFFSET(%bx), %al
-  testb %al, %al
-  jz    .Lno_restart
-  movb  $0, %ss:PCB_SVC_NEEDS_RESTART_OFFSET(%bx)
-  movw  $0, %ss:syscall_restart
-  popw  %bx
-  /* Rewind IP on the interrupted stack: IP is at user_SP+18 */
-  movw  %cx, %ds        /* DS = user_SS */
-  subw  $2, 18(%bx)     /* IP -= 2 (back to INT 30h) */
-  xorw  %ax, %ax
-  movw  %ax, %ds        /* DS = 0 */
-  jmp   .Lmaybe_switch
-
-.Lno_restart:
-  popw  %bx
 
 .Lstore_ret:
   /* Only skip the AX write for the vfork parent case where the child is

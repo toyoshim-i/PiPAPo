@@ -30,15 +30,13 @@
 @      (including r9/GOT base) are correct for the new program.
 @
 @   2. Process not RUNNABLE — the syscall blocked or exited.
-@      Non-restart blocking syscalls switch away synchronously inside
-@      sched_switch() via arm_kernel_sched_switch(); by the time execution
-@      reaches this check again, the same kernel continuation has resumed.
-@      Restart-style blocking syscalls (e.g. waitpid) pend PendSV instead;
-@      when syscall_restart[core_id] is set, we restore the original frame[0]
-@      and adjust the stacked PC back by 2 so SVC re-executes after wakeup.
+@      All blocking syscalls switch away synchronously inside sched_switch()
+@      via arm_kernel_sched_switch(); by the time execution reaches this
+@      check, the same kernel continuation has already resumed.  Nothing
+@      else to do — fall through to the normal return.
 @
-@ All per-core state (exec_pending, syscall_restart, syscall_saved_arg0, current_core)
-@ is indexed by core_id via the core_id_reg indirect pointer.
+@ All per-core state (exec_pending, current_core) is indexed by core_id
+@ via the core_id_reg indirect pointer.
 @
 @ SVC runs its body on the current process's kernel stack.  After the initial
 @ push, the handler saves the post-push MSP in current->svc_msp and switches
@@ -87,13 +85,6 @@ SVC_Handler:
     str   r0, [r1]             @ arm_exc_return[core_id] = EXC_RETURN
 #endif
 
-    @ --- Save original frame[0] for potential syscall restart ---
-    mrs   r0, psp              @ r0 = frame pointer on PSP
-    ldr   r2, [r0]             @ r2 = original frame[0] (a0)
-    ldr   r3, =syscall_saved_arg0
-    adds  r3, r3, r6
-    str   r2, [r3]             @ syscall_saved_arg0[core_id] = original a0
-
     @ --- Build argument registers for syscall_dispatch(frame, nr, a4, a5) ---
     @ Reads from [sp, #N] must happen BEFORE the MSP swap below — they
     @ access the pushed frame on the OLD MSP.
@@ -139,45 +130,20 @@ SVC_Handler:
     bne   .Lexec_restore
 
     @ --- Check 2: process state — did the syscall block/exit? ---
+    @ If the syscall blocked synchronously (arm_kernel_sched_switch) and
+    @ has already resumed, or if it exited, current->state may be != RUNNABLE
+    @ at this point.  Skip signal_check in that case and just return.
     ldr   r0, =current_core
     adds  r0, r0, r6
     ldr   r0, [r0]                    @ r0 = current PCB
     movs  r1, #PCB_STATE_OFFSET
     ldrb  r1, [r0, r1]               @ r1 = current->state (byte-sized enum)
     cmp   r1, #PROC_RUNNABLE
-    bne   .Lcheck_restart
+    bne   .Lnormal_return
 
     @ --- Check 3: pending signals (process is RUNNABLE) ---
     @ signal_check() may modify PSP (signal frame setup) or call sys_exit.
     bl    signal_check
-    b     .Lnormal_return
-
-.Lcheck_restart:
-    @ Process is not runnable.  For non-restart blocking, direct
-    @ arm_kernel_sched_switch() has already switched away and later resumed
-    @ this SVC continuation.  For restart blocking, PendSV will tail-chain
-    @ after exception return and the adjusted SVC will replay after wakeup.
-    ldr   r0, =syscall_restart
-    adds  r0, r0, r6
-    ldr   r1, [r0]
-    cmp   r1, #0
-    beq   .Lnormal_return             @ no restart — just return
-
-    @ --- Syscall restart: restore frame[0] and adjust PC-2 ---
-    movs  r1, #0
-    str   r1, [r0]                    @ syscall_restart[core_id] = 0
-
-    mrs   r0, psp
-    ldr   r1, =syscall_saved_arg0
-    adds  r1, r1, r6
-    ldr   r1, [r1]
-    str   r1, [r0, #0]               @ frame[0] = original a0 (pid arg etc.)
-    ldr   r1, [r0, #24]              @ frame[6] = stacked PC
-    subs  r1, #2                     @ PC -= 2 (back to "svc 0" instruction)
-    str   r1, [r0, #24]
-
-    @ Fall through to normal return — PendSV tail-chains and saves
-    @ the adjusted context.  When rescheduled, SVC re-executes.
 
 .Lnormal_return:
     @ --- Swap MSP back to OLD MSP ---
@@ -198,9 +164,8 @@ SVC_Handler:
     ldr   r0, [r0]
     str   r0, [sp, #20]       @ update stacked lr (= EXC_RETURN)
 #endif
-    @ If restart blocking pended PendSV, it tail-chains immediately on the
-    @ bx-lr return below.  Non-restart blocking has already performed the
-    @ synchronous continuation switch.
+    @ All blocking syscalls perform their synchronous continuation switch
+    @ inside sched_switch() before reaching here.
     pop   {r3, r4, r5, r6, r7, pc}
     @ Restore callee-saved r4, r5, r6, r7 (r3 is padding).
     @ pc = EXC_RETURN → exception return to Thread mode.

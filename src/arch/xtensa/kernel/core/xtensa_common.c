@@ -156,15 +156,12 @@ void xtensa_syscall_body(XtExcFrame *frame) {
    * returns via the sa_restorer trampoline. */
   xtensa_trap_frame_sp = (uint32_t)(uintptr_t)frame;
 
-  /* syscall_restart_loop(frame, nr, a4, a5):
+  /* syscall_dispatch(frame, nr, a4, a5):
    *   frame[0..3] = a2,a3,a4,a5 (contiguous in XtExcFrame)
    *   nr          = a7 (syscall number)
-   *   a4, a5      = 5th/6th args
-   * The wrapper loops on current->syscall_needs_restart per process —
-   * sched_switch() is synchronous on xtensa, so the global syscall_restart[]
-   * / syscall_saved_arg0[] pair are not safe across processes. */
-  syscall_restart_loop((uint32_t *)&frame->a2, (uint32_t)frame->a7,
-                       (uint32_t)frame->a4, (uint32_t)frame->a5);
+   *   a4, a5      = 5th/6th args */
+  syscall_dispatch((uint32_t *)&frame->a2, (uint32_t)frame->a7,
+                   (uint32_t)frame->a4, (uint32_t)frame->a5);
 
   /* Deliver any pending user-handler signal before returning to user.
    * signal_check rewrites this frame's (pc, a0, a1, a2) so the rfe
@@ -275,12 +272,15 @@ static void xtensa_fault_handler(XtExcFrame *frame) {
     int sig = xtensa_classify_exccause(cause);
     mod_vfs.klogf("  pid=%u comm=%s — exit %u\n", current->pid, current->comm,
                   (unsigned)(128u + (unsigned)sig));
-    current->state = PROC_ZOMBIE;
-    current->exit_status = 128 + sig;
-    /* This is exception cleanup, not a resumable process continuation.
-     * Normal blocking syscalls switch under xtensa_syscall_on_kstack(). */
-    /* Must actually switch — arch_yield() only sets a flag, which
-     * wouldn't be checked before rfe returns to the faulting instr. */
+    /* Route through sys_exit so the parent in waitpid() gets woken,
+     * fds are released, and tracked pages are freed.  Manually setting
+     * PROC_ZOMBIE here would skip all of that and deadlock the parent.
+     *
+     * sys_exit returns without yielding on xtensa (it relies on the
+     * syscall epilogue's switch_pending check).  Exceptions don't run
+     * that epilogue, so we must drive the switch ourselves — otherwise
+     * the exception epilogue does rfe back to the same illegal insn. */
+    sys_exit(128 + sig);
     sched_switch();
     return;
   }
