@@ -1949,110 +1949,112 @@ long sys_vfork(uint32_t *frame) {
  *   pid == -1: wait for any child
  *   options & WNOHANG: return 0 immediately if no child has exited
  *
- * Returns child PID on success, -ECHILD if no children, 0 if WNOHANG.
- *
- * Blocking: since this runs inside SVC_Handler (Handler mode), we cannot
- * loop and retry — sched_switch() only pends PendSV, which cannot preempt
- * SVC.  Instead, we mark PROC_BLOCKED, set syscall_restart = 1, and return.
- * SVC_Handler restores frame[0] and adjusts PC-2 so the syscall re-executes
- * when the process is rescheduled.  PendSV tail-chains after SVC returns.
+ * Returns child PID on success, -ECHILD if no children, 0 if WNOHANG,
+ * -EINTR if interrupted by a signal.
  */
 long sys_waitpid(long pid, long status_ptr, long options) {
-  pcb_t *zombie = NULL;
-  pcb_t *stopped = NULL;
-  int has_match = 0;
-  int zombie_is_child = 0;
+  int deferred_timer_armed = 0;
 
-  /* Scan for matching child or traced process. */
-  for (uint32_t i = 1; i < PROC_MAX; i++) {
-    pcb_t *p = &proc_table[i];
-    int is_child;
-    int is_tracee;
+  for (;;) {
+    pcb_t *zombie = NULL;
+    pcb_t *stopped = NULL;
+    int has_match = 0;
+    int zombie_is_child = 0;
 
-    if (p->state == PROC_FREE) continue;
-    is_child = (p->ppid == current->pid);
-    is_tracee = (p->tracer_pid == current->pid);
-    if (!is_child && !is_tracee) continue;
-    if (pid > 0 && p->pid != (pid_t)pid) continue;
+    /* Scan for matching child or traced process. */
+    for (uint32_t i = 1; i < PROC_MAX; i++) {
+      pcb_t *p = &proc_table[i];
+      int is_child;
+      int is_tracee;
 
-    has_match = 1;
+      if (p->state == PROC_FREE) continue;
+      is_child = (p->ppid == current->pid);
+      is_tracee = (p->tracer_pid == current->pid);
+      if (!is_child && !is_tracee) continue;
+      if (pid > 0 && p->pid != (pid_t)pid) continue;
 
-    if ((options & WSTOPPED) && p->state == PROC_TRACED_STOP &&
-        p->trace_wait_pending) {
-      stopped = p;
-      break;
+      has_match = 1;
+
+      if ((options & WSTOPPED) && p->state == PROC_TRACED_STOP &&
+          p->trace_wait_pending) {
+        stopped = p;
+        break;
+      }
+
+      if (p->state == PROC_ZOMBIE) {
+        zombie = p;
+        zombie_is_child = is_child;
+        break;
+      }
     }
 
-    if (p->state == PROC_ZOMBIE) {
-      zombie = p;
-      zombie_is_child = is_child;
-      break;
-    }
-  }
-
-  if (stopped) {
-    if (status_ptr) {
-      int status = W_STOPCODE(SIGTRAP);
-      if (sys_copy_to_user((uintptr_t)status_ptr, &status, sizeof(status)) < 0)
-        return -(long)EFAULT;
-    }
-    stopped->trace_wait_pending = 0;
-    return (long)stopped->pid;
-  }
-
-  if (zombie) {
-    pid_t cpid = zombie->pid;
-
-    if (status_ptr) {
-      int status = W_EXITCODE(zombie->exit_status);
-      if (sys_copy_to_user((uintptr_t)status_ptr, &status, sizeof(status)) < 0)
-        return -(long)EFAULT;
+    if (stopped) {
+      if (status_ptr) {
+        int status = W_STOPCODE(SIGTRAP);
+        if (sys_copy_to_user((uintptr_t)status_ptr, &status, sizeof(status)) <
+            0)
+          return -(long)EFAULT;
+      }
+      stopped->trace_wait_pending = 0;
+      return (long)stopped->pid;
     }
 
-    if (!zombie_is_child) {
-      /* Non-child tracees report exit but are reaped by their parent. */
-      zombie->tracer_pid = 0;
-      zombie->trace_requested = 0;
-      trace_reset_mode_state(zombie, 0);
-      zombie->trace_surface = (uint8_t)trace_default_surface_for(zombie);
-      zombie->trace_wait_pending = 0;
-      zombie->trace_step_pending = 0;
-      trace_clear_breakpoints(zombie);
-      __builtin_memset(&zombie->trace_event, 0, sizeof(zombie->trace_event));
+    if (zombie) {
+      pid_t cpid = zombie->pid;
+
+      if (status_ptr) {
+        int status = W_EXITCODE(zombie->exit_status);
+        if (sys_copy_to_user((uintptr_t)status_ptr, &status, sizeof(status)) <
+            0)
+          return -(long)EFAULT;
+      }
+
+      if (!zombie_is_child) {
+        /* Non-child tracees report exit but are reaped by their parent. */
+        zombie->tracer_pid = 0;
+        zombie->trace_requested = 0;
+        trace_reset_mode_state(zombie, 0);
+        zombie->trace_surface = (uint8_t)trace_default_surface_for(zombie);
+        zombie->trace_wait_pending = 0;
+        zombie->trace_step_pending = 0;
+        trace_clear_breakpoints(zombie);
+        __builtin_memset(&zombie->trace_event, 0, sizeof(zombie->trace_event));
+        return (long)cpid;
+      }
+
+      /* Reap the zombie child. */
+      /* Free zombie's stack page */
+      if (zombie->stack_page_id != PAGE_ID_INVALID) {
+#if defined(__ia16__)
+        mem_region_page_free(zombie->stack_page_id);
+#else
+        {
+          void *zs = mem_region_page_to_ptr(zombie->stack_page_id);
+          proc_release_stack_page(&zs);
+        }
+#endif
+        zombie->stack_page_id = PAGE_ID_INVALID;
+      }
+
+      proc_free(zombie);
       return (long)cpid;
     }
 
-    /* Reap the zombie child. */
-    /* Free zombie's stack page */
-    if (zombie->stack_page_id != PAGE_ID_INVALID) {
-#if defined(__ia16__)
-      mem_region_page_free(zombie->stack_page_id);
-#else
-      {
-        void *zs = mem_region_page_to_ptr(zombie->stack_page_id);
-        proc_release_stack_page(&zs);
-      }
-#endif
-      zombie->stack_page_id = PAGE_ID_INVALID;
+    if (!has_match) return -(long)ECHILD;
+
+    if (options & WNOHANG) return 0;
+
+    if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
+
+    if (!deferred_timer_armed) {
+      target_enable_deferred_timer();
+      deferred_timer_armed = 1;
     }
 
-    proc_free(zombie);
-    return (long)cpid;
+    /* Block until sys_exit / sys_kill / trace_stop sets PROC_RUNNABLE. */
+    current->state = PROC_BLOCKED;
+    sched_switch();
   }
-
-  if (!has_match) return -(long)ECHILD;
-
-  if (options & WNOHANG) return 0;
-
-  target_enable_deferred_timer();
-
-  /* Block and arrange for syscall restart.
-   * sys_exit will wake us by setting PROC_RUNNABLE.
-   * SVC_Handler will restore frame[0] and PC-2 so the SVC re-executes. */
-  current->state = PROC_BLOCKED;
-  syscall_set_restart();
-  sched_switch();
-  return 0; /* value ignored — SVC_Handler restores original frame[0] */
 }
 
 /* ── sys_execve ───────────────────────────────────────────────────────────────
