@@ -9,9 +9,10 @@ limitation is structural: the wakeup path is the periodic preemption tick
 `sleep_until`), not a deadline-driven event source.
 
 This proposal adds a hardware-backed one-shot timer subsystem that decouples
-sleep resolution from the preemption tick.  After it lands, the loop bodies
-introduced by `no_restart.md` already have the right shape — only the
-blocking primitive changes.
+sleep resolution from the preemption tick.  The continuation-blocking loops
+already present in `sys_nanosleep`, `sys_clock_nanosleep32/64`, `sys_ppoll`,
+and `sys_waitpid` have the right shape — only the blocking primitive
+changes.
 
 ## Motivation
 
@@ -106,8 +107,8 @@ long sys_nanosleep(uintptr_t req_ptr, uintptr_t rem_ptr) {
 }
 ```
 
-The loop shape is identical to what `no_restart.md` already lands — only
-the wait primitive changes.
+The loop shape is identical to the existing sleep / poll syscall bodies —
+only the wait primitive changes.
 
 ### Preemption tick
 
@@ -169,10 +170,9 @@ PicoCalc, X68K, CardComputer).
   them later.
 - Real-time scheduling guarantees (`SCHED_FIFO`, etc.).  Out of scope.
 
-## Relationship to other proposals
+## Relationship to existing code
 
-`no_restart.md` lands a continuation-blocking loop for the sleep syscalls
-that already has the right shape for this proposal.  Only the
-`sched_switch()` call site inside the loop needs to become
-`sched_wait_timeout(dl)` once Phase C of this proposal lands.  No further
-rewrite of the syscall bodies is required.
+The sleep and poll syscall bodies already run a continuation-blocking
+loop around `sched_switch()`.  Only that `sched_switch()` call site
+needs to become `sched_wait_timeout(dl)` once Phase C of this proposal
+lands.  No further rewrite of the syscall bodies is required.

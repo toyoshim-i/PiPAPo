@@ -40,7 +40,7 @@ int arm_take_kernel_context(pcb_t *p) {
 }
 
 /* Blocked syscalls always take the direct MSP continuation switch.  The
- * restart-style fallback path is gone — see docs/proposals/no_restart.md. */
+ * restart-style fallback path was removed in the no_restart cleanup. */
 int arm_can_kernel_sched_switch(void) {
   return current && current->state == PROC_BLOCKED;
 }

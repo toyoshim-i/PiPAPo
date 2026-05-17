@@ -902,6 +902,4 @@ Blocking uses **continuation blocking** in the kernel:
    calls `sched_switch()` again.
 
 There is no longer a separate trap-return restart mechanism — every
-blocking syscall handles its own retry loop in C.  See
-[docs/proposals/no_restart.md](../proposals/no_restart.md) for the design
-and migration history.
+blocking syscall handles its own retry loop in C.
