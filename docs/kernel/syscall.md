@@ -242,9 +242,10 @@ Wait for a child process to exit.
 
 `wait4` ignores the `rusage` parameter and delegates to `waitpid`.
 
-If children exist but none has exited, the caller blocks.  The blocking uses
-the **syscall_restart** mechanism: when the process is woken, SVC re-executes
-the syscall with the original arguments.
+If children exist but none has exited, the caller blocks on a
+continuation-blocking loop in the kernel — the syscall body re-checks for
+a zombie child after each `sched_switch()` and returns the child PID once
+one is reaped.
 
 **vs POSIX/Linux:**
 - `pid == 0` (wait for same-PGID) and `pid < -1` (wait for specific PGID) are
@@ -524,7 +525,8 @@ write end.
 - Write returns `-EPIPE` when all read ends are closed.
 - Maximum 4 concurrent pipes (`PIPE_MAX`).
 
-Blocking uses the syscall_restart mechanism (syscall re-executes on wake).
+Blocking uses a continuation-blocking loop inside the read/write body —
+`sched_switch()` yields and the loop re-checks the buffer on wake.
 
 **vs POSIX/Linux:**
 - Buffer is 512 bytes (Linux default is 64 KB).
@@ -889,17 +891,17 @@ The following syscalls can block the calling process:
 | write (pipe) | Pipe buffer full |
 | ppoll | No ready fds and timeout not expired |
 
-Blocking uses the **syscall_restart** mechanism:
+Blocking uses **continuation blocking** in the kernel:
 
-1. The syscall marks the process as `PROC_BLOCKED` or `PROC_SLEEPING`.
-2. It sets `syscall_restart[core_id] = 1` and saves the original first argument.
-3. The process yields to the scheduler.
-4. When woken, SVC_Handler restores the saved argument into the exception
-   frame and adjusts the stacked PC back by 2 bytes (to the `svc 0`
-   instruction).
-5. The syscall re-executes with the original arguments and checks whether the
-   blocking condition has been resolved.
+1. The syscall body marks the process `PROC_BLOCKED` (or `PROC_SLEEPING` for
+   `nanosleep`, `PROC_TRACED_STOP` for ptrace stops).
+2. It calls `sched_switch()`, which switches synchronously to another
+   process and resumes inline when this process is later picked again.
+3. The syscall body then re-checks its blocking condition in a loop and
+   either returns the result, returns `-EINTR` if a signal arrived, or
+   calls `sched_switch()` again.
 
-On m68k, a per-process `syscall_needs_restart` flag is used instead of the global
-`syscall_restart` array, because the m68k TRAP handler re-executes in a C loop
-rather than adjusting the stacked PC.
+There is no longer a separate trap-return restart mechanism — every
+blocking syscall handles its own retry loop in C.  See
+[docs/proposals/no_restart.md](../proposals/no_restart.md) for the design
+and migration history.

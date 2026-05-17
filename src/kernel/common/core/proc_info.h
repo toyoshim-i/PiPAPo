@@ -210,9 +210,6 @@ typedef struct pcb {
   uint32_t umask_val;              /* file creation mask (default 022)  */
   user_page_ref_t clear_child_tid; /* set_tid_address reference         */
 
-  /* ── m68k syscall restart (per-process, not global) ─────────── */
-  uint8_t syscall_needs_restart; /* set by blocking syscalls            */
-
   /* ── Tracing ─────────────────────────────────────────────────── */
   pid_t tracer_pid;             /* parent tracer PID, or 0 if none     */
   uint8_t trace_requested;      /* set by PTRACE_TRACEME until exec     */

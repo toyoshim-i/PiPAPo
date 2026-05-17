@@ -39,32 +39,11 @@ typedef struct pcb pcb_t;
  */
 void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5);
 
-/* C wrapper that re-dispatches while the process asks for restart.
- * Used by archs where sched_switch() is synchronous (m68k, rv32, xtensa) —
- * see syscall.c for why globals are unsafe in that case. */
-void syscall_restart_loop(uint32_t *frame, uint32_t nr, uint32_t a4,
-                          uint32_t a5);
-
-/* Per-core syscall trap state arrays — indexed by core_id() for dual-core.
+/* Per-core syscall trap state — indexed by core_id() for dual-core.
  *
  * exec_pending: set by sys_execve to tell the trap handler to do a full
- *   context restore from the new process image (r9/GOT base).
- *
- * syscall_restart / syscall_saved_arg0: only consulted by archs that defer
- *   the context switch past the trap-exit restart logic (arm_m via PendSV,
- *   ia16 via INT 30h IP rewind).  Sync-switch archs ignore these globals
- *   and use syscall_restart_loop() with current->syscall_needs_restart
- *   instead, because the globals get clobbered by other processes during
- *   the synchronous yield. */
+ *   context restore from the new process image (r9/GOT base). */
 extern volatile int exec_pending[2];
-extern volatile int syscall_restart[2];
-extern volatile uint32_t syscall_saved_arg0[2];
-
-/* Helper: mark current syscall for restart after blocking yield.
- * Sets both the global syscall_restart (consumed by arm_m/ia16 trap exits)
- * and the per-process flag (consumed by syscall_restart_loop on sync-switch
- * archs). */
-void syscall_set_restart(void);
 
 /* ── Syscall implementations ─────────────────────────────────────────────────
  */

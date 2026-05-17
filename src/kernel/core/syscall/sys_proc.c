@@ -1923,11 +1923,10 @@ long sys_vfork(uint32_t *frame) {
    * so it will not be selected again until the child exits or execs. */
   sched_switch();
 
-  /* Clear stale flags left by the child's syscalls while we were blocked.
-   * exec_pending and syscall_restart are global (not per-process), so a child's
-   * execve or blocking read can leave flags that would corrupt our return. */
+  /* Clear stale exec_pending left by the child's execve.  exec_pending is
+   * global (not per-process), so a child's execve can leave a flag that
+   * would corrupt our return. */
   exec_pending[core_id()] = 0;
-  syscall_restart[core_id()] = 0;
 
   return (long)child->pid;
 }

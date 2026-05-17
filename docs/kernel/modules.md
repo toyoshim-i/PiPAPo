@@ -126,7 +126,7 @@ Common services that all other modules depend on.
 | Slab allocator | `kmem_alloc`, `kmem_free`, `kmem_free_count`, `kmem_pool_init` |
 | Region allocator | `mem_region_alloc`, `mem_region_free`, `mem_region_free_bytes`, `mem_region_total_bytes` |
 | Page-indexed memory | `mem_region_page_read`, `mem_region_page_write` |
-| Scheduler | `sched_get_ticks`, `sched_wakeup`, `sched_switch`, `syscall_set_restart` |
+| Scheduler | `sched_get_ticks`, `sched_wakeup`, `sched_switch` |
 | Subsystem | `subsys_read_proc` |
 
 **kmem vs mem_region:** `kmem` is a sub-page slab allocator for

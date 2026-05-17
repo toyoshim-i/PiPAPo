@@ -182,15 +182,6 @@ MOD_FUNC(core, void, sched_wakeup, void *)
 MOD_FUNC(core, void, sched_switch, void)
 
 /*
- * syscall_set_restart — Mark current syscall for replay on wakeup.
- *
- * Used by blocking syscalls (pipe read/write, TTY read, sleep).
- * The SVC handler saves original arguments and restores them when
- * the process is woken, re-entering the syscall transparently.
- */
-MOD_FUNC(core, void, syscall_set_restart, void)
-
-/*
  * subsys_read_proc — Generate /proc content for a subsystem.
  *
  *   tag     Subsystem index (SUBSYS_PPAP, etc.).

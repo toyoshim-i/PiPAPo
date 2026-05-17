@@ -522,11 +522,6 @@ FreeRTOS interrupt-level context switching is disabled
 (`port_xSchedulerRunning[0] = 0`) so `_frxt_int_enter`/`_frxt_int_exit`
 skip TCB save/restore. PPAP manages its own context switching entirely.
 
-### Syscall restart
-
-`syscall_restart[0]` rewinds `frame->pc` by 3 (SYSCALL instruction size) and
-restores `frame->a2` from `syscall_saved_arg0[0]`.
-
 ---
 
 ## 7. Timer

@@ -117,58 +117,53 @@ mod_core entry.
 
 ## Phased plan
 
-### Phase 1 — Convert call sites
+All four phases below have landed.  Per
+[reference_proposal_lifecycle](../../README.md), this proposal is kept
+only as the migration record and can be deleted at any time.
 
-One PR per group, easy to bisect.
+### Phase 1 — Convert call sites  **(landed)**
 
-1. `sys_nanosleep` and the two sister sleep paths — **landed**.
-2. `sys_poll` / `select` — **landed**.
-3. `sys_waitpid` — **blocked**, see below.
-4. `trace_stop_current` — **blocked**, same reason.
+1. `sys_nanosleep` and the two sister sleep paths.
+2. `sys_poll` / `select`.
+3. `sys_waitpid` (unblocked after `arm_trap_frame_switch.md` Phase A
+   fixed the latent `arm_kernel_sched_switch` bug that the
+   continuation-blocking loop pattern was triggering on ARM).
+4. `trace_stop_current` (also dropped the `__m68k__` `arch_yield()`
+   special case and made `trace_before_syscall` / `trace_before_subsys`
+   return `void`).
 
-Each PR rewrites the body to a loop, removes the `syscall_set_restart()`
-call, and deletes the now-obsolete "re-entry" comments.  Test coverage:
-existing sleep, poll, waitpid, and ptrace tests on ARM, m68k, rv32, xtensa.
+### Phase 2 — Retire arch trap-return restart paths  **(landed)**
 
-**Blocked on:** [`arm_trap_frame_switch.md`](arm_trap_frame_switch.md)
-Phase A.  Attempting step 3 (waitpid) on ARM exposes a latent bug in
-`arm_kernel_sched_switch`'s restore path (uses `bx lr` to a saved C
-return address instead of `EXC_RETURN`, leaving exception-state
-bookkeeping skewed).  vfork tolerates a single use; chaining vfork +
-waitpid through one user-mode round-trip — which any CP/M-subsystem
-test does — hangs reliably.  Converting ARM SVC blocking to the same
-trap-frame swap that m68k / riscv / xtensa already use eliminates the
-mechanism, the bug, and the dependency.  Steps 3–4 resume immediately
-afterwards.  m68k, rv32, xtensa, ia16 are unaffected by this dependency
-and could in principle migrate first, but bundling under one ARM cleanup
-is cleaner.
-
-### Phase 2 — Retire arch trap-return restart paths
-
-- ARM Cortex-M: delete the `syscall_restart` check and PC-rewind block in
-  `trap.S`; drop the `syscall_restart[core_id()] == 0` guard in
-  `arm_m_common.c`.
-- ia16: drop the `movw $0, syscall_restart` in `trap.S`.
-- riscv: drop the `syscall_restart_loop` call; dispatch the syscall directly.
-- xtensa: same in `xtensa_common.c`.
+- ARM Cortex-M: `syscall_saved_arg0` save and `.Lcheck_restart` block
+  removed from `trap.S`; `arm_can_kernel_sched_switch` guard simplified.
+- ia16: `.Lcheck_restart` / `.Lno_restart` block and
+  `PCB_SVC_NEEDS_RESTART_OFFSET` constant removed.
+- riscv: `syscall_dispatch` called directly (was `syscall_restart_loop`).
+- xtensa: same.
 - m68k targets (`x68k`, `qemu_m68k`): same in their `target_*.c`.
 
-### Phase 3 — Delete infrastructure
+### Phase 3 — Delete infrastructure  **(landed)**
 
-- `syscall_restart[2]`, `syscall_saved_arg0[2]`,
-  `syscall_set_restart()`, `syscall_restart_loop()`
-- `pcb_t.syscall_needs_restart` and its `_Static_assert`
-- `mod_core.syscall_set_restart` slot (the five-file sync the memory warns
-  about) and the `pcxt` target patch wiring
-- vfork reset of the globals in `sys_proc.c`
+- `syscall_restart[2]`, `syscall_saved_arg0[2]`, `syscall_set_restart()`,
+  `syscall_restart_loop()` — deleted from `syscall.c` / `syscall.h`.
+- `pcb_t.syscall_needs_restart` and its `_Static_assert` — deleted.
+- `mod_core.syscall_set_restart` slot — removed across the five-file
+  sync (`mod_core.inc`, `mod_core.h`, `core.c`, pcxt's `core.c` and
+  `target_pcxt.c`).
+- vfork's reset of `syscall_restart[]` in `sys_proc.c` — deleted (the
+  `exec_pending` reset stays, that flag still exists).
 
-### Phase 4 — Documentation
+### Phase 4 — Documentation  **(landed)**
 
-- `docs/kernel/context_switch.md` — delete the "Restartable Syscalls"
-  section (or keep one paragraph as a historical note).
-- Cross-references in `vfs/pipe.c`, `vfs/tty.c`, `mod/mod_vfs.h` comments.
-- Remove the corresponding `MEMORY.md` line for the five-file `mod_core`
-  sync once the slot is gone.
+- `docs/kernel/context_switch.md` "Restartable Syscalls" section deleted.
+- `docs/kernel/syscall.md` waitpid / pipe / blocking-mechanism sections
+  rewritten to describe continuation blocking.
+- `docs/kernel/modules.md` mod_core function list updated.
+- `docs/targets/arm_m.md`, `rv32.md`, `xtensa.md` — per-arch trap-return
+  restart sections deleted.
+- `mod_vfs.h` fd_read doc updated to describe the loop pattern.
+- Code-comment cross-references in `vfs/pipe.c`, `vfs/tty.c`,
+  `sys_proc.c` kept — they still correctly describe the design intent.
 
 ## Risk notes
 

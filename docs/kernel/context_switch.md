@@ -31,24 +31,11 @@ preemption or wakeups.  On flag-based architectures it sets
 Trap and interrupt return paths also check their architecture-specific pending
 state before returning to user code.
 
-## Restartable Syscalls
-
-Some syscalls use the restart path instead of preserving a kernel
-continuation.  These syscalls set `syscall_restart[core]`, save the original first
-argument in `syscall_saved_arg0[core]`, block the process, and yield.  The trap
-return path then rewinds the saved user PC to the syscall instruction and
-restores the first argument, so the syscall re-executes when the process runs
-again.
-
-Restart is only correct before externally visible side effects or for syscalls
-whose body is deliberately written to replay.  TTY, pipe, and subsystem code
-that loops across multiple waits uses continuation blocking instead.
-
 ## Architecture Summary
 
 | Arch | Async preemption | `sched_switch()` from kernel context | Trap-return switch |
 |------|------------------|--------------------------------------|--------------------|
-| `arm_m` | SysTick pends PendSV | Direct `arm_kernel_sched_switch()` for blocked non-restart syscalls in Handler mode; otherwise PendSV | PendSV tail-chain after SVC/IRQ return |
+| `arm_m` | SysTick pends PendSV | Direct `arm_kernel_sched_switch()` for blocked syscalls in Handler mode; otherwise PendSV | PendSV tail-chain after SVC/IRQ return |
 | `ia16` | PIT INT 08h checks `switch_pending` | Direct `i16_ctx_switch()` builds the same frame shape as interrupt/syscall paths | `i16_trap_after_switch` restores via the shared IRET tail |
 | `m68k` | Timer/trap return checks `switch_pending` | TRAP #1 switches immediately through `m68k_trap1_handler` | TRAP/timer assembly saves SSP/USP, calls `sched_next()`, restores incoming SSP/USP |
 | `riscv` | Timer interrupt sets `switch_pending` | Machine-mode `ecall` switches immediately through `riscv_ctx_switch()` | `riscv_ctx_switch(current_sp)` swaps trap-frame SPs and refreshes `mscratch` |
@@ -61,7 +48,7 @@ priority and must not preempt SVC.  SVC runs with the process's per-process
 MSP; see [`stack.md`](stack.md).
 
 When `sched_switch()` is called inside Handler mode and the current process is
-`PROC_BLOCKED` without `syscall_restart`, `arch_sched_switch()` calls
+`PROC_BLOCKED`, `arch_sched_switch()` calls
 `arm_kernel_sched_switch()` directly.  That path saves the live kernel
 continuation on MSP, saves PSP in `pcb_t.sp`, marks the PCB as a kernel
 continuation, calls the scheduler, reloads MPU/debug state for the incoming

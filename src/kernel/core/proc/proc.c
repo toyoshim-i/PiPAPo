@@ -49,13 +49,6 @@ _Static_assert(offsetof(pcb_t, state) == PCB_STATE_OFFSET,
 #endif
 
 #if defined(__ia16__)
-/* Shifted by 8 bytes when the 4 stub-save fields below were inserted at
- * offsets 10-16.  Must match trap.S. */
-#define PCB_SVC_NEEDS_RESTART_OFFSET 526u
-_Static_assert(offsetof(pcb_t, syscall_needs_restart) ==
-                   PCB_SVC_NEEDS_RESTART_OFFSET,
-               "PCB_SVC_NEEDS_RESTART_OFFSET must match trap.S");
-
 /* Offsets for the per-process shadow slots that i16_ctx_switch /
  * i16_timer_isr swap against the static `saved_cs / saved_ip /
  * vfs_saved_cs / vfs_saved_ip` globals in core_entries.S.  Stored as
