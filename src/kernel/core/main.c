@@ -16,6 +16,7 @@
 #include "kernel/core/exec/exec.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/panic.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/subsys/subsys.h"
@@ -35,16 +36,18 @@ void kmain(void) {
   /* Target-specific early init: UART console, clock PLL, SPI bus */
   target_early_init();
 
-  /* Memory manager + boot-time memory map */
-  mm_init();
+  /* Init ordering: mem_region_init runs first so it can reserve any
+   * architecture-specific text/rodata arenas; mm_init's page-pool
+   * grab can then cross-check its range against those arenas where
+   * the arch demands it.  On targets where mem_region_init is a
+   * no-op (most arches), the ordering is irrelevant. */
   {
     int err = mem_region_init();
-    if (err < 0) {
-      mod_vfs.klogf("PANIC: mem_region_init failed (%d)\n", err);
-      target_qemu_poweroff(1);
-      for (;;) arch_wfi();
-    }
+    if (err < 0) panic("mem_region_init failed (%d)\n", err);
   }
+
+  /* Memory manager + boot-time memory map */
+  mm_init();
 
   /* Process table init */
   proc_init();
@@ -104,11 +107,8 @@ void kmain(void) {
   proc_table[0].stack_page_id = PAGE_ID_INVALID;
 #endif
 #if !defined(__ia16__) && !defined(__riscv)
-  if (proc_table[0].stack_page_id == PAGE_ID_INVALID) {
-    mod_vfs.klogf("PANIC: no page for thread 0 stack\n");
-    target_qemu_poweroff(1);
-    for (;;) arch_wfi();
-  }
+  if (proc_table[0].stack_page_id == PAGE_ID_INVALID)
+    panic("no page for thread 0 stack\n");
 #endif
 
   /* Launch init as PID 1 (skipped when target_init_path() returns NULL,
@@ -134,11 +134,9 @@ void kmain(void) {
         init->state = PROC_RUNNABLE;
         mod_vfs.klogf("INIT: pid=%u loaded\n", init->pid);
       } else {
-        mod_vfs.klogf("PANIC: no init or shell (err=%lu)\n",
-                      (unsigned long)(uint32_t)(-(int)exec_err));
         proc_free(init);
-        target_qemu_poweroff(1);
-        for (;;) arch_wfi();
+        panic("no init or shell (err=%lu)\n",
+              (unsigned long)(uint32_t)(-(int)exec_err));
       }
     }
   }

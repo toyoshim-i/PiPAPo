@@ -62,6 +62,7 @@ set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/target/target_default.c
     ${_KS_ROOT}/src/kernel/core/main.c
     ${_KS_ROOT}/src/kernel/core/core.c
+    ${_KS_ROOT}/src/kernel/core/panic.c
     ${_KS_ROOT}/src/kernel/core/mm/page.c
     ${_KS_ROOT}/src/kernel/core/mm/page_alloc.c
     ${_KS_ROOT}/src/kernel/core/mm/kmem.c

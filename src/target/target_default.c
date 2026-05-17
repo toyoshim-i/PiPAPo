@@ -19,7 +19,7 @@ __attribute__((weak)) void target_enable_deferred_timer(void) {}
 
 __attribute__((weak)) void target_idle_poll(void) {}
 
-__attribute__((weak)) void target_qemu_poweroff(uint8_t s) { (void)s; }
+__attribute__((weak)) void target_may_poweroff(uint8_t s) { (void)s; }
 
 __attribute__((weak)) uint32_t target_debug_hwbp_slots(void) { return 0; }
 

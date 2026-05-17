@@ -1471,11 +1471,11 @@ long sys_ptrace(long req, long pid, uintptr_t addr, uintptr_t data_ptr) {
  */
 
 long sys_poweroff(void) {
-  target_qemu_poweroff(0);
+  target_may_poweroff(0);
   return 0;
 }
 
-void kernel_panic_halt(uint8_t status) { target_qemu_poweroff(status); }
+void kernel_panic_halt(uint8_t status) { target_may_poweroff(status); }
 
 /* ── sys_exit ─────────────────────────────────────────────────────────────────
  */

@@ -22,6 +22,8 @@
 #define PPAP_KERNEL_COMMON_MOD_MOD_VFS_H
 
 /* Full VFS type definitions */
+#include <stdarg.h>
+
 #include "kernel/common/core/page_types.h"
 #include "kernel/common/mod/module.h"
 #include "kernel/common/vfs/vfs_types.h"
@@ -262,6 +264,13 @@ MOD_FUNC(vfs, void, init, void)
  * Converts '\n' to '\r\n'.  Holds SPIN_UART for atomicity.
  */
 MOD_FUNC(vfs, void, klogf, const char *, ...)
+
+/*
+ * kvlogf — va_list variant of klogf, for forwarding from another
+ * variadic function (kernel/core/panic.c).  Same formatting rules,
+ * same atomicity contract.
+ */
+MOD_FUNC(vfs, void, kvlogf, const char *, va_list)
 
 /*
  * lookup — Resolve a pathname to a vnode.

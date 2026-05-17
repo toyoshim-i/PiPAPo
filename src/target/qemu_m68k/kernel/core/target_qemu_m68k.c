@@ -97,7 +97,7 @@ uint32_t target_caps(void) { return 0; /* No SD, no SPI, no Core 1 */ }
  *
  * Writing VIRT_CTRL_CMD_HALT to the CMD register triggers poweroff.
  */
-void target_qemu_poweroff(uint8_t status) {
+void target_may_poweroff(uint8_t status) {
   (void)status;
   volatile uint32_t *cmd =
       (volatile uint32_t *)(VIRT_CTRL_BASE + VIRT_CTRL_CMD);

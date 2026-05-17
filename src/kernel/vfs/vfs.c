@@ -654,9 +654,6 @@ long vfs_vnode_readlink(vnode_t *vn, char *buf, size_t bufsiz) {
   return vn->mount->ops->readlink(vn, buf, bufsiz);
 }
 
-/* klog alias — defined in klog.c, needed by MOD_IMPL(vfs, klogf) */
-extern void vfs_klogf(const char *, ...);
-
 /* Weak default notify — targets override for PLL/TTY/input events */
 __attribute__((weak)) void vfs_notify(int event) {
   if (event == VFS_EVENT_MODULE_READY) klog_init_logger();

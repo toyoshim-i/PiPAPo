@@ -91,7 +91,7 @@ uint32_t target_caps(void) {
  * The parameter block contains {reason, subcode}:
  *   reason=0x20026 (ADP_Stopped_ApplicationExit), subcode=exit_code.
  */
-void target_qemu_poweroff(uint8_t status) {
+void target_may_poweroff(uint8_t status) {
   uint32_t params[2];
   params[0] = 0x20026u; /* ADP_Stopped_ApplicationExit */
   params[1] = (uint32_t)status;

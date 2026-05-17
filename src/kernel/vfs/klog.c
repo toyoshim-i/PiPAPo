@@ -103,11 +103,8 @@ static void klog_print_dec(uint32_t v) {
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
-void klogf(const char *fmt, ...) {
+void kvlogf(const char *fmt, va_list ap) {
   klog_lock();
-
-  va_list ap;
-  va_start(ap, fmt);
 
   while (*fmt) {
     if (*fmt == '%') {
@@ -153,9 +150,15 @@ void klogf(const char *fmt, ...) {
     fmt++;
   }
 done:
-  va_end(ap);
   klog_unlock();
   klog_flush_all();
+}
+
+void klogf(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  kvlogf(fmt, ap);
+  va_end(ap);
 }
 
 /* ── Module aliases ─────────────────────────────────────────────────────────
@@ -164,6 +167,7 @@ done:
  * Linker-level alias avoids the variadic forwarding problem.
  */
 void vfs_klogf(const char *, ...) __attribute__((alias("klogf")));
+void vfs_kvlogf(const char *, va_list) __attribute__((alias("kvlogf")));
 
 /* Weak default — targets override to register UART/display loggers. */
 __attribute__((weak)) void klog_init_logger(void) {}

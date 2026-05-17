@@ -317,7 +317,7 @@ void panic_dump_c(void) {
   panic_hex8((uint8_t)panic_frame.vec);
   panic_puts("\r\n");
   panic_dump_regs();
-  target_qemu_poweroff(1);
+  target_may_poweroff(1);
   for (;;) __asm__ volatile ("cli\n hlt");
 }
 
@@ -556,7 +556,7 @@ static void check_warm_reboot(void) {
     panic_vga_init();
     panic_puts("\r\nPANIC: warm reboot (kernel re-entered without BIOS POST)\r\n");
     panic_dump_regs();
-    target_qemu_poweroff(1);
+    target_may_poweroff(1);
     for (;;) __asm__ volatile ("cli\n hlt");
   }
   bda_write16(BREADCRUMB_OFF, BREADCRUMB_MAGIC);
@@ -656,7 +656,7 @@ uint32_t target_caps(void)
  * Requires -device isa-debug-exit,iobase=0x501,iosize=2 on the QEMU
  * command line.  QEMU exits with code (value << 1) | 1.
  */
-void target_qemu_poweroff(uint8_t status) {
+void target_may_poweroff(uint8_t status) {
   __asm__ volatile("outb %0, %1"
                    :
                    : "a"(status), "Nd"((uint16_t)ISA_DEBUG_EXIT_PORT));

@@ -14,6 +14,7 @@
 #ifndef PPAP_KERNEL_VFS_KLOG_H
 #define PPAP_KERNEL_VFS_KLOG_H
 
+#include <stdarg.h>
 #include <stdint.h>
 
 typedef int (*klog_putc_fn)(char c, void (*notify)(void));
@@ -31,6 +32,17 @@ typedef int (*klog_putc_fn)(char c, void (*notify)(void));
  *   %%  literal '%'
  */
 void klogf(const char *fmt, ...);
+
+/* va_list variant.  Allows forwarding arguments from another variadic
+ * function (e.g. kernel/core/panic.c).  Identical formatting rules. */
+void kvlogf(const char *fmt, va_list ap);
+
+/* Module-table aliases — same symbols as above, named with the vfs_
+ * prefix so MOD_IMPL(vfs, klogf) / MOD_IMPL(vfs, kvlogf) in vfs.c can
+ * wire them into mod_vfs.  The bodies live in klog.c as linker-level
+ * aliases of klogf / kvlogf. */
+void vfs_klogf(const char *fmt, ...);
+void vfs_kvlogf(const char *fmt, va_list ap);
 
 #ifdef PPAP_DEBUG_LOG
 #define PPAP_DEBUG_LOGF(tag, fmt, ...) \
