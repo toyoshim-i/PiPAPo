@@ -365,8 +365,8 @@ static int cpm_trace_ret(const z80_state_t *cpu) {
 }
 
 static void cpm_trace_before(uint32_t abi, uint32_t nr, z80_state_t *cpu) {
-  (void)trace_before_subsys(abi, nr, z80_af(cpu), z80_bc(cpu), z80_de(cpu),
-                            z80_hl(cpu), cpu->sp, cpu->pc);
+  trace_before_subsys(abi, nr, z80_af(cpu), z80_bc(cpu), z80_de(cpu),
+                      z80_hl(cpu), cpu->sp, cpu->pc);
 }
 
 static void cpm_trace_after(uint32_t abi, uint32_t nr, z80_state_t *cpu) {

@@ -300,21 +300,15 @@ static void trace_fill_event(uint32_t event, uint32_t abi, uint32_t nr,
   current->trace_event.ret = ret;
 }
 
-static void trace_stop_current(int restart) {
+static void trace_stop_current(void) {
   current->trace_wait_pending = 1;
   current->state = PROC_TRACED_STOP;
   trace_wake_tracer(current);
-#if defined(__m68k__)
-  /* Avoid nested TRAP #1 switching from inside syscall/exception paths
-   * for non-restart trace stops (exec stop, syscall-exit, subsys stops).
-   * Defer the switch to the trap return path instead. */
-  if (!restart) {
-    arch_yield();
-    return;
-  }
-#endif
-  if (restart) syscall_set_restart();
-  sched_switch();
+  /* Block until the tracer flips us back to PROC_RUNNABLE (via
+   * trace_resume_target or sys_kill).  This is continuation blocking —
+   * no syscall_restart / PC-rewind dance — so the caller resumes inline
+   * and any in-flight syscall body proceeds after we return. */
+  while (current->state != PROC_RUNNABLE) sched_switch();
 }
 
 static void trace_reset_mode_state(pcb_t *p, uint8_t mode) {
@@ -1157,17 +1151,16 @@ static int trace_clr_bp(pcb_t *target, struct ppap_ptrace_bp *bp) {
   return trace_clr_swbp(target, bp);
 }
 
-int trace_before_syscall(uint32_t *frame, uint32_t nr, uint32_t a4,
-                         uint32_t a5) {
-  if (!(current->trace_mode & PPAP_TRACE_MODE_PPAP_SYSCALL)) return 0;
-  if (current->trace_syscall_phase != TRACE_PHASE_ENTER) return 0;
-  if (nr == SYS_PTRACE) return 0;
+void trace_before_syscall(uint32_t *frame, uint32_t nr, uint32_t a4,
+                          uint32_t a5) {
+  if (!(current->trace_mode & PPAP_TRACE_MODE_PPAP_SYSCALL)) return;
+  if (current->trace_syscall_phase != TRACE_PHASE_ENTER) return;
+  if (nr == SYS_PTRACE) return;
 
   current->trace_syscall_phase = TRACE_PHASE_EXIT;
   trace_fill_event(PPAP_TRACE_EVENT_SYSCALL_ENTER, PPAP_TRACE_ABI_PPAP, nr,
                    frame[0], frame[1], frame[2], frame[3], a4, a5, 0, 0);
-  trace_stop_current(1);
-  return 1;
+  trace_stop_current();
 }
 
 void trace_after_syscall(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5,
@@ -1181,19 +1174,18 @@ void trace_after_syscall(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5,
   trace_fill_event(PPAP_TRACE_EVENT_SYSCALL_EXIT, PPAP_TRACE_ABI_PPAP, nr,
                    frame[0], frame[1], frame[2], frame[3], a4, a5, (int32_t)ret,
                    0);
-  trace_stop_current(0);
+  trace_stop_current();
 }
 
-int trace_before_subsys(uint32_t abi, uint32_t nr, uint32_t a0, uint32_t a1,
-                        uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) {
-  if (!(current->trace_mode & PPAP_TRACE_MODE_SUBSYS_CALL)) return 0;
-  if (current->trace_subsys_phase != TRACE_PHASE_ENTER) return 0;
+void trace_before_subsys(uint32_t abi, uint32_t nr, uint32_t a0, uint32_t a1,
+                         uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) {
+  if (!(current->trace_mode & PPAP_TRACE_MODE_SUBSYS_CALL)) return;
+  if (current->trace_subsys_phase != TRACE_PHASE_ENTER) return;
 
   current->trace_subsys_phase = TRACE_PHASE_EXIT;
   trace_fill_event(PPAP_TRACE_EVENT_SUBSYS_ENTER, abi, nr, a0, a1, a2, a3, a4,
                    a5, 0, 0);
-  trace_stop_current(0);
-  return 1;
+  trace_stop_current();
 }
 
 void trace_after_subsys(uint32_t abi, uint32_t nr, uint32_t a0, uint32_t a1,
@@ -1206,13 +1198,13 @@ void trace_after_subsys(uint32_t abi, uint32_t nr, uint32_t a0, uint32_t a1,
   current->trace_subsys_phase = TRACE_PHASE_ENTER;
   trace_fill_event(PPAP_TRACE_EVENT_SUBSYS_EXIT, abi, nr, a0, a1, a2, a3, a4,
                    a5, ret, 0);
-  trace_stop_current(0);
+  trace_stop_current();
 }
 
 void trace_debug_stop(uint32_t abi, uint32_t pc, uint32_t flags) {
   trace_fill_event(PPAP_TRACE_EVENT_DEBUG_STOP, abi, 0, pc, 0, 0, 0, 0, 0, 0,
                    flags);
-  trace_stop_current(0);
+  trace_stop_current();
 }
 
 int trace_maybe_stop_at_swbp(uint32_t abi, uint32_t pc) {
@@ -1293,7 +1285,7 @@ void trace_exec_stop(void) {
   trace_clear_breakpoints(current);
   trace_fill_event(PPAP_TRACE_EVENT_EXEC, PPAP_TRACE_ABI_PPAP, SYS_EXECVE, 0, 0,
                    0, 0, 0, 0, 0, 0);
-  trace_stop_current(0);
+  trace_stop_current();
 }
 
 #if defined(__ia16__)

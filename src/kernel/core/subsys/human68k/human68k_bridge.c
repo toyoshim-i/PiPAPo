@@ -2244,8 +2244,8 @@ static int iocs_b_era_al(uint32_t *regs) {
 
 static void trace_h68k_subsys_enter(uint32_t abi, uint32_t func,
                                     uint32_t *regs) {
-  (void)trace_before_subsys(abi, func, regs[0], regs[1], regs[2], regs[3],
-                            regs[8], regs[9]);
+  trace_before_subsys(abi, func, regs[0], regs[1], regs[2], regs[3], regs[8],
+                      regs[9]);
 }
 
 static void trace_h68k_subsys_exit(uint32_t abi, uint32_t func,

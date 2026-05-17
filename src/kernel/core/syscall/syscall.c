@@ -114,12 +114,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
   proc_kstack_paint();
 #endif
 
-  if (trace_before_syscall(frame, nr, a4, a5)) {
-#ifdef SYSCALL_TRACK_KSTACK
-    (void)proc_kstack_scan();
-#endif
-    return;
-  }
+  trace_before_syscall(frame, nr, a4, a5);
 
   switch (nr) {
     /* ── Core POSIX syscalls ─────────────────────────────────────────────── */
