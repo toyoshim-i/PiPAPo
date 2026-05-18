@@ -23,28 +23,6 @@
 /* EXC_RETURN saved by the ARM-M SVC handler for signal frame fixups. */
 volatile uint32_t arm_exc_return[2] = {0, 0};
 
-/* Legacy ARM-only MSP scratch slot.  Current SVC entry stores the live
- * entry MSP in pcb_t.svc_msp; this symbol remains declared with the other
- * svc_* per-core slots for compatibility with older assembly references. */
-volatile uint32_t svc_saved_msp[2] = {0, 0};
-
-/* arm_kernel_sched_switch() stores a blocked SVC call chain on MSP and marks
- * the PCB so the next switch restores it as a kernel continuation instead of
- * returning through a normal Thread/PSP exception frame. */
-void arm_mark_kernel_context(pcb_t *p) { p->kernel_context = 1; }
-
-int arm_take_kernel_context(pcb_t *p) {
-  int has_context = p->kernel_context != 0;
-  p->kernel_context = 0;
-  return has_context;
-}
-
-/* Blocked syscalls always take the direct MSP continuation switch.  The
- * restart-style fallback path was removed in the no_restart cleanup. */
-int arm_can_kernel_sched_switch(void) {
-  return current && current->state == PROC_BLOCKED;
-}
-
 /*
  * Determine the fault type by inspecting the faulting Thumb instruction.
  *

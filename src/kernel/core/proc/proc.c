@@ -40,10 +40,7 @@ _Static_assert(
 #define PCB_KERNEL_SP_OFFSET 36u
 _Static_assert(offsetof(pcb_t, kernel_sp) == PCB_KERNEL_SP_OFFSET,
                "PCB_KERNEL_SP_OFFSET must match trap.S/switch.S");
-#define PCB_SVC_MSP_OFFSET 40u
-_Static_assert(offsetof(pcb_t, svc_msp) == PCB_SVC_MSP_OFFSET,
-               "PCB_SVC_MSP_OFFSET must match trap.S");
-#define PCB_STATE_OFFSET 56u
+#define PCB_STATE_OFFSET 48u
 _Static_assert(offsetof(pcb_t, state) == PCB_STATE_OFFSET,
                "PCB_STATE_OFFSET must match trap.S");
 #endif

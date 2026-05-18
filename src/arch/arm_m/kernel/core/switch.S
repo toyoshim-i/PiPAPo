@@ -31,7 +31,7 @@
 @ On Cortex-M33 with FPU, callee-saved s16-s31 sit ABOVE the SW frame
 @ (64 bytes) when the suspended process had FPU state active.
 @
-@ Restore (single path, no kernel_context branch):
+@ Restore (single path):
 @   1. MSR msp = pcb_t.sp.
 @   2. Read sw[+36] → MSR psp.
 @   3. Pop r4-r11 + lr.
@@ -47,15 +47,10 @@
 @
 @ kernel_sp is the IMMUTABLE slot top — planted once, never written by
 @ save paths.  See pcb_t.kernel_sp doc in proc_info.h.
-@
-@ kernel_context flag: still set by arm_kernel_sched_switch save for
-@ symmetry with the legacy Phase-A code, but no longer read by either
-@ restore path.  Cleanup to a follow-on commit.
 @ =============================================================================
 
 .equ PCB_SP_OFFSET,        32  @ offsetof(pcb_t, sp) — see proc.h
 .equ PCB_KERNEL_SP_OFFSET, 36  @ offsetof(pcb_t, kernel_sp)
-.equ PCB_SVC_MSP_OFFSET,   40  @ offsetof(pcb_t, svc_msp)
 
 .syntax unified
 #if __ARM_ARCH >= 8
@@ -113,20 +108,13 @@ arm_kernel_sched_switch:
     mov   r0, sp
     str   r0, [r3, #PCB_SP_OFFSET]
 
-    @ Preserve &current_core (r2) and outgoing PCB (r3) across all the
-    @ following C calls (they're caller-saved in AAPCS).
+    @ Preserve &current_core (r2) across the C calls (caller-saved in AAPCS).
     push  {r2, r3}
-
-    @ Legacy bookkeeping — the kernel_context flag is no longer read by
-    @ either restore path, but keep it set for now so downstream cleanup
-    @ can drop it in one focused commit.
-    mov   r0, r3
-    bl    arm_mark_kernel_context
 
     @ sched_next() → r0 = incoming pcb_t*.
     bl    sched_next
 
-    @ mpu_switch(next) ; preserve r0 (next) on stack.
+    @ mpu_switch(next) ; preserve r0 (next) across the bl.
     push  {r0, r1}
     bl    mpu_switch
     pop   {r0, r1}
@@ -140,12 +128,6 @@ arm_kernel_sched_switch:
 
     @ Publish current_core[cid] = next.
     str   r0, [r2]
-
-    @ Legacy: drain the kernel_context flag so it can be re-set on the
-    @ next save.  Result ignored — both restore paths are now identical.
-    mov   r4, r0                  @ preserve incoming PCB across bl
-    bl    arm_take_kernel_context
-    mov   r0, r4                  @ r0 = incoming PCB pointer
 
     @ Single-path restore — matches the unified SW frame shape used by
     @ both arm_kernel_sched_switch save and PendSV save (below).
@@ -257,12 +239,6 @@ PendSV_Handler:
 
     @ Publish current_core[cid] = next.
     str   r0, [r2]
-
-    @ Legacy kernel_context drain (no-op on the restore side, but the
-    @ flag must be cleared between switches until B-2 deletes it).
-    mov   r4, r0
-    bl    arm_take_kernel_context
-    mov   r0, r4
 
     @ Single-path restore — identical to arm_kernel_sched_switch's.
     ldr   r0, [r0, #PCB_SP_OFFSET]

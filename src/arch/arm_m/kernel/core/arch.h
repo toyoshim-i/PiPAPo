@@ -24,7 +24,6 @@
 #define ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE 0
 
 extern volatile uint32_t arm_exc_return[2];
-extern volatile uint32_t svc_saved_msp[2];
 
 /* User-side HW exception frame builder.  Pairs with arch_build_initial_frame
  * which writes the kernel-side SW frame on the kernel slot. */
@@ -42,17 +41,15 @@ static inline void arch_yield(void) { SCB_ICSR |= PENDSVSET; }
 
 #define ARCH_HAS_SCHED_SWITCH
 void arm_kernel_sched_switch(void);
-int arm_can_kernel_sched_switch(void);
-/* sched_switch() has two ARM meanings:
- * - a blocked non-restart SVC continuation switches immediately by saving the
- *   live MSP call chain in arm_kernel_sched_switch();
- * - async preemption and restart-style blocking pend PendSV and switch after
- *   exception return.
- */
+/* sched_switch() on ARM:
+ * - From Handler mode (in-syscall sched_switch): arm_kernel_sched_switch
+ *   performs the unified MSP+PSP swap immediately.
+ * - From Thread mode (idle-loop yield, etc.): arch_yield() pends PendSV,
+ *   which performs the same swap once exceptions unmask. */
 static inline void arch_sched_switch(void) {
   uint32_t ipsr;
   __asm__ volatile("mrs %0, ipsr" : "=r"(ipsr));
-  if (ipsr != 0u && arm_can_kernel_sched_switch()) {
+  if (ipsr != 0u) {
     arm_kernel_sched_switch();
   } else {
     arch_yield();

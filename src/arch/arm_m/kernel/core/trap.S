@@ -18,9 +18,8 @@
 @   [sp+36]  saved PSP  (= HW exception frame base on the user stack)
 @
 @ MSP at SVC entry is the current process's kernel slot top — set by the
-@ preceding PendSV / arm_kernel_sched_switch restore (or by boot for the
-@ very first SVC).  No svc_msp swap; no scratch frame; the SW frame
-@ directly anchors the kernel-side state.
+@ preceding PendSV / arm_kernel_sched_switch restore.  No scratch frame
+@ and no MSP swap; the SW frame directly anchors the kernel-side state.
 @
 @ ARM EABI Linux syscall convention:
 @   r7    = syscall number       (saved at [sp+12])
@@ -56,8 +55,7 @@
 
 .equ PCB_SP_OFFSET,        32  @ offsetof(pcb_t, sp)
 .equ PCB_KERNEL_SP_OFFSET, 36  @ offsetof(pcb_t, kernel_sp)
-.equ PCB_SVC_MSP_OFFSET,   40  @ offsetof(pcb_t, svc_msp) — legacy, unused
-.equ PCB_STATE_OFFSET,     56  @ offsetof(pcb_t, state)
+.equ PCB_STATE_OFFSET,     48  @ offsetof(pcb_t, state)
 .equ PROC_RUNNABLE,         1
 
 .syntax unified
