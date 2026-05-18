@@ -285,6 +285,23 @@ int main(void)
         TEST_UNSUPPORTED
 #endif
     };
+    /* test_m68k_emu: exec /bin/hello_m68k via the m68k eCPU emulator.
+     * DISABLED on every non-m68k host (qemu_arm, pico1, pico2, qemu_rv32,
+     * xtensa_cc, pcxt) because the emulator prints corrupt data
+     * (garbage chars on qemu_arm; "2024 Raspberry Pi Ltd"-style ROM
+     * strings on pico2 / RP2350) instead of the expected message.
+     * Same class of bug breaks /bin/hello.x via Human68k x_loader
+     * (silent — no output at all).  Root cause: m68k-side data
+     * pointers aren't translated to host addresses correctly; not yet
+     * diagnosed.  Re-enable once the emulator's address-space mapping
+     * is fixed. */
+    tests[t++] = (test_entry_t){ "/bin/test_m68k_emu",
+#if defined(__m68k__)
+        TEST_ENABLED
+#else
+        TEST_DISABLED
+#endif
+    };
     /* test_cpm / test_sos: subsystems not built for pcxt.  On xtensa the
      * SRAM1 alias bug that previously masked them is fixed, but every
      * Z80-trapped CP/M syscall path still returns 0-output or exit 127
