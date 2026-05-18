@@ -9,6 +9,8 @@
  * the real functions. This file is only for i16.
  */
 
+#include <stdarg.h>
+
 #include "kernel/common/mod/module.h"
 #include "kernel/common/vfs/vfs_types.h"
 #include "kernel/core/mm/page.h"
@@ -49,6 +51,7 @@ void vfs_fstab_automount(void);
 
 /* klog functions (now in VFS) */
 void vfs_klogf(const char *, ...);
+void vfs_kvlogf(const char *, va_list);
 
 /* VFS event notification */
 void vfs_notify(int);
