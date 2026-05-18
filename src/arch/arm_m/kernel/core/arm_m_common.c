@@ -266,26 +266,44 @@ static void SysTick_Handler_c(uint32_t exc_return) {
 
 #include "kernel/common/ioregs.h"
 
+/* Build the SW exception frame for a freshly-spawned process at the top
+ * of the given kernel slot.  Matches the unified 10-word layout used by
+ * arm_kernel_sched_switch / PendSV (see switch.S):
+ *
+ *   [sp+0..28]  r4-r11   (zeroed)
+ *   [sp+32]     saved lr  = EXC_RETURN_THREAD_PSP — restore bx-lr's
+ *                          into the user HW frame on PSP
+ *   [sp+36]     saved PSP — to be filled in by the caller with the top
+ *                          of arm_build_user_hw_frame()'s HW frame
+ *
+ * Returns slot_top - 40 = SW frame base = pcb_t.sp.  `entry` is unused
+ * here; the user PC lives in the HW frame on PSP. */
 uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
-  /* Hardware exception frame (8 words, popped by EXC_RETURN) */
-  *--sp = XPSR_THUMB_BIT;        /* xpsr: Thumb bit (T=1)       */
-  *--sp = (uint32_t)entry & ~1u; /* pc: entry point (bit0 clear) */
-  *--sp = EXC_RETURN_THREAD_PSP; /* lr: EXC_RETURN thread/PSP   */
-  *--sp = 0u;                    /* r12                         */
-  *--sp = 0u;                    /* r3                          */
-  *--sp = 0u;                    /* r2                          */
-  *--sp = 0u;                    /* r1                          */
-  *--sp = 0u;                    /* r0                          */
-  /* Software callee-saved frame (loaded by PendSV).  EXC_RETURN is
-   * saved here on every Cortex-M variant. */
-  *--sp = EXC_RETURN_THREAD_PSP; /* EXC_RETURN                  */
-  *--sp = 0u;                    /* r11 */
-  *--sp = 0u;                    /* r10 */
-  *--sp = 0u;                    /* r9  */
-  *--sp = 0u;                    /* r8  */
-  *--sp = 0u;                    /* r7  */
-  *--sp = 0u;                    /* r6  */
-  *--sp = 0u;                    /* r5  */
-  *--sp = 0u;                    /* r4 — pcb_t.sp points here */
+  (void)entry;
+  *--sp = 0u;                    /* [sp+36] saved PSP (filled by caller) */
+  *--sp = EXC_RETURN_THREAD_PSP; /* [sp+32] saved lr = EXC_RETURN        */
+  *--sp = 0u;                    /* [sp+28] r11                          */
+  *--sp = 0u;                    /* [sp+24] r10                          */
+  *--sp = 0u;                    /* [sp+20] r9                           */
+  *--sp = 0u;                    /* [sp+16] r8                           */
+  *--sp = 0u;                    /* [sp+12] r7                           */
+  *--sp = 0u;                    /* [sp+8 ] r6                           */
+  *--sp = 0u;                    /* [sp+4 ] r5                           */
+  *--sp = 0u;                    /* [sp+0 ] r4                           */
+  return sp;
+}
+
+/* Build the user-side HW exception frame at the top of the user stack.
+ * The CPU pops this on EXC_RETURN when arch_build_initial_frame()'s
+ * saved lr unwinds.  Returns the new user PSP. */
+uint32_t *arm_build_user_hw_frame(uint32_t *sp, void (*entry)(void)) {
+  *--sp = XPSR_THUMB_BIT;        /* xpsr: Thumb bit (T=1) */
+  *--sp = (uint32_t)entry & ~1u; /* pc: entry point       */
+  *--sp = 0u;                    /* lr                    */
+  *--sp = 0u;                    /* r12                   */
+  *--sp = 0u;                    /* r3                    */
+  *--sp = 0u;                    /* r2                    */
+  *--sp = 0u;                    /* r1                    */
+  *--sp = 0u;                    /* r0                    */
   return sp;
 }

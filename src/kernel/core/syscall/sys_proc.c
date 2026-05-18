@@ -1827,16 +1827,16 @@ long sys_vfork(uint32_t *frame) {
   }
 
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
-  /* ARM: Set child's r0 = 0 (child sees vfork return 0) */
-  child_frame[0] = 0;
+  /* ARM Phase B: HW frame on child's copied user stack; 10-word SW
+   * frame on child's kernel slot.  child->sp points at the SW frame
+   * (linked to the HW frame via the saved-PSP slot at sw[9]). */
+  child_frame[0] = 0; /* r0 = 0 — child sees vfork() return 0 */
 
-  /* 9-word SW frame on every Cortex-M variant
-   * (r4-r11 + EXC_RETURN at sw[8]).  Child r9 = parent's GOT base. */
-  uint32_t *sw = child_frame - 9;
-  memset(sw, 0, 9 * sizeof(uint32_t));
-  sw[5] = current->got_base; /* r9 = GOT SRAM address for PIC */
-  sw[8] = 0xFFFFFFFDu;       /* EXC_RETURN: Thread/PSP basic frame */
-
+  uint32_t *sw = (uint32_t *)(uintptr_t)child->kernel_sp;
+  sw = arch_build_initial_frame(sw, NULL);
+  /* sw layout: 0..7=r4..r11, 8=EXC_RETURN, 9=saved PSP. */
+  sw[5] = current->got_base;                /* r9 = GOT SRAM addr for PIC */
+  sw[9] = (uint32_t)(uintptr_t)child_frame; /* saved PSP */
   child->sp = (uint32_t)(uintptr_t)sw;
 
 #elif defined(__xtensa__)

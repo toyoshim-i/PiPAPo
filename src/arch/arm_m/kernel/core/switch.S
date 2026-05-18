@@ -1,69 +1,61 @@
 @ =============================================================================
-@ switch.S — Cortex-M context switching
+@ switch.S — Cortex-M context switching (Phase B: unified SW frame shape)
 @ =============================================================================
 @
-@ ARM has two switch paths:
+@ Two callable switch points share one save/restore shape:
 @
-@   - PendSV_Handler: asynchronous preemption and restart-style syscall
-@     blocking.  PendSV is pended by SysTick or arch_yield(), runs at the
-@     lowest priority, and must not preempt active SVC execution.
+@   - arm_kernel_sched_switch: synchronous switch from an SVC syscall
+@     body.  Saves the live call chain on MSP at whatever depth the
+@     bl reaches; resumes there and unwinds C back to the SVC handler.
 @
-@   - arm_kernel_sched_switch: synchronous continuation blocking from an SVC
-@     syscall that is already running on the current process's kernel stack.
-@     It saves the live MSP call chain and resumes only when that same
-@     process is scheduled again.
+@   - PendSV_Handler: asynchronous preemption from Thread mode (set by
+@     SysTick tick exhaustion or by Thread-mode arch_yield()).  Runs at
+@     lowest priority and never preempts SVC.  Saves on MSP at the slot
+@     top (since steady-state MSP at PendSV entry = kernel_sp); resumes
+@     there and EXC_RETURN's to the user HW frame on PSP.
 @
-@ The hardware exception entry automatically saves the "hardware frame"
-@ {r0, r1, r2, r3, r12, lr, pc, xpsr} onto PSP (when Thread mode was using
-@ PSP).  PendSV_Handler saves the remaining callee-saved registers and the
-@ adjusted PSP into the outgoing PCB, calls sched_next() to pick the next
-@ process, then restores the incoming process's context.
+@ Unified SW frame layout (40 bytes, 8-aligned, MSP grows down):
 @
-@ ARMv6-M (Cortex-M0+) stack layout for a suspended process:
+@   [MSP+0 ]  r4          ← pcb_t.sp points here
+@   [MSP+4 ]  r5
+@   [MSP+8 ]  r6
+@   [MSP+12]  r7
+@   [MSP+16]  r8
+@   [MSP+20]  r9
+@   [MSP+24]  r10
+@   [MSP+28]  r11
+@   [MSP+32]  saved lr    (EXC_RETURN for PendSV/fresh; C return addr
+@                          for arm_kernel_sched_switch)
+@   [MSP+36]  saved PSP   (HW exception frame base on the user stack)
 @
-@   [PSP+0 ]  r4          ← pcb_t.sp points here
-@   [PSP+4 ]  r5
-@   [PSP+8 ]  r6
-@   [PSP+12]  r7
-@   [PSP+16]  r8
-@   [PSP+20]  r9
-@   [PSP+24]  r10
-@   [PSP+28]  r11
-@   [PSP+32]  r0   ─┐
-@              ...    │  hardware exception frame (8 words)
-@   [PSP+60]  xpsr ─┘
+@ On Cortex-M33 with FPU, callee-saved s16-s31 sit ABOVE the SW frame
+@ (64 bytes) when the suspended process had FPU state active.
 @
-@ ARMv8-M (Cortex-M33) stack layout with FPU lazy stacking:
+@ Restore (single path, no kernel_context branch):
+@   1. MSR msp = pcb_t.sp.
+@   2. Read sw[+36] → MSR psp.
+@   3. Pop r4-r11 + lr.
+@   4. bx lr — dispatches by saved-lr value:
+@        * PendSV/fresh: EXC_RETURN → CPU unstacks HW frame from PSP →
+@                        Thread mode at user PC.
+@        * arm_kernel_sched_switch: C return addr → continues syscall
+@                        body, eventually unwinds to SVC normal_return
+@                        which pops its own scratch frame and EXC_RETURN's.
 @
-@   [PSP+0 ]  r4          ← pcb_t.sp points here
-@              ...
-@   [PSP+28]  r11
-@   [PSP+32]  EXC_RETURN  (saved lr — encodes FPU frame type in bit 4)
-@   [PSP+36]  s16         ─┐  (only present when EXC_RETURN bit 4 = 0)
-@              ...          │  callee-saved FP registers
-@   [PSP+96]  s31         ─┘
-@   [PSP+36 or 100]  r0   ─┐
-@              ...          │  hardware exception frame (8 or 26 words)
-@   [PSP+xx]  xpsr        ─┘
+@ PCB_SP_OFFSET / PCB_KERNEL_SP_OFFSET / PCB_SAVED_PSP_OFFSET:
+@   byte offsets in pcb_t.  Asserted by _Static_assert in proc.c.
 @
-@ PCB_SP_OFFSET: byte offset of the `sp` field inside pcb_t.
-@ MUST match offsetof(pcb_t, sp); verified by _Static_assert in proc.c.
+@ kernel_sp is the IMMUTABLE slot top — planted once, never written by
+@ save paths.  See pcb_t.kernel_sp doc in proc_info.h.
 @
-@ pcb_t.kernel_sp is the IMMUTABLE slot top for each process, planted once
-@ by proc_kstack_init_slot() and never written by save paths.  PendSV and
-@ arm_kernel_sched_switch restore set MSP = kernel_sp so the incoming
-@ process resumes with MSP at a known-good location.  See the comment on
-@ pcb_t.kernel_sp in proc_info.h for why this field is one-purpose only.
-@
-@ The saved SW frame for a kernel-continuation switch lives on MSP at
-@ a depth that depends on the C call site of arm_kernel_sched_switch.
-@ Its base is stored in pcb_t.sp (alongside the embedded saved PSP at
-@ frame[+36]), distinguished from the Thread/PSP saved frame by the
-@ kernel_context flag.
+@ kernel_context flag: still set by arm_kernel_sched_switch save for
+@ symmetry with the legacy Phase-A code, but no longer read by either
+@ restore path.  Cleanup to a follow-on commit.
 @ =============================================================================
 
 .equ PCB_SP_OFFSET,        32  @ offsetof(pcb_t, sp) — see proc.h
 .equ PCB_KERNEL_SP_OFFSET, 36  @ offsetof(pcb_t, kernel_sp)
+.equ PCB_SVC_MSP_OFFSET,   40  @ offsetof(pcb_t, svc_msp)
 
 .syntax unified
 #if __ARM_ARCH >= 8
@@ -74,193 +66,126 @@
 #endif
 .thumb
 
+
 .section .text.pendsv, "ax", %progbits
 .align 2
 .thumb_func
 .global arm_kernel_sched_switch
 arm_kernel_sched_switch:
-    @ Synchronous switch for a blocked SVC continuation.  This is not an
-    @ exception return path: the caller is already running on MSP inside the
-    @ current process's kernel stack, and expects to resume after this call.
+    @ Synchronous switch from a syscall body running on MSP.  Saves r4-r11
+    @ + the C return lr + the live user PSP onto the kernel stack at the
+    @ current depth, picks the next process, and restores its saved state
+    @ (which lands either back in another syscall body or, for PendSV /
+    @ fresh frames, at an EXC_RETURN that unwinds to user mode).
     cpsid i
 
 #if __ARM_ARCH >= 8
-    @ Save the in-flight kernel continuation on the current MSP.  Layout:
-    @   [sp+0..28]  r4-r11
-    @   [sp+32]     saved lr (C return address)
-    @   [sp+36]     saved PSP (HW exception frame base on PSP)
-    @ Pushing PSP first puts it at the high end of the frame.
-    mrs  r0, psp
+    @ Push 10-word SW frame on MSP.  PSP at +36, r4-r11+lr at +0..32.
+    mrs   r0, psp
     stmdb sp!, {r0}
     stmdb sp!, {r4-r11, lr}
-
-    @ Compute &current_core[core_id].
-    ldr  r1, =core_id_reg
-    ldr  r1, [r1]
-    ldr  r1, [r1]
-    lsls r1, r1, #2
-    ldr  r2, =current_core
-    adds r2, r2, r1
-
-    @ Save the SW-frame base into the outgoing PCB and mark it as a kernel
-    @ continuation.  kernel_sp stays as the immutable slot top — see the
-    @ comment on pcb_t.kernel_sp in proc_info.h.
-    ldr  r3, [r2]
-    mov  r0, sp
-    str  r0, [r3, #PCB_SP_OFFSET]
-    mov  r0, r3
-    bl   arm_mark_kernel_context
-
-    @ Pick and prepare the incoming process while still on the outgoing
-    @ kernel stack.  These temporary call frames are intentionally discarded.
-    bl   sched_next
-    mov  r4, r0
-    bl   mpu_switch
-    mov  r0, r4
-    bl   trace_arm_hwbp_on_switch
-
-    @ Recompute &current_core[core_id] after the C calls and publish next.
-    ldr  r1, =core_id_reg
-    ldr  r1, [r1]
-    ldr  r1, [r1]
-    lsls r1, r1, #2
-    ldr  r2, =current_core
-    adds r2, r2, r1
-    str  r4, [r2]
-
-    mov  r0, r4
-    bl   arm_take_kernel_context
-    cmp  r0, #0
-    bne  .Larm_kernel_restore_kernel_v8
-
-    @ Incoming process resumes via a normal exception return to Thread/PSP.
-    ldr  r0, [r4, #PCB_KERNEL_SP_OFFSET]
-    msr  msp, r0
-    ldr  r0, [r4, #PCB_SP_OFFSET]
-    ldmia r0!, {r4-r11, lr}
-    tst  lr, #0x10
-    it   eq
-    vldmiaeq r0!, {s16-s31}
-    msr  psp, r0
-    cpsie i
-    bx   lr
-
-.Larm_kernel_restore_kernel_v8:
-    @ r4 = incoming pcb_t*.  Layout of saved kernel-continuation SW frame:
-    @   [sp+0..28]  r4-r11
-    @   [sp+32]     saved lr (C return address — bx target)
-    @   [sp+36]     saved PSP
-    ldr  r0, [r4, #PCB_SP_OFFSET]    @ r0 = SW frame base on MSP
-    msr  msp, r0
-    ldmia sp!, {r4-r11, lr}           @ restore r4-r11 and saved lr (C addr)
-    ldr  r0, [sp], #4                 @ pop saved PSP
-    msr  psp, r0
-    cpsie i
-    bx   lr
 #else
-    @ Save the in-flight kernel continuation on the current MSP.  Layout
-    @ (10 words = 40 bytes):
-    @   [sp+0..12]  r4-r7
-    @   [sp+16..28] r8-r11
-    @   [sp+32]     saved lr (C return address)
-    @   [sp+36]     saved PSP (HW exception frame base on PSP)
-    sub  sp, #40
-    mov  r0, sp
-    stmia r0!, {r4-r7}        @ r4-r7 at +0..12; r0 → +16
-    mov  r4, r8
-    mov  r5, r9
-    mov  r6, r10
-    mov  r7, r11
-    stmia r0!, {r4-r7}        @ r8-r11 (via r4-r7) at +16..28; r0 → +32
-    mov  r4, lr
-    str  r4, [r0]             @ saved lr at +32
-    mrs  r4, psp
-    str  r4, [r0, #4]         @ saved PSP at +36
+    @ ARMv6-M: manual layout.
+    sub   sp, #40
+    mov   r0, sp
+    stmia r0!, {r4-r7}            @ r4-r7 at [sp+0..12]; r0 → [sp+16]
+    mov   r4, r8
+    mov   r5, r9
+    mov   r6, r10
+    mov   r7, r11
+    stmia r0!, {r4-r7}            @ r8-r11 (via r4-r7) at [sp+16..28]; r0 → [sp+32]
+    mov   r4, lr
+    str   r4, [r0]                @ saved lr at [sp+32]
+    mrs   r4, psp
+    str   r4, [r0, #4]            @ saved PSP at [sp+36]
+#endif
 
-    @ Compute &current_core[core_id].
-    ldr  r1, =core_id_reg
-    ldr  r1, [r1]
-    ldr  r1, [r1]
-    lsls r1, r1, #2
-    ldr  r2, =current_core
-    adds r2, r2, r1
+    @ Compute &current_core[core_id] → r2 ; outgoing PCB → r3.
+    ldr   r1, =core_id_reg
+    ldr   r1, [r1]
+    ldr   r1, [r1]
+    lsls  r1, r1, #2
+    ldr   r2, =current_core
+    adds  r2, r2, r1
+    ldr   r3, [r2]
 
-    @ Save the SW-frame base into the outgoing PCB and mark it as a kernel
-    @ continuation.  kernel_sp stays as the immutable slot top — see the
-    @ comment on pcb_t.kernel_sp in proc_info.h.
-    ldr  r3, [r2]
-    mov  r0, sp
-    str  r0, [r3, #PCB_SP_OFFSET]
-    mov  r0, r3
-    bl   arm_mark_kernel_context
+    @ pcb_t.sp = saved MSP (= SW frame base).
+    mov   r0, sp
+    str   r0, [r3, #PCB_SP_OFFSET]
 
-    @ Pick and prepare the incoming process while still on the outgoing
-    @ kernel stack.  These temporary call frames are intentionally discarded.
-    bl   sched_next
-    mov  r4, r0
-    bl   mpu_switch
-    mov  r0, r4
-    bl   trace_arm_hwbp_on_switch
+    @ Preserve &current_core (r2) and outgoing PCB (r3) across all the
+    @ following C calls (they're caller-saved in AAPCS).
+    push  {r2, r3}
 
-    @ Recompute &current_core[core_id] after the C calls and publish next.
-    ldr  r1, =core_id_reg
-    ldr  r1, [r1]
-    ldr  r1, [r1]
-    lsls r1, r1, #2
-    ldr  r2, =current_core
-    adds r2, r2, r1
-    str  r4, [r2]
+    @ Legacy bookkeeping — the kernel_context flag is no longer read by
+    @ either restore path, but keep it set for now so downstream cleanup
+    @ can drop it in one focused commit.
+    mov   r0, r3
+    bl    arm_mark_kernel_context
 
-    mov  r0, r4
-    bl   arm_take_kernel_context
-    cmp  r0, #0
-    bne  .Larm_kernel_restore_kernel_v6
+    @ sched_next() → r0 = incoming pcb_t*.
+    bl    sched_next
 
-    @ Incoming process resumes via a normal exception return to Thread/PSP.
-    ldr  r0, [r4, #PCB_KERNEL_SP_OFFSET]
-    msr  msp, r0
-    ldr  r0, [r4, #PCB_SP_OFFSET]
-    ldmia r0!, {r4-r7}
-    push {r4-r7}
-    ldmia r0!, {r4-r7}
-    mov  r8,  r4
-    mov  r9,  r5
-    mov  r10, r6
-    mov  r11, r7
-    ldr  r4, [r0]
-    mov  lr, r4
-    adds r0, r0, #4
-    pop  {r4-r7}
-    msr  psp, r0
+    @ mpu_switch(next) ; preserve r0 (next) on stack.
+    push  {r0, r1}
+    bl    mpu_switch
+    pop   {r0, r1}
+
+    @ trace_arm_hwbp_on_switch(next).
+    push  {r0, r1}
+    bl    trace_arm_hwbp_on_switch
+    pop   {r0, r1}
+
+    pop   {r2, r3}                @ r2 = &current_core[cid] ; r3 unused
+
+    @ Publish current_core[cid] = next.
+    str   r0, [r2]
+
+    @ Legacy: drain the kernel_context flag so it can be re-set on the
+    @ next save.  Result ignored — both restore paths are now identical.
+    mov   r4, r0                  @ preserve incoming PCB across bl
+    bl    arm_take_kernel_context
+    mov   r0, r4                  @ r0 = incoming PCB pointer
+
+    @ Single-path restore — matches the unified SW frame shape used by
+    @ both arm_kernel_sched_switch save and PendSV save (below).
+    ldr   r0, [r0, #PCB_SP_OFFSET]
+    msr   msp, r0
+#if __ARM_ARCH >= 8
+    ldmia sp!, {r4-r11, lr}       @ r4-r11 + saved lr
+    ldr   r0, [sp], #4            @ saved PSP
+    msr   psp, r0
+    @ Conditional FPU restore: only when the saved lr is recognisably an
+    @ EXC_RETURN value (top byte 0xFF) — for arm_kernel_sched_switch
+    @ frames the saved lr is a C return address and FPU restore would
+    @ misread MSP-resident kernel data as FPU state.
+    mov   r0, lr
+    lsr   r0, r0, #28
+    cmp   r0, #0xF
+    bne   1f
+    tst   lr, #0x10
+    it    eq
+    vldmiaeq sp!, {s16-s31}
+1:
     cpsie i
-    bx   lr
-
-.Larm_kernel_restore_kernel_v6:
-    @ r4 = incoming pcb_t*.  SW frame on MSP (10 words = 40 bytes):
-    @   [base+0..12]  r4-r7
-    @   [base+16..28] r8-r11
-    @   [base+32]     saved lr (C return address — bx target)
-    @   [base+36]     saved PSP
-    ldr  r0, [r4, #PCB_SP_OFFSET]    @ r0 = SW frame base on MSP
-    msr  msp, r0
-    mov  r0, sp                       @ r0 = MSP = frame base
-    mov  r1, r0
-    adds r1, #16                      @ r1 → r8 area
-    ldmia r1!, {r4-r7}                @ load r8-r11 (via r4-r7); r1 → +32
-    mov  r8,  r4
-    mov  r9,  r5
-    mov  r10, r6
-    mov  r11, r7
-    ldr  r4, [r1]                     @ r4 = saved lr (C addr)
-    mov  lr, r4
-    ldr  r4, [r1, #4]                 @ r4 = saved PSP
-    msr  psp, r4
-    mov  r1, r0
-    ldmia r1!, {r4-r7}                @ load real r4-r7
-    adds r0, r0, #40                  @ MSP += 40 (pop full frame)
-    msr  msp, r0
+    bx    lr
+#else
+    mov   r1, sp                  @ r1 = SW frame base
+    adds  r1, #16                 @ r1 → r8 slot
+    ldmia r1!, {r4-r7}            @ r4-r7 ← saved r8-r11; r1 → lr slot
+    mov   r8,  r4
+    mov   r9,  r5
+    mov   r10, r6
+    mov   r11, r7
+    ldr   r4, [r1]                @ r4 = saved lr
+    mov   lr, r4
+    ldr   r4, [r1, #4]            @ r4 = saved PSP
+    msr   psp, r4
+    mov   r1, sp
+    ldmia r1!, {r4-r7}            @ r4-r7 ← saved r4-r7
+    add   sp, #40                 @ pop full 10-word SW frame
     cpsie i
-    bx   lr
+    bx    lr
 #endif
 
     .ltorg
@@ -269,195 +194,108 @@ arm_kernel_sched_switch:
 .thumb_func
 .global PendSV_Handler
 PendSV_Handler:
-    @ Asynchronous exception-return switch.  The interrupted Thread context
-    @ lives on PSP; PendSV saves the software frame, picks the next process,
-    @ and returns through that process's exception frame.
+    @ Asynchronous preemption from Thread mode (interrupted user code on
+    @ PSP).  HW pushed the user exception frame on PSP.  We push the
+    @ unified 10-word SW frame on MSP, then drive the same swap loop as
+    @ arm_kernel_sched_switch — both restore paths converge.
+    @ PendSV is lowest-priority, so SVC is never preempted here; MSP at
+    @ entry is at the current process's kernel slot top (= kernel_sp).
 
 #if __ARM_ARCH >= 8
-    @ ══════════════════════════════════════════════════════════════════════
-    @ ARMv8-M (Cortex-M33) path — Thumb-2 + FPU lazy stacking
-    @ ══════════════════════════════════════════════════════════════════════
+    @ FPU lazy stacking: save callee-saved s16-s31 above the SW frame
+    @ when the interrupted process had FPU state active.  Detected at
+    @ restore time via the saved EXC_RETURN's bit 4 (see above).
+    tst   lr, #0x10
+    it    eq
+    vstmdbeq sp!, {s16-s31}
 
-    @ ── Save outgoing context ──────────────────────────────────────────
-    mrs  r0, psp              @ r0 = outgoing PSP
-
-    @ If the outgoing process used FPU (EXC_RETURN bit 4 = 0),
-    @ save callee-saved s16-s31.  The hardware lazy-stacks s0-s15.
-    tst  lr, #0x10            @ test EXC_RETURN bit 4
-    it   eq
-    vstmdbeq r0!, {s16-s31}  @ save s16-s31 if FPU was active
-
-    @ Save r4-r11 and EXC_RETURN (lr).  On M33, stmdb can use any
-    @ register in the list — no need for the M0+ r4-r7 dance.
-    stmdb r0!, {r4-r11, lr}
-    @ ── Compute &current_core[core_id] ─────────────────────────────────
-    ldr  r1, =core_id_reg
-    ldr  r1, [r1]             @ r1 = pointer to core-ID source
-    ldr  r1, [r1]             @ r1 = core_id (0 or 1)
-    lsls r1, r1, #2           @ r1 = byte offset (0 or 4)
-    ldr  r2, =current_core
-    adds r2, r2, r1           @ r2 = &current_core[core_id]
-
-    @ ── Write saved PSP into the outgoing PCB ──────────────────────────
-    ldr  r3, [r2]             @ r3 = current PCB pointer
-    str  r0, [r3, #PCB_SP_OFFSET]  @ current->sp = r0
-
-    @ kernel_sp is the immutable slot top — do NOT update it here.  See
-    @ pcb_t.kernel_sp in proc_info.h.
-
-    @ ── Call C scheduler to select next process ────────────────────────
-    @ Preserve &current_core[core_id] (r2) and core_byte_offset (r1).
-    @ EXC_RETURN is saved on the process stack, not MSP.
-    push {r1, r2}             @ r1 = core_byte_offset, r2 = &current_core
-    bl   sched_next           @ r0 = next pcb_t*
-
-    @ ── Update MPU region 2 for incoming process stack ─────────────────
-    push {r0, r1}
-    bl   mpu_switch
-    pop  {r0, r1}
-
-    @ ── Program target HW breakpoints for incoming tracee (if any) ─────
-    push {r0, r1}
-    bl   trace_arm_hwbp_on_switch
-    pop  {r0, r1}
-
-    pop  {r1, r2}             @ r1 = core_byte_offset, r2 = &current_core
-
-    @ Update current_core[core_id].
-    str  r0, [r2]             @ current_core[core_id] = next PCB
-
-    mov  r4, r0
-    bl   arm_take_kernel_context
-    cmp  r0, #0
-    bne  .Larm_kernel_restore_kernel_v8
-    mov  r0, r4
-
-    @ ── Restore incoming MSP from next->kernel_sp ──────────────────────
-    @ After exception return the CPU resumes Thread mode on PSP, but MSP
-    @ stays at whatever we set here — so any subsequent IRQ or SVC for
-    @ the incoming process runs on its own kernel-stack slot.
-    ldr  r4, [r0, #PCB_KERNEL_SP_OFFSET]
-    msr  msp, r4
-
-    @ ── Restore incoming context ───────────────────────────────────────
-    ldr  r0, [r0, #PCB_SP_OFFSET]  @ r0 = next->sp
-
-    ldmia r0!, {r4-r11, lr}  @ restore r4-r11 + EXC_RETURN
-
-    @ If the incoming process used FPU (EXC_RETURN bit 4 = 0),
-    @ restore callee-saved s16-s31.
-    tst  lr, #0x10
-    it   eq
-    vldmiaeq r0!, {s16-s31}  @ restore s16-s31 if FPU was active
-
-    msr  psp, r0              @ PSP = base of incoming exception frame
-    bx   lr                   @ EXC_RETURN: CPU pops exc frame, resumes thread
-
+    @ Push 10-word SW frame on MSP: saved PSP at +36, r4-r11+lr at +0..32.
+    mrs   r0, psp
+    stmdb sp!, {r0}
+    stmdb sp!, {r4-r11, lr}
 #else
-    @ ══════════════════════════════════════════════════════════════════════
-    @ ARMv6-M (Cortex-M0+) path — Thumb-1 only, no FPU
-    @ ══════════════════════════════════════════════════════════════════════
+    @ ARMv6-M: manual layout matching arm_kernel_sched_switch's.
+    sub   sp, #40
+    mov   r0, sp
+    stmia r0!, {r4-r7}
+    mov   r4, r8
+    mov   r5, r9
+    mov   r6, r10
+    mov   r7, r11
+    stmia r0!, {r4-r7}
+    mov   r4, lr
+    str   r4, [r0]
+    mrs   r4, psp
+    str   r4, [r0, #4]
+#endif
 
-    @ ── Save outgoing context ──────────────────────────────────────────
-    mrs  r0, psp              @ r0 = outgoing process stack pointer (PSP)
+    @ Compute &current_core[core_id] → r2 ; outgoing PCB → r3.
+    ldr   r1, =core_id_reg
+    ldr   r1, [r1]
+    ldr   r1, [r1]
+    lsls  r1, r1, #2
+    ldr   r2, =current_core
+    adds  r2, r2, r1
+    ldr   r3, [r2]
 
-    @ Make room for r4–r11 + EXC_RETURN (9 × 4 = 36 bytes) below the
-    @ exception frame.  ARMv6-M only has STMIA (increment after), so
-    @ we adjust SP first.
-    subs r0, r0, #36
-    stmia r0!, {r4-r7}        @ save r4–r7;  r0 now points past r7
+    @ pcb_t.sp = saved MSP.
+    mov   r0, sp
+    str   r0, [r3, #PCB_SP_OFFSET]
 
-    @ r8–r11 cannot appear directly in STMIA on ARMv6-M; move via r4–r7.
-    mov  r4, r8
-    mov  r5, r9
-    mov  r6, r10
-    mov  r7, r11
-    stmia r0!, {r4-r7}        @ save r8–r11 (as r4–r7); r0 points past r11
+    @ sched_next, mpu_switch, trace_arm_hwbp_on_switch (preserve r2).
+    push  {r2, r3}
+    bl    sched_next
+    pop   {r2, r3}
 
-    @ Save EXC_RETURN at sw[8].
-    mov  r4, lr
-    str  r4, [r0]             @ store EXC_RETURN; r0 unchanged
+    push  {r0, r2}
+    bl    mpu_switch
+    pop   {r0, r2}
 
-    @ Rewind r0 to the bottom of the saved context (= new saved PSP).
-    @ r0 currently points at sw[8]; subtract 32 to reach sw[0].
-    subs r0, r0, #32
+    push  {r0, r2}
+    bl    trace_arm_hwbp_on_switch
+    pop   {r0, r2}
 
-    @ ── Compute &current_core[core_id] ──────────────────────────────────
-    @ Indirect pointer: core_id_reg → SIO_CPUID (RP2040) or zero (QEMU).
-    @ Two loads, no branches — works on both platforms.
-    ldr  r1, =core_id_reg
-    ldr  r1, [r1]             @ r1 = pointer to core-ID source
-    ldr  r1, [r1]             @ r1 = core_id (0 or 1)
-    lsls r1, r1, #2           @ r1 = byte offset (0 or 4)
-    ldr  r2, =current_core
-    adds r2, r2, r1           @ r2 = &current_core[core_id]
+    @ Publish current_core[cid] = next.
+    str   r0, [r2]
 
-    @ ── Write saved PSP into the outgoing PCB ──────────────────────────
-    ldr  r3, [r2]             @ r3 = current PCB pointer
-    str  r0, [r3, #PCB_SP_OFFSET]  @ current->sp = r0
+    @ Legacy kernel_context drain (no-op on the restore side, but the
+    @ flag must be cleared between switches until B-2 deletes it).
+    mov   r4, r0
+    bl    arm_take_kernel_context
+    mov   r0, r4
 
-    @ kernel_sp is the immutable slot top — do NOT update it here.  See
-    @ pcb_t.kernel_sp in proc_info.h.
+    @ Single-path restore — identical to arm_kernel_sched_switch's.
+    ldr   r0, [r0, #PCB_SP_OFFSET]
+    msr   msp, r0
+#if __ARM_ARCH >= 8
+    ldmia sp!, {r4-r11, lr}
+    ldr   r0, [sp], #4
+    msr   psp, r0
+    mov   r0, lr
+    lsr   r0, r0, #28
+    cmp   r0, #0xF
+    bne   1f
+    tst   lr, #0x10
+    it    eq
+    vldmiaeq sp!, {s16-s31}
+1:
+    bx    lr                      @ EXC_RETURN or C return — see save
+#else
+    mov   r1, sp
+    adds  r1, #16
+    ldmia r1!, {r4-r7}
+    mov   r8,  r4
+    mov   r9,  r5
+    mov   r10, r6
+    mov   r11, r7
+    ldr   r4, [r1]
+    mov   lr, r4
+    ldr   r4, [r1, #4]
+    msr   psp, r4
+    mov   r1, sp
+    ldmia r1!, {r4-r7}
+    add   sp, #40
+    bx    lr
+#endif
 
-    @ ── Call C scheduler to select next process ────────────────────────
-    @ Preserve &current_core[core_id] (r2).  Outgoing EXC_RETURN was
-    @ saved into the SW frame above; r3 is just push-alignment padding.
-    push {r2, r3}
-    bl   sched_next           @ r0 = next pcb_t*
-
-    @ ── Update MPU region 2 for incoming process stack ─────────────────
-    @ r0 = next pcb_t*  (argument for mpu_switch — already in place)
-    @ Push r0 with padding to maintain 8-byte stack alignment for the call.
-    push {r0, r1}             @ r0 = next (arg), r1 = padding
-    bl   mpu_switch           @ mpu_switch(next) — reprograms MPU region 2
-    pop  {r0, r1}             @ r0 = next pcb_t* restored, r1 discarded
-
-    @ ── Program target HW breakpoints for incoming tracee (if any) ─────
-    @ r0 = next pcb_t*  (argument for trace_arm_hwbp_on_switch)
-    push {r0, r1}             @ preserve next pointer and stack alignment
-    bl   trace_arm_hwbp_on_switch
-    pop  {r0, r1}             @ restore next pointer
-
-    pop  {r2, r3}             @ r2 = &current_core[core_id]; r3 discarded
-
-    @ Update current_core[core_id].
-    str  r0, [r2]             @ current_core[core_id] = next PCB
-
-    mov  r4, r0
-    bl   arm_take_kernel_context
-    cmp  r0, #0
-    bne  .Larm_kernel_restore_kernel_v6
-    mov  r0, r4
-
-    @ ── Restore incoming MSP from next->kernel_sp ──────────────────────
-    @ See M33 path above for rationale.
-    ldr  r4, [r0, #PCB_KERNEL_SP_OFFSET]
-    msr  msp, r4
-
-    @ ── Restore incoming context ───────────────────────────────────────
-    ldr  r0, [r0, #PCB_SP_OFFSET]  @ r0 = next->sp (bottom of saved context)
-
-    ldmia r0!, {r4-r7}        @ restore r4–r7; r0 advances to r8 area
-    push {r4-r7}              @ preserve real r4–r7 on MSP; use r4–r7 as temps
-    ldmia r0!, {r4-r7}        @ load saved r8–r11 into r4–r7; r0 → lr slot
-    mov  r8,  r4
-    mov  r9,  r5
-    mov  r10, r6
-    mov  r11, r7
-
-    @ Load EXC_RETURN BEFORE popping the real r4–r7 — `ldr r4, [r0]`
-    @ clobbers r4, so we must consume it (into lr) before the pop
-    @ restores r4 to its incoming-process value.
-    ldr  r4, [r0]             @ r4 = sw[8] = EXC_RETURN
-    mov  lr, r4
-    adds r0, r0, #4           @ r0 → HW exception frame base
-
-    pop  {r4-r7}              @ recover the real r4–r7
-
-    msr  psp, r0              @ PSP = base of incoming exception frame
-    bx   lr                   @ EXC_RETURN: CPU pops exc frame, resumes thread
-
-#endif /* __ARM_ARCH >= 8 */
-
-    @ Literal pool — must be reachable from the LDR above (within ±1 KB).
     .ltorg

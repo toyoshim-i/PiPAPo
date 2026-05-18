@@ -397,6 +397,20 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
     sp = arch_build_initial_frame(sp, entry);
     sp[XTENSA_SOL_SP_WORD] = user_sp ? (uint32_t)user_sp : 0u;
     p->sp = (uint32_t)(uintptr_t)sp;
+#elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
+    /* ARM Cortex-M MSP/PSP split: SW exception frame on kernel slot,
+     * HW exception frame on user stack.  saved-PSP slot (sw[9]) links
+     * the two — the SW frame's EXC_RETURN unwinds from sw[9]. */
+    sp = (uint32_t *)(uintptr_t)p->kernel_sp;
+    sp = arch_build_initial_frame(sp, entry);
+    p->sp = (uint32_t)(uintptr_t)sp;
+    uint32_t *usp;
+    if (user_sp)
+      usp = (uint32_t *)(void *)user_sp;
+    else
+      usp = (uint32_t *)((uint8_t *)proc_user_stack_base(p) + PAGE_SIZE);
+    usp = arm_build_user_hw_frame(usp, entry);
+    sp[9] = (uint32_t)(uintptr_t)usp; /* saved PSP slot */
 #else
     uint8_t *stack_base = (uint8_t *)proc_user_stack_base(p);
     if (user_sp)
@@ -444,6 +458,15 @@ void proc_setup_kernel_stack(pcb_t *p, void (*entry)(void)) {
   sp = arch_build_initial_frame_kernel(sp, entry);
   sp[XTENSA_SOL_SP_WORD] = 0u;
   p->sp = (uint32_t)(uintptr_t)sp;
+#elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
+  /* ARM Cortex-M kernel-mode entry — Thread mode on PSP (no privilege
+   * change on M-profile). */
+  sp = (uint32_t *)(uintptr_t)p->kernel_sp;
+  sp = arch_build_initial_frame_kernel(sp, entry);
+  p->sp = (uint32_t)(uintptr_t)sp;
+  uint32_t *usp = (uint32_t *)((uint8_t *)proc_user_stack_base(p) + PAGE_SIZE);
+  usp = arm_build_user_hw_frame(usp, entry);
+  sp[9] = (uint32_t)(uintptr_t)usp; /* saved PSP slot */
 #else
   uint8_t *stack_base = (uint8_t *)proc_user_stack_base(p);
   sp = (uint32_t *)(stack_base + PAGE_SIZE);

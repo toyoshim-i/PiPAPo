@@ -26,6 +26,10 @@
 extern volatile uint32_t arm_exc_return[2];
 extern volatile uint32_t svc_saved_msp[2];
 
+/* User-side HW exception frame builder.  Pairs with arch_build_initial_frame
+ * which writes the kernel-side SW frame on the kernel slot. */
+uint32_t *arm_build_user_hw_frame(uint32_t *sp, void (*entry)(void));
+
 /* ── Context switch trigger ─────────────────────────────────────────────────
  */
 
