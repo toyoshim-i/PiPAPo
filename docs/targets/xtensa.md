@@ -225,10 +225,16 @@ The current xtensa_cc rentals (matching the `MM:` boot banner) are:
 | Arena | Bus / cap | Allocator | Default | Purpose |
 |-------|-----------|-----------|---------|---------|
 | `kernel` | DRAM, linker-reserved | ESP-IDF link map (`__bss_end`) | `~32 KB` | PPAP `.data` + `.bss` (kernel image — not allocated at runtime). |
-| `pages` | DRAM, `MALLOC_CAP_8BIT \| MALLOC_CAP_INTERNAL` | [page.c `mm_init()`](/src/kernel/core/mm/page.c) — slot-based 4 KB free stack | `PAGE_COUNT_MAX × PAGE_SIZE` = `192 KB` (48 × 4 KB) | Generic 4 KB pages, the **single DRAM pool** on xtensa.  Used for kernel stacks (one per PCB), user stack pages, `PPAP_MEM_RAM_DATA` allocations (ELF data/bss, eCPU state, `sys_brk` heap, tmpfs/UFS pages), and any FD-side buffers.  Multi-page requests use `mm_page_alloc_contiguous` (linear scan). |
-| `ram_text` | IRAM, `MALLOC_CAP_EXEC` | [mem_region.c `mem_region_xtensa_text_init`](/src/kernel/core/mm/mem_region.c) — linear free-list with 16-byte alignment | `MEM_REGION_RAM_TEXT_ARENA_SIZE` = `128 KB` | `PPAP_MEM_RAM_TEXT`: user ELF `.text` and other executable suballocations.  Kept separate from the page pool because xtensa user text MUST live in IRAM (instruction bus), and the page pool is DRAM (data bus).  The linear allocator can serve non-page-aligned sizes (e.g. an 1820-byte `.text` consumes 1824 bytes, not a full 4 KB page). |
+| `pages` | DRAM, `MALLOC_CAP_8BIT \| MALLOC_CAP_INTERNAL` | [arch mem_helper `mem_helper_init_pool`](/src/arch/xtensa/kernel/core/mem_helper.c), driven from [page.c `mm_init`](/src/kernel/core/mm/page.c) — slot-based 4 KB free stack | `PAGE_COUNT_MAX × PAGE_SIZE` = `192 KB` (48 × 4 KB), with safeguards (see [Page pool ↔ ram_text alias safeguards](#page-pool--ram_text-alias-safeguards)) | Generic 4 KB pages, the **single DRAM pool** on xtensa.  Used for kernel stacks (one per PCB), user stack pages, `PPAP_MEM_RAM_DATA` allocations (ELF data/bss, eCPU state, `sys_brk` heap, tmpfs/UFS pages), and any FD-side buffers.  Multi-page requests use `mm_page_alloc_contiguous` (linear scan). |
+| `ram_text` | IRAM, `MALLOC_CAP_EXEC` | [arch mem_helper `mem_helper_init_arenas`](/src/arch/xtensa/kernel/core/mem_helper.c) — linear free-list with 16-byte alignment | `MEM_REGION_RAM_TEXT_ARENA_SIZE` = `128 KB` | `PPAP_MEM_RAM_TEXT`: user ELF `.text` and other executable suballocations.  Kept separate from the page pool because xtensa user text MUST live in IRAM (instruction bus), and the page pool is DRAM (data bus).  The linear allocator can serve non-page-aligned sizes (e.g. an 1820-byte `.text` consumes 1824 bytes, not a full 4 KB page). |
 | `ext_text` | PSRAM (`MALLOC_CAP_SPIRAM`) | same linear arena | `512 KB` | Reserved for staged user text on chips with PSRAM.  CardComputer has no PSRAM, so this arena stays disabled (`psram unavailable; external arenas disabled`). |
 | `ext_rodata` | PSRAM | same | `256 KB` | Same — PSRAM staging for large rodata. |
+
+Code organisation: every xtensa-specific arena and the page-pool grab
+live in [src/arch/xtensa/kernel/core/mem_helper.c](/src/arch/xtensa/kernel/core/mem_helper.c)
+as overrides of the generic hooks declared in
+[src/kernel/core/mm/mem_helper.h](/src/kernel/core/mm/mem_helper.h).
+Shared `page.c` and `mem_region.c` carry no xtensa conditionals.
 
 Totals on xtensa_cc (no PSRAM): about **352 KB of internal SRAM**
 under PPAP — 224 KB DRAM plus 128 KB IRAM.  ESP32-S3 has ~512 KB of
@@ -248,11 +254,51 @@ as `target_compile_definitions`:
 
 Raising any of these widens the rental from ESP-IDF.  Both arenas
 **auto-downsize** at boot: if the requested size exceeds the largest
-contiguous free block ESP-IDF can hand over, `mm_init()` /
-`mem_region_linear_arena_init()` halve the request until
-`heap_caps_malloc` succeeds, and log the actual reserved size if it
+contiguous free block ESP-IDF can hand over, the arch
+`mem_helper_init_pool` / `arena_init` paths halve the request until
+`heap_caps_malloc` succeeds, and log the actual reserved size when it
 differs from the requested one (`page pool downsized to N pages` or
 `ram_text … KB reserved (requested … KB)`).
+
+### Page pool ↔ ram_text alias safeguards
+
+Both rentals come from the same physical RAM bank (SRAM1) by two
+different routes — `MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL` for the
+page pool (DRAM alias) and `MALLOC_CAP_EXEC` for `ram_text` (IRAM
+alias).  ESP-IDF's heap tracks the two views as **independent
+regions**: a successful `MALLOC_CAP_EXEC` grab does *not* reserve the
+corresponding DRAM-alias bytes from the 8BIT heap, so the same SRAM1
+cells can be handed out twice — once as ram_text bytes and once as
+page-pool bytes.  Any subsequent page-pool zero or write then
+silently corrupts user binary text already loaded into ram_text.
+
+`mem_helper_init_pool` defends against this with two checks, applied
+in a sizing loop that halves the request whenever either check fails:
+
+1. **Physical alias rejection.**  After a candidate
+   `heap_caps_malloc`, the helper projects the returned DRAM range
+   into IRAM via the SRAM1 offset (`+0x00704000`) and rejects the
+   grab if that IRAM range intersects the already-reserved ram_text
+   arena.  Free the block, halve, try again.  (This is the reason
+   `mem_region_init` runs before `mm_init` — ram_text must already
+   exist for the check to mean anything.)
+
+2. **IDF heap reserve.**  The helper also rejects any grab that
+   leaves the ESP-IDF internal-DRAM heap below
+   `XTENSA_IDF_HEAP_RESERVE = 96 KB`.  Reasoning: PPAP's user
+   processes (in particular `pipe()`-heavy paths) still trigger
+   ESP-IDF allocations during runtime — FreeRTOS task stacks, UART
+   buffers, console driver state.  Empirically, ~64 KB free is the
+   threshold below which `test_pipe` wedges; 96 KB matches the safe
+   leftover with a margin for future kernel growth.
+
+Both safeguards are post-`heap_caps_malloc`: an allocation that
+satisfied the cap can still be rejected and retried at a smaller
+size, so the final pool may be 24 pages instead of the requested 48.
+The kernel-side regression guard `pool_arch_text_alias_test` in
+[tests/kernel/ktest.c](/tests/kernel/ktest.c) re-runs the alias
+check after init so future kernel growth or memory-layout changes
+can't silently regress the invariant.
 
 ### Why `+PAGE_SIZE` / `+MEM_REGION_ALIGN` slack on `heap_caps_malloc`?
 
@@ -284,7 +330,11 @@ follows every other arch and routes `PPAP_MEM_RAM_DATA` through
 [`mem_region_alloc_page_backed`](/src/kernel/core/mm/mem_region.c) →
 `mm_page_alloc_contiguous`, drawing from the single page pool.  The
 freed-up 96 KB went straight into `PAGE_COUNT_MAX` (24 → 48), so the
-total DRAM rental is unchanged.
+total DRAM rental is unchanged on paper.  The alias-rejection and
+IDF-reserve safeguards described above can downsize the runtime grab
+back to ~24 pages when the requested 48 would either alias ram_text
+or leave ESP-IDF starved; the `MM:   page pool downsized to N pages`
+log line reports the actual count.
 
 `ram_text` remains separate because it has a hard functional reason:
 xtensa user text must live on the instruction bus (IRAM alias), not
@@ -533,7 +583,83 @@ CCOMPARE0 timer at level-1 interrupt priority:
 
 ---
 
-## 8. Known Gotchas
+## 8. CardComputer (xtensa_cc) target choices
+
+PPAP-side design choices for the [M5Stack
+CardComputer](../reference/cardcomputer.md) port that aren't visible
+from the code alone.  Forward-looking work (open phases, gaps) lives
+in [`docs/proposals/cardcomputer_port.md`](../proposals/cardcomputer_port.md).
+
+### Console layout
+
+- **`ttyS0` = USB Serial JTAG** (primary).  Only practical wired
+  console because UART0's TX/RX (GPIO43/44) are physically shared
+  with I²S LRCK and the IR TX line.  Secondary getty
+  (`getty ttyS0`, wait-for-Enter).
+- **`tty1` = ST7789V2 + keyboard** (display console).  Joins via
+  `KLOG_LOGGER_SECONDARY` on top of the USJ primary, matching the
+  pico1calc UART+FBCON pattern.  Auto-login getty
+  (`getty -l tty1`) per `/etc/inittab`.
+
+### Display
+
+- **Strategy:** text-mode cell buffer + scanline-streaming SPI flush
+  (no full 63 KB RGB565 framebuffer in SRAM).  ~960 B for the 30×16
+  cell+attr arrays, plus a 480 B stack scanline buffer during flush.
+  Reuses pico1calc's fbcon pipeline verbatim.
+- **Grid:** 8×8 IchigoJam font → 30×16 character terminal
+  (240 / 8 = 30, 128 / 8 = 16, with 7 px vertical slack).
+- **Orientation:** landscape with USB-C on the right (MADCTL =
+  MV|MX, panel-frame offsets 40 col / 53 row — see
+  [reference §MADCTL / Offsets](../reference/cardcomputer.md#madctl--offsets-per-orientation)).
+- **Backlight:** plain GPIO, asserted by `xtensa_cc_logger.c` *after*
+  `lcd_init()` returns so post-reset garbage is not visible to the
+  user.  PWM via `ledc` is a future option if brightness control is
+  needed.
+
+### Keyboard
+
+- **Polling cadence:** at the display flush cadence (~20 ms via
+  `vfs_notify(VFS_EVENT_IDLE)`).  Edge-only delivery via a
+  previous-poll bitmap snapshot.  No software debounce; 20 ms is
+  well above typical 1–5 ms key bounce.
+- **Ctrl-C hoist:** bytes equal to 0x03 are routed to
+  `tty_signal_intr(TTY_DISPLAY)` *before* being queued, so a
+  compute-bound foreground task does not need to be blocked in
+  `read()` to receive SIGINT.  Mirrors pico1calc.
+- **Multi-byte escapes:** arrow keys, F-keys, Esc, Delete all emit
+  VT100 escape sequences.  `cc_kbd.c` stores them as null-terminated
+  strings and `kbd_poll()` returns one byte at a time via an
+  internal sequence cursor (mirrors `i2c_kbd.c`).
+
+#### Modifier semantics
+
+| Key | PPAP behavior |
+|-----|---------------|
+| Shift | Selects the `shift` row of the keymap for the next non-modifier key. |
+| Ctrl  | Combines with letters → control codes (Ctrl-A=0x01 .. Ctrl-Z=0x1A).  Ctrl-C is hoisted to `tty_signal_intr(TTY_DISPLAY)` before being delivered. |
+| Opt   | Tracked only; reserved for application use. |
+| Alt   | Tracked only; reserved.  Future M-prefix VT escape support is possible. |
+
+#### Fn-layer mapping
+
+PPAP's `cc_kbd.c` implements the silkscreen convention (see
+[reference §Silkscreen Icons](../reference/cardcomputer.md#silkscreen-icons-fn-combo-glyphs))
+as VT100 / xterm byte sequences:
+
+| Combo | Output | Notes |
+|-------|--------|-------|
+| Fn+`;` | `\033[A` (↑) | Arrow up |
+| Fn+`,` | `\033[D` (←) | Arrow left |
+| Fn+`.` | `\033[B` (↓) | Arrow down |
+| Fn+`/` | `\033[C` (→) | Arrow right |
+| Fn+`` ` `` | `\033` (Esc) | Cardputer has no dedicated Esc key |
+| Fn+1..0 | `\033OP`..`\033OY` (F1–F10) | VT100 PF / F-key codes |
+| Fn+Backspace | `\033[3~` (Delete) | Forward-delete |
+
+---
+
+## 9. Known Gotchas
 
 | Issue | Detail |
 |-------|--------|
@@ -554,7 +680,7 @@ CCOMPARE0 timer at level-1 interrupt priority:
 
 ---
 
-## 9. References
+## 10. References
 
 - [ESP32-S3 Technical Reference Manual](https://www.espressif.com/sites/default/files/documentation/esp32-s3_technical_reference_manual_en.pdf)
 - [Xtensa ISA Reference Manual](https://0x04.net/~mwk/doc/xtensa.pdf)
