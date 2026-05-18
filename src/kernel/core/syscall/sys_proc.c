@@ -218,31 +218,6 @@ static void proc_release_stack_page(void **page) {
   *page = NULL;
 }
 
-#if defined(__xtensa__)
-/* Allocate a user-stack copy for a vfork child.
- *
- * The child must have its own user stack page.  Without this, the
- * child's post-vfork code overwrites the parent's stack, corrupting
- * the parent's return state.
- *
- * Returns 0 on success, -ENOMEM on failure.  On success, *out_ustack
- * is the new page and *usp_inout is adjusted to the same offset
- * within the new page. */
-static int vfork_copy_user_stack(void *parent_ustack, uint32_t parent_usp,
-                                 void **out_ustack, uint32_t *usp_out) {
-  proc_image_segment_t ustack_region = {0};
-  if (mem_region_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE) < 0)
-    return -(int)ENOMEM;
-  void *child_ustack = ustack_region.base;
-  memcpy(child_ustack, parent_ustack, PAGE_SIZE);
-  *out_ustack = child_ustack;
-  uint32_t usp_off = parent_usp - (uint32_t)(uintptr_t)parent_ustack;
-  *usp_out = (uint32_t)(uintptr_t)child_ustack + usp_off;
-  return 0;
-}
-#endif /* __xtensa__ */
-
 static void trace_clear_swbp(pcb_t *target);
 static void trace_clear_hwbp(pcb_t *target);
 static int trace_has_hwbp_for(const pcb_t *target);
@@ -1826,10 +1801,13 @@ long sys_vfork(uint32_t *frame) {
    * The child resumes at the instruction after the ILL trap (pc already +3)
    * with a2 = 0 (switch.S .Lnew_process clears a2 before jx).
    *
-   * Xtensa now builds the child switch frame on the fixed kstack slot.
-   * Allocate a separate user stack page via the shared vfork_copy_user_stack
-   * helper so the child's pre-execve writes don't corrupt the parent's saved
-   * frames. */
+   * No-copy vfork: the child shares the parent's user_stack_page.  The
+   * xtensa vfork / execve / _exit stubs push nothing on a1, user code
+   * runs with PS.WOE = 0 (call0 ABI per arch_build_initial_frame) so
+   * there are no window-overflow spills, and the parent's saved register
+   * state lives in its own XtExcFrame on ESP-IDF's exception stack
+   * (kernel memory) — out of reach of the child.  a3 may still point
+   * into the shared user-stack page, which is correct, so no remap. */
   {
     uint32_t child_pc = frame[-4];      /* pc (already advanced +3) */
     uint32_t child_user_sp = frame[-1]; /* a1 = user SP at syscall */
@@ -1841,24 +1819,7 @@ long sys_vfork(uint32_t *frame) {
       proc_free(child);
       return -(long)ENOMEM;
     }
-
-    void *child_ustack = NULL;
-    uint32_t remapped_sp = 0;
-    if (vfork_copy_user_stack(parent_ustack, child_user_sp, &child_ustack,
-                              &remapped_sp) < 0) {
-      proc_free(child);
-      return -(long)ENOMEM;
-    }
-    child_user_sp = remapped_sp;
-    child->user_stack_page = child_ustack;
-
-    /* Remap a3 if it points into the parent's stack page */
-    {
-      uint32_t pbase = (uint32_t)(uintptr_t)parent_ustack;
-      uint32_t cbase = (uint32_t)(uintptr_t)child_ustack;
-      if (child_a3 >= pbase && child_a3 < pbase + PAGE_SIZE)
-        child_a3 = cbase + (child_a3 - pbase);
-    }
+    child->user_stack_page = parent_ustack;
 
     uint32_t *sp = xtensa_build_vfork_child_frame(
         child->kernel_sp, child_pc, child_user_sp, child_a0, child_a3);
