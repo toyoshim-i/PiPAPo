@@ -20,7 +20,7 @@
 @   4-10:  Reserved (zero)
 @   11:    SVCall_Handler
 @   12-13: Reserved (zero)
-@   14:    PendSV_Handler
+@   14:    Reserved (PendSV retired in Phase B)
 @   15:    SysTick_Handler
 @   16-41: IRQ0-IRQ25 (RP2040 has 26 external interrupts)
 @ =============================================================================
@@ -63,8 +63,8 @@ _vectors:
     .word SVC_Handler           @ 11: SVCall  (svc.S — syscall dispatch)
     .word 0                     @ 12: Reserved
     .word 0                     @ 13: Reserved
-    .word PendSV_Handler        @ 14: PendSV  (switch.S — context switch)
-    .word SysTick_Handler       @ 15: SysTick (sched.c — tick + PendSV trigger)
+    .word Default_Handler       @ 14: PendSV — retired in Phase B
+    .word SysTick_Handler       @ 15: SysTick (sched.c — tick + switch_pending check)
 
     @ --- External interrupts: IRQ0-IRQ25 (RP2040) / IRQ0-IRQ51 (RP2350) ---
     .word UART0RX_IRQ_Handler   @ IRQ0  — UART0 RX on mps2-an500 (uart_qemu.c)

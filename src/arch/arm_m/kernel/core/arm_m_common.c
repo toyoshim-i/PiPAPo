@@ -229,10 +229,21 @@ __attribute__((used)) static void SysTick_Handler_c(uint32_t exc_return);
 
 __attribute__((naked)) void SysTick_Handler(void) {
   __asm__ volatile(
-      "push {r0, lr}\n" /* 8-byte aligned; save EXC_RETURN for return */
+      "push {r4, lr}\n" /* 8-byte aligned; save EXC_RETURN for return */
       "mov  r0, lr\n"   /* pass EXC_RETURN as first argument */
       "bl   SysTick_Handler_c\n"
-      "pop  {r0, pc}\n" /* pop EXC_RETURN into PC → exception return */
+      /* If sched_tick raised switch_pending (quantum exhausted or other
+       * arch_yield), perform the context swap inline before returning to
+       * the interrupted process. */
+      "ldr  r0, =switch_pending\n"
+      "ldr  r1, [r0]\n"
+      "cmp  r1, #0\n"
+      "beq  1f\n"
+      "movs r1, #0\n"
+      "str  r1, [r0]\n"
+      "bl   arm_kernel_sched_switch\n"
+      "1:\n"
+      "pop  {r4, pc}\n" /* pop EXC_RETURN into PC → exception return */
   );
 }
 

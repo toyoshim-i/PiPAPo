@@ -107,6 +107,19 @@ SVC_Handler:
     str   r0, [r1]
 #endif
 
+    @ --- Detect Thread-mode sched_switch sentinel (svc #0xFF) ---
+    @ arm_kernel_sched_switch can only run in Handler mode (it pushes on
+    @ MSP).  Thread-mode arch_sched_switch issues svc #0xFF so we can
+    @ trampoline into Handler mode, swap inline, then return to user.
+    mrs   r0, psp
+    ldr   r1, [r0, #24]          @ r1 = pc (HW frame slot 6)
+    subs  r1, #2                 @ r1 = svc instruction (Thumb is 16-bit)
+    ldrh  r2, [r1]               @ r2 = svc instruction encoding
+    movs  r3, #0xFF
+    ands  r2, r3                 @ r2 = svc immediate
+    cmp   r2, #0xFF
+    beq   .Lsentinel_yield
+
     @ --- Build dispatch args: syscall_dispatch(frame, nr, a4, a5) ---
     mrs   r0, psp                @ r0 = frame
     ldr   r1, [sp, #12]          @ r1 = saved r7 = nr
@@ -159,6 +172,14 @@ SVC_Handler:
     add   sp, #24                @ skip r8-r11 + EXC_RETURN + saved PSP (24 bytes)
     bx    lr                     @ HW frame pops off PSP → Thread mode
 #endif
+
+.Lsentinel_yield:
+    @ Thread-mode arch_sched_switch reached us via svc #0xFF.  Run the
+    @ swap inline; when this process resumes here, fall through to
+    @ normal_return which pops the SVC entry's SW frame and bx-EXC_RETURN
+    @ back to the user PSP — same as a no-op syscall return.
+    bl    arm_kernel_sched_switch
+    b     .Lnormal_return
 
 .Lexec_pending:
     @ sys_execve overwrote this process's SW frame at slot_top-40 with

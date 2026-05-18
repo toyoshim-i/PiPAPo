@@ -14,7 +14,7 @@
 #include <stdint.h>
 
 #include "kernel/common/core/proc_info.h"
-#include "kernel/common/ioregs.h" /* SCB_ICSR, PENDSVSET */
+#include "kernel/common/ioregs.h"
 #include "kernel/common/irq.h"
 #include "kernel/core/mm/mem_region.h"
 
@@ -30,36 +30,36 @@ extern volatile uint32_t arm_exc_return[2];
 uint32_t *arm_build_user_hw_frame(uint32_t *sp, void (*entry)(void));
 
 /* ── Context switch trigger ─────────────────────────────────────────────────
- */
-
-/* Pend PendSV exception for async preemption or restart-style blocking.
- * ARM Cortex-M does not use the shared switch_pending flag because PendSV
- * self-pends via NVIC and runs as soon as exceptions return.  Define
- * ARCH_HAS_YIELD before the include so the default is skipped. */
-#define ARCH_HAS_YIELD
-static inline void arch_yield(void) { SCB_ICSR |= PENDSVSET; }
+ *
+ * ARM Cortex-M now uses the shared switch_pending flag (PendSV retired).
+ * SysTick exit checks the flag and calls arm_kernel_sched_switch when set.
+ * Thread-mode arch_sched_switch sets the flag too — the next IRQ exit
+ * (typically SysTick within one tick) honors it.
+ * ────────────────────────────────────────────────────────────────────────── */
 
 #define ARCH_HAS_SCHED_SWITCH
 void arm_kernel_sched_switch(void);
+
+/* Pull in the shared switch_pending-based arch_yield first, so the
+ * arch_sched_switch inline below can call it. */
+#include "kernel/common/arch_yield_default.h"
+
 /* sched_switch() on ARM:
  * - From Handler mode (in-syscall sched_switch): arm_kernel_sched_switch
  *   performs the unified MSP+PSP swap immediately.
- * - From Thread mode (idle-loop yield, etc.): arch_yield() pends PendSV,
- *   which performs the same swap once exceptions unmask. */
+ * - From Thread mode (idle loop, kernel-resident subsystems like cpm
+ *   reaching sys_exit, etc.): issue a sentinel SVC.  The SVC handler
+ *   detects imm=0xFF and calls arm_kernel_sched_switch directly without
+ *   running the syscall dispatch.  Same shape m68k uses with trap #1. */
 static inline void arch_sched_switch(void) {
   uint32_t ipsr;
   __asm__ volatile("mrs %0, ipsr" : "=r"(ipsr));
   if (ipsr != 0u) {
     arm_kernel_sched_switch();
   } else {
-    arch_yield();
+    __asm__ volatile("svc #0xFF" ::: "memory");
   }
 }
-
-#define ARCH_HAS_YIELD_CONSUME
-static inline int arch_yield_consume(void) { return 0; }
-
-#include "kernel/common/arch_yield_default.h"
 
 /* ── Scheduler startup hook ─────────────────────────────────────────────────
  *
@@ -72,10 +72,6 @@ static inline int arch_yield_consume(void) { return 0; }
  * is an extern call and cannot be used here.
  * ────────────────────────────────────────────────────────────────────────── */
 static inline void arch_sched_start_hook(void) {
-  /* Set PendSV to lowest priority (0xFF) so it never preempts real IRQs.
-   * SHPR3[23:16] is the PendSV priority byte on Cortex-M0+. */
-  SCB_SHPR3 = (SCB_SHPR3 & ~PENDSV_PRIO_MASK) | PENDSV_PRIO_LOWEST;
-
   /* Lower SVCall priority (0x80) so hardware interrupts (SysTick, UART)
    * can preempt the SVC handler.  Without this, WFI inside blocking
    * syscalls (e.g. tty_read) would never wake — no interrupt can preempt
