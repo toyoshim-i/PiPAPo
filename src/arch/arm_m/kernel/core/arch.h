@@ -18,12 +18,6 @@
 #include "kernel/common/irq.h"
 #include "kernel/core/mm/mem_region.h"
 
-/* ARM-M uses the no-copy vfork model: child shares the parent's user
- * stack page; the kernel saves the 40-byte HW+stub region at vfork-trap
- * into the parent's PCB and restores it on the parent's next user-mode
- * bx EXC_RETURN.  See docs/proposals/no_stack_copy_on_vfork.md. */
-#define ARCH_VFORK_COPY_PROCESS_STACK 0
-#define ARCH_VFORK_CHILD_FRAME_POINTER 0
 #define ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE 0
 
 extern volatile uint32_t arm_exc_return[2];

@@ -1526,20 +1526,12 @@ long sys_exit(long status) {
       proc_release_stack_page(&current->user_stack_page);
     }
   } else {
-    /* vfork child exiting without exec: free child-owned pages only
-     * (e.g. the user stack copy allocated by sys_vfork). */
+    /* vfork child exiting without exec: free child-owned pages only.
+     * In the no-copy vfork model the child shares the parent's
+     * user_stack_page and stack_page_id; the parent owns them. */
     proc_release_private_tracked_pages(current, current->vfork_parent);
-    /* Clear stack_page if it's the parent's — waitpid frees stack_page,
-     * and freeing the parent's stack would corrupt its kernel stack.
-     * This can happen when execve fails in a vfork child: sys_execve
-     * restores the parent's stack_page into the child's pcb. */
     if (current->stack_page_id == current->vfork_parent->stack_page_id)
       current->stack_page_id = PAGE_ID_INVALID;
-    /* Free child's user stack copy if different from parent's */
-    if (current->user_stack_page &&
-        current->user_stack_page != current->vfork_parent->user_stack_page) {
-      proc_release_stack_page(&current->user_stack_page);
-    }
   }
 
   /* Unblock vfork parent if we are a vfork child */
@@ -1623,34 +1615,14 @@ long sys_vfork(uint32_t *frame) {
   pcb_t *child = proc_alloc();
   if (!child) return -(long)ENOMEM;
 
-    /* 2. Allocate a child stack page for arches whose live child frame still
-     * lives there.  Split-kstack arches build child frames on kernel_sp. */
-#if ARCH_VFORK_COPY_PROCESS_STACK
-  proc_image_segment_t stack_region = {0};
-  if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE) < 0) {
-    proc_free(child);
-    return -(long)ENOMEM;
-  }
-  void *stack = stack_region.base;
-  child->user_stack_page = stack;
-#endif
-#if ARCH_VFORK_CHILD_FRAME_POINTER
-  uint32_t *child_frame = NULL;
-#endif
-
-  /* 3. Share parent's user_pages with child */
+  /* 2. Share parent's user_pages with child */
   proc_copy_page_tracking(child, current);
 
-  /* 4. Build child's stack: copy the parent's entire stack page.
-   *
-   *    The compiler saves local variables (including r9/GOT base) to
-   *    the stack.  After vfork returns, the child reads these stack-saved
-   *    values.  If the child has a fresh stack, those reads return garbage.
-   *    Copying the parent's stack gives the child a valid snapshot.
-   *
-   *    Then build the PendSV context (SW + HW frames) at the same offset
-   *    on the child's page as the parent's PSP frame.
+  /* 3. Build child's saved context.  Every supported arch runs the no-copy
+   * vfork model: the child shares the parent's user_stack_page and the
+   * per-arch code below builds a child kernel-stack frame whose user-mode
+   * resume point is the instruction after the vfork trap.  See
+   * docs/proposals/no_stack_copy_on_vfork.md.
    */
 #if defined(__ia16__)
   /* i16 split-frame layout: GP+IRET (24B) on user stack, user_SS:SP
@@ -1714,16 +1686,7 @@ long sys_vfork(uint32_t *frame) {
     uint16_t ax_off = ax_rel % PAGE_SIZE;
     mem_region_page_write(ax_page, ax_off, &zero, 2);
   }
-#elif ARCH_VFORK_COPY_PROCESS_STACK
-  void *parent_stack = proc_user_stack_base(current);
-  memcpy(stack, parent_stack, PAGE_SIZE);
-
-  /* Calculate child's frame position at the same offset as parent's */
-  uintptr_t frame_off = (uintptr_t)frame - (uintptr_t)parent_stack;
-  child_frame = (uint32_t *)((uint8_t *)stack + frame_off);
-#endif
-
-#if defined(__m68k__)
+#elif defined(__m68k__)
   /* m68k: The TRAP #0 frame (15 regs + SR + PC) has the same layout as
    * the switch.S context frame.  The child returns directly to user code
    * via switch.S restore (movem.l + rte), bypassing TRAP #0 cleanup.
@@ -1826,8 +1789,6 @@ long sys_vfork(uint32_t *frame) {
     child->sp = (uint32_t)(uintptr_t)sp;
   }
 
-#elif defined(__ia16__)
-  /* child->sp already set in the i16 block above */
 #else
 #error "sys_vfork: unsupported architecture — add child frame setup"
 #endif
@@ -2166,13 +2127,11 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
     exec_snapshot_release_tracked_pages(exec_snapshot);
     if (old_user_stack) proc_release_stack_page(&old_user_stack);
   } else if (current->vfork_parent) {
-    /* vfork child: free pages that were allocated specifically for
-     * the child (e.g. user stack copy), not the shared parent pages. */
+    /* vfork child execve: free private tracked pages but not the shared
+     * parent pages.  In the no-copy vfork model old_user_stack always
+     * equals the parent's user_stack_page, so it's never freed here. */
     exec_snapshot_release_private_tracked_pages(
         exec_snapshot, current->vfork_parent->user_pages);
-    if (old_user_stack &&
-        old_user_stack != current->vfork_parent->user_stack_page)
-      proc_release_stack_page(&old_user_stack);
   }
   mem_region_page_free(exec_snapshot);
 
