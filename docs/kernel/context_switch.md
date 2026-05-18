@@ -131,3 +131,81 @@ marks the process zombie and returns to the Xtensa syscall epilogue, which
 observes `current->state != PROC_RUNNABLE` and performs the switch from the
 fixed-kstack syscall body.  Other architectures leave this capability disabled
 and switch directly inside `sys_exit()`.
+
+## vfork Parent Resume
+
+When the kernel handles `vfork()`, the child shares the parent's user
+address space — including the user stack — until the child calls `execve()`
+or `_exit()`.  The parent stays `PROC_BLOCKED` for that window.  The child
+re-enters the kernel for its own syscalls, and any user code it runs before
+that point overwrites the part of the shared user stack that holds the
+parent's resume state.  At minimum that includes the user-mode return frame
+(per-arch hardware push) and the vfork stub's saved registers; the exact
+size is arch-specific.
+
+The kernel therefore saves the parent's vulnerable user-stack slice into the
+parent's own kernel-stack slot before the child runs, and restores it before
+the parent ever returns to user mode.  The reference implementation is i16
+(see [stack.md §ia16](stack.md#ia16) and
+[`i16_vfork_restore_frame()`](../../src/arch/i16/kernel/core/i16_common.c)).
+
+### Invariant
+
+Every kernel exit path that can resume a blocked vfork parent must call
+`<arch>_vfork_restore_frame()` before its final user-mode return
+instruction (`iret`, `rte`, `mret`, `bx EXC_RETURN`, `rfe`, etc.).
+
+The resume paths to enumerate per arch are:
+
+- syscall-trap return — the path that handled the child's `execve` /
+  `_exit` and now schedules the parent next.
+- timer-IRQ return — the parent may be picked asynchronously after the
+  child has already exited and another preempt fires.
+- cooperative-yield return — e.g. m68k `TRAP #1`, arm_m `svc #0xFF`
+  sentinel.
+
+A single skipped restore site leaves the parent `iret`ing into a clobbered
+frame.  The corruption is data-dependent and hard to reproduce: i16 was
+bitten by exactly this during PC/XT bring-up when only the syscall-trap
+path was wired and the timer path popped junk.  Treat resume-path coverage
+as a release-blocker checklist, not an afterthought.
+
+### Per-arch hook contract
+
+Each arch that uses the no-copy vfork model implements two functions,
+mirroring the i16 reference:
+
+| Hook | Caller | Job |
+|------|--------|-----|
+| `<arch>_vfork_save_parent_frame(pcb_t *parent)` | `sys_vfork()` in the per-arch branch | Read the parent's vulnerable user-stack slice via `mem_region_page_read()` into a fixed slot in the parent's kstack, patch the saved return-value slot with the child PID, set `parent->vfork_frame_saved = 1`. |
+| `<arch>_vfork_restore_frame(void)` | every user-mode exit path that can resume `current` | If `current->vfork_frame_saved`, copy the saved slice back to user memory via `mem_region_page_write()` and clear the flag. |
+
+The saved-slice size and layout are arch-specific; the contract is the
+same: save once in `sys_vfork`, restore exactly once per vfork cycle, on
+every possible resume path.
+
+The `vfork_frame_saved` flag itself lives in `pcb_t`
+([proc_info.h](../../src/kernel/common/core/proc_info.h)) and is shared
+across arches; only the save/restore body is per-arch.
+
+### Skipping the syscall return-value store
+
+Some arches' syscall return paths write the dispatch result back into the
+saved return-register slot on the user stack (e.g. i16's trap.S writing
+AX).  For a vfork parent whose child is still running on the shared user
+stack, that write would clobber the child's return value — the child's
+in-progress code is sitting on the same byte the kernel wants to overwrite
+with the parent's return.
+
+The shared rule: if `current->vfork_frame_saved` is set, the per-arch
+syscall return path must skip its own "store return value to user-stack
+register slot" step.  The patched child-PID value in the saved frame is
+the authoritative parent return; it lands back on the user stack when
+`<arch>_vfork_restore_frame()` writes the saved slice out.
+
+i16 exposes this via `i16_trap_should_skip_ret_store()`
+([i16_common.c](../../src/arch/i16/kernel/core/i16_common.c)).  Other
+arches add an analogous predicate only if their return path stores into
+user memory (arm_m does not — r0 is restored from the HW frame, which the
+restore already rewrites; riscv does not — a0 is in the trap frame on
+kstack; m68k does not — d0 is in the saved frame on SSP).
