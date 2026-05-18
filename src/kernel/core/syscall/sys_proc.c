@@ -218,7 +218,7 @@ static void proc_release_stack_page(void **page) {
   *page = NULL;
 }
 
-#if defined(__m68k__) || defined(__riscv) || defined(__xtensa__)
+#if defined(__m68k__) || defined(__xtensa__)
 /* Allocate a user-stack copy for a vfork child.
  *
  * The child must have its own user stack page.  Without this, the
@@ -241,7 +241,7 @@ static int vfork_copy_user_stack(void *parent_ustack, uint32_t parent_usp,
   *usp_out = (uint32_t)(uintptr_t)child_ustack + usp_off;
   return 0;
 }
-#endif /* __m68k__ || __riscv || __xtensa__ */
+#endif /* __m68k__ || __xtensa__ */
 
 static void trace_clear_swbp(pcb_t *target);
 static void trace_clear_hwbp(pcb_t *target);
@@ -1799,32 +1799,23 @@ long sys_vfork(uint32_t *frame) {
    * kernel stack.  Copy that frame into the child's fixed kstack slot and
    * patch the child's saved a0 to 0.
    *
-   * frame points to saved a0 in the parent's trap frame (trap_base + 32). */
+   * frame points to saved a0 in the parent's trap frame (trap_base + 32).
+   *
+   * No-copy vfork: the child shares the parent's user_stack_page.  The
+   * RISC-V ecall ABI pushes nothing on the user stack, and the vfork /
+   * execve / _exit stubs push nothing either, so the parent's resume
+   * state — which lives in the parent's own trap frame on the parent's
+   * kstack slot — is not reachable from the child's path.  TF_USER_SP in
+   * the child's trap frame already points at the parent's user sp from
+   * the memcpy above; no remap is needed. */
   uint32_t *parent_tf = frame - 8; /* trap frame base */
   uint32_t *child_tf =
       (uint32_t *)(uintptr_t)(child->kernel_sp - 36u * sizeof(uint32_t));
   memcpy(child_tf, parent_tf, 36u * sizeof(uint32_t));
-  child_frame = child_tf + 8;
-  child_frame[0] = 0;
+  child_tf[8] = 0; /* saved a0 = 0 — child sees vfork() return 0 */
 
   child->sp = (uint32_t)(uintptr_t)child_tf;
-
-  /* RISC-V mscratch split: the child must have its own user stack copy. */
-  {
-    void *parent_ustack = current->user_stack_page;
-    if (parent_ustack) {
-      void *child_ustack = NULL;
-      uint32_t *child_tf = child_frame - 8; /* trap frame base */
-      uint32_t child_usp = 0;
-      if (vfork_copy_user_stack(parent_ustack, child_tf[32], &child_ustack,
-                                &child_usp) < 0) {
-        proc_free(child);
-        return -(long)ENOMEM;
-      }
-      child->user_stack_page = child_ustack;
-      child_tf[32] = child_usp; /* patch TF_USER_SP */
-    }
-  }
+  child->user_stack_page = current->user_stack_page;
 
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
   /* ARM Phase B: HW frame on child's copied user stack; 10-word SW

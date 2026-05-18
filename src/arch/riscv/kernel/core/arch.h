@@ -15,9 +15,13 @@
 #include "kernel/common/irq.h"
 #include "kernel/core/mm/mem_region.h"
 
-/* RISC-V vfork copies a fixed-kstack trap frame and patches saved a0. */
+/* RISC-V vfork copies a fixed-kstack trap frame and patches saved a0.
+ * Child shares the parent's user stack: ecall pushes nothing on the user
+ * stack and the vfork/execve/_exit stubs push nothing either, so the
+ * parent's resume state in its own trap frame is unreachable from the
+ * child path. */
 #define ARCH_VFORK_COPY_PROCESS_STACK 0
-#define ARCH_VFORK_CHILD_FRAME_POINTER 1
+#define ARCH_VFORK_CHILD_FRAME_POINTER 0
 #define ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE 0
 
 /* Pointer to the saved trap frame at the base of the current kernel trap
