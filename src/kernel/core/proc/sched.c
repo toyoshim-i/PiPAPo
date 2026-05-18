@@ -2,15 +2,15 @@
  * sched.c — Round-robin preemptive scheduler
  *
  * SysTick fires every SYSTICK_RELOAD+1 CPU cycles and calls sched_tick().
- * sched_tick() triggers PendSV when the current process's time-slice
- * expires.  PendSV_Handler (switch.S) calls sched_next() and swaps context.
+ * sched_tick() raises switch_pending when the current process's time-slice
+ * expires.  The per-arch SysTick / trap exit then consumes the flag and
+ * performs the context swap (arm_kernel_sched_switch on ARM Cortex-M;
+ * the m68k / RISC-V / Xtensa timer ISRs do the same shape natively).
  *
  * Priority setup:
- *   - PendSV must be the LOWEST priority exception (priority byte = 0xFF)
- *     so that it never preempts a real interrupt handler (e.g. UART IRQ).
- *     PendSV fires only when Thread mode would regain the CPU.
- *   - SysTick can be any priority higher than PendSV; we leave it at
- *     the reset default (0x00 = highest) for Phase 1.
+ *   - SysTick is left at the reset default (0x00 = highest) on ARM
+ *     Cortex-M so it can preempt SVC.  sched_start() lowers SVCall
+ *     to 0x80 so SysTick (and other IRQs) can interrupt syscall bodies.
  */
 
 #include "kernel/core/proc/sched.h" /* includes proc.h via sched.h */
@@ -34,8 +34,8 @@
 static volatile uint32_t tick_count = 0u;
 
 /* Shared cooperative-yield flag.  Used by every architecture whose arch.h
- * pulls in arch_yield_default.h (m68k, i16, riscv, xtensa).  ARM Cortex-M
- * yields via PendSV and never touches this variable. */
+ * pulls in arch_yield_default.h (m68k, i16, riscv, xtensa, arm_m).  The
+ * per-arch timer/trap exit checks it and performs the swap when set. */
 /* Type is `unsigned int` so the storage width matches the platform word
  * size: 16 bits on i16 (8086 real mode), 32 bits on m68k/riscv/arm/xtensa.
  * This lets each architecture's timer/trap asm use its natural-width
@@ -113,12 +113,12 @@ void sched_tick(void) {
     }
   }
 
-  /* Per-core: decrement time slice and pend PendSV when expired */
+  /* Per-core: decrement time slice and raise switch_pending when expired */
   if (!current) return;
 
   if (--current->ticks_remaining == 0u) {
     current->ticks_remaining = PROC_DEFAULT_TICKS;
-    arch_yield(); /* trigger PendSV (runs after SysTick exits) */
+    arch_yield(); /* SysTick exit consumes switch_pending → swap */
   }
 }
 
@@ -195,9 +195,9 @@ void sched_start(void) {
  * that conflicts with ours. Use a PPAP-specific scheduler API name
  * consistently on every target instead of carrying a target-local alias.
  *
- * arch_sched_switch() is ARM's arch_yield() (PendSV self-pend) by default,
- * and a direct trap-based switch on m68k/xtensa/ia16 whose arch_yield()
- * only sets a flag that nothing would consume from thread context. */
+ * arch_sched_switch() is a direct trap-based switch on every arch (m68k
+ * TRAP #1, ia16 INT, ARM Cortex-M `svc #0xFF` sentinel for Thread-mode
+ * callers), so the yield is honored before sched_switch() returns. */
 void sched_switch(void) { arch_sched_switch(); }
 
 /* ── Channel-based wakeup ────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ void sched_wakeup(void *channel) {
     }
   }
   spin_unlock_irqrestore(SPIN_PROC, saved);
-  /* Trigger context switch so woken process runs promptly.
-   * PendSV has lowest priority — fires after the current ISR returns. */
+  /* Raise switch_pending so the next exception exit (typically the
+   * current ISR or the upcoming SysTick) honors the wakeup. */
   if (woke) arch_yield();
 }

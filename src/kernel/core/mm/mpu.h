@@ -37,7 +37,7 @@ void mpu_init(void);
 /*
  * mpu_switch(next) — reprogram MPU region 2 for the incoming process.
  *
- * Called from PendSV_Handler (switch.S) on every context switch.
+ * Called from arm_kernel_sched_switch (switch.S) on every context switch.
  * If next has no user/process stack page, region 2 is disabled.
  * No-op when no MPU is present (mpu_init() detected QEMU / no MPU).
  */

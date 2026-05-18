@@ -96,14 +96,16 @@ uint32_t sio_fifo_pop(void) {
  *
  * Mirrors sched_start() on Core 0:
  *   1. Program Core 1's MPU (each core has its own on Cortex-M0+)
- *   2. Set PendSV/SVCall priorities (per-core PPB registers)
- *   3. Allocate an idle PCB so PendSV_Handler has a valid current_core[1]
+ *   2. Lower SVCall priority (per-core PPB register)
+ *   3. Allocate an idle PCB so arm_kernel_sched_switch has a valid
+ *      current_core[1]
  *   4. Switch from MSP (set by core1_launch) to PSP
  *   5. Configure Core 1's SysTick (per-core timer)
  *   6. Enable interrupts and enter WFI idle loop
  *
- * PendSV_Handler on Core 1 picks up RUNNABLE processes; when none are
- * available, sched_next() returns the idle PCB and we resume WFI.
+ * Core 1's SysTick exit checks switch_pending and calls
+ * arm_kernel_sched_switch when set; when no RUNNABLE process exists,
+ * sched_next() returns the idle PCB and we resume WFI.
  */
 void core1_sched_entry(void) {
   /* Disable interrupts until everything is configured */
@@ -125,13 +127,12 @@ void core1_sched_entry(void) {
   /* 1. Program Core 1's MPU (per-core on Cortex-M33). */
   mpu_init();
 
-  /* 2. Set exception priorities — same as sched_start() on Core 0.
-   * SHPR2/SHPR3 are per-core (Private Peripheral Bus). */
-  SCB_SHPR3 = (SCB_SHPR3 & ~PENDSV_PRIO_MASK) | PENDSV_PRIO_LOWEST;
+  /* 2. Lower SVCall priority so hardware IRQs can preempt syscalls
+   * (same as sched_start() on Core 0).  SHPR2 is per-core (PPB). */
   SCB_SHPR2 = (SCB_SHPR2 & ~SVCALL_PRIO_MASK) | (0x80u << SVCALL_PRIO_SHIFT);
 
   /* 3. Allocate an idle PCB for Core 1.
-   * PendSV_Handler requires current_core[1] to be valid. */
+   * arm_kernel_sched_switch requires current_core[1] to be valid. */
   pcb_t *idle = proc_alloc();
   proc_image_segment_t idle_stack_region;
   if (!idle) {
@@ -174,7 +175,7 @@ void core1_sched_entry(void) {
   mod_vfs.klogf("SMP: Core 1 scheduler started\n");
 
   /* 6. Enable interrupts and enter idle loop.
-   * PendSV switches to a RUNNABLE process when one becomes available. */
+   * SysTick exit switches to a RUNNABLE process via switch_pending. */
   arch_irq_enable();
 
   for (;;) arch_wfi();
@@ -242,8 +243,8 @@ void core1_launch(void (*entry)(void)) {
   }
   uint32_t sp = (uint32_t)(uintptr_t)stack_page + PAGE_SIZE;
 
-  /* Core 1 must use the same vector table as Core 0 so that SVC,
-   * PendSV, and SysTick handlers are shared. */
+  /* Core 1 must use the same vector table as Core 0 so that SVC and
+   * SysTick handlers are shared. */
   uint32_t vtor = SCB_VTOR;
   uint32_t pc = (uint32_t)(uintptr_t)entry;
 

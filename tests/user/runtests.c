@@ -294,10 +294,12 @@ int main(void)
      * (silent — no output at all).  Root cause: m68k-side data
      * pointers aren't translated to host addresses correctly; not yet
      * diagnosed.  Re-enable once the emulator's address-space mapping
-     * is fixed. */
+     * is fixed.  UNSUPPORTED on native m68k — the host runs hello_m68k
+     * directly, no emulator involved, and /bin/hello_m68k isn't shipped
+     * in the m68k romfs anyway. */
     tests[t++] = (test_entry_t){ "/bin/test_m68k_emu",
 #if defined(__m68k__)
-        TEST_ENABLED
+        TEST_UNSUPPORTED
 #else
         TEST_DISABLED
 #endif

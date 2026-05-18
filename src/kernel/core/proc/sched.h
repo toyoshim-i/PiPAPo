@@ -5,10 +5,9 @@
  *
  *   SysTick_Handler  — fires every SYSTICK_RELOAD+1 CPU cycles;
  *                      decrements the current process's time-slice and
- *                      triggers PendSV when the slice expires.
- *
- *   PendSV_Handler   — (in switch.S) calls sched_next() to pick the
- *                      next process, then saves/restores the CPU context.
+ *                      raises switch_pending when the slice expires.
+ *                      The per-arch exception-exit path consumes the
+ *                      flag to perform the context swap.
  *
  *   sched_start()    — switches Thread mode to PSP, configures SysTick,
  *                      and enables interrupts.  Returns to the caller
@@ -34,7 +33,8 @@
 
 /*
  * Pick the next RUNNABLE process in round-robin order starting after
- * current.  Called from PendSV_Handler in switch.S.
+ * current.  Called from the per-arch context-switch path (arm_m's
+ * arm_kernel_sched_switch, m68k's m68k_ctx_switch, etc.).
  * Returns current if no other RUNNABLE process exists.
  */
 pcb_t *sched_next(void);
@@ -42,7 +42,7 @@ pcb_t *sched_next(void);
 /*
  * Start the preemptive scheduler:
  *   1. Copy MSP to PSP; switch Thread mode to PSP (CONTROL.SPSEL = 1).
- *   2. Set PendSV to lowest priority so it never preempts real IRQs.
+ *   2. Lower SVCall priority so hardware IRQs can preempt syscalls.
  *   3. Configure SysTick with SYSTICK_RELOAD and enable its interrupt.
  *   4. Enable interrupts (cpsie i).
  * Returns to the caller, which continues executing as kernel thread 0.
@@ -53,7 +53,8 @@ void sched_start(void);
 /*
  * Called from SysTick_Handler every tick.
  * Decrements current->ticks_remaining; when it reaches zero, reloads the
- * slice counter and sets ICSR.PENDSVSET to trigger a context switch.
+ * slice counter and calls arch_yield() (= raises switch_pending) so the
+ * per-arch SysTick exit performs the context swap.
  */
 void sched_tick(void);
 
@@ -66,10 +67,11 @@ void sched_tick(void);
 void sched_timer_tick(int from_user);
 
 /*
- * Voluntarily switch to the next RUNNABLE process.
- * Sets PENDSVSET so PendSV_Handler runs at the next opportunity and
- * switches context.  Safe to call from Thread mode at any time.
- * Used by QEMU smoke tests where SysTick IRQ delivery is not available.
+ * Voluntarily switch to the next RUNNABLE process.  Calls
+ * arch_sched_switch(), which performs a synchronous swap when called
+ * from a Handler-mode context that owns its kernel stack, and falls
+ * back to a per-arch trap mechanism (m68k TRAP #1, ARM `svc #0xFF`)
+ * from Thread mode.  Safe from anywhere.
  */
 void sched_switch(void);
 
@@ -96,8 +98,7 @@ uint32_t sched_get_ticks(void);
  * Returns non-zero if any of the polled work raised an arch_yield()
  * (e.g. tty_rx_notify woke a blocked reader).  The idle loop must
  * then call sched_switch() so the wakeup is honored without waiting
- * for the next timer tick.  On Cortex-M this is always 0 because
- * PendSV self-pends and runs on exception return.
+ * for the next timer tick.
  */
 int sched_idle_poll(void);
 

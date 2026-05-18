@@ -23,7 +23,7 @@ PicoCalc (RP2040 + LCD/keyboard/SD), and Pico 2 (RP2350, Cortex-M33).
 | Privilege | Handler/Thread mode | Same | Same |
 | Syscall | `svc 0` | `svc 0` | `svc 0` |
 | Timer | SysTick | SysTick | SysTick |
-| Context switch | PendSV (deferred) | PendSV | PendSV |
+| Context switch | SysTick inline + `svc #0xFF` sentinel | Same | Same |
 | MPU | 4-region MPU | Optional | 8-region MPU |
 | FPU | None | None | FPv5-SP-D16 (optional) |
 | HW breakpoints | FPB v1 (4 code) | FPB v1 | FPB v2 (not yet used) |
@@ -95,8 +95,10 @@ live) before dispatching to `syscall_dispatch(frame, nr, a4, a5)`.
 
 After dispatch, the SVC handler checks (in order):
 
-1. **exec_pending** — `sys_execve` loaded a new image; do a full PendSV-style
-   restore from `current->sp` (r4-r11 including r9/GOT base).
+1. **exec_pending** — `sys_execve` overwrote the in-flight SW frame with
+   the new image's state and stashed the new HW frame base at sw[+36];
+   MSR PSP from sw[+36] and let the normal pop lift the new r4-r11
+   (including r9/GOT base) and EXC_RETURN.
 2. **Process not RUNNABLE** — the syscall blocked synchronously inside
    `sched_switch()` and has already resumed by the time control reaches
    this check.  Skip the signal check and return.
@@ -114,63 +116,56 @@ PCB offset 32:      sp (saved PSP)
 PCB_SP_OFFSET = 32
 ```
 
-### PendSV Handler
+### Context Switch Path (Phase B: unified SW frame, PendSV retired)
 
-PendSV runs at the lowest exception priority, triggered by SysTick via
-`ICSR.PENDSVSET`. It never preempts a real interrupt handler.
+ARM uses a single 10-word SW frame on MSP for every suspended process;
+SVC entry, SysTick exit, and the `svc #0xFF` sentinel trampoline all
+push it and call `arm_kernel_sched_switch()`.  PendSV was deleted in
+Phase B — vector slot 14 now points at `Default_Handler`.
 
-**ARMv6-M (Cortex-M0+) path:**
+**`arm_kernel_sched_switch()` (single primitive):**
 
-1. `mrs r0, psp` — get outgoing PSP
-2. Manual `subs r0, #32` + `stmia` for r4-r7, then move r8-r11 via r4-r7 and
-   `stmia` again (ARMv6-M only has STMIA, no STMDB; high registers can't
-   appear directly in STMIA)
-3. Save PSP into outgoing `pcb_t.sp`
-4. Call `sched_next()` → returns next PCB
-5. Call `mpu_switch()` + `trace_arm_hwbp_on_switch()`
-6. Restore r4-r11 from incoming PCB (reverse dance with push/pop for r8-r11)
-7. `msr psp, r0` + `bx lr` (EXC_RETURN)
+1. Push 10-word SW frame on MSP: `{r4-r11, saved lr, saved PSP}` (40 bytes,
+   8-aligned).  On ARMv6-M, register-list constraints force the manual
+   r4-r7 then r8-r11-via-r4-r7 dance + explicit `mrs r0, psp` / `str`.
+   On ARMv8-M, `stmdb sp!, {r0}` then `stmdb sp!, {r4-r11, lr}` does
+   it directly.
+2. Save MSP (= SW frame base) into outgoing `pcb_t.sp`.
+3. `sched_next()`, `mpu_switch()`, `trace_arm_hwbp_on_switch()`.
+4. Publish `current_core[cid] = next`.
+5. MSR MSP from `next->sp`, pop the 10-word SW frame (restoring r4-r11),
+   MSR PSP from sw[+36], `bx` to the popped lr.
+6. Saved-lr dispatch:
+   - EXC_RETURN value (top byte `0xFF`) → exception return; CPU unstacks
+     the HW frame from PSP back into Thread mode at the user PC.
+   - C return address → continues the syscall body, eventually unwinding
+     to SVC normal_return which pops the entry SW frame and EXC_RETURN's.
 
-**ARMv8-M (Cortex-M33) path:**
+**SysTick exit:** after the tick handler runs, asm checks
+`switch_pending` and falls into `arm_kernel_sched_switch()` inline when
+the flag is set.
 
-1. `mrs r0, psp` — get outgoing PSP
-2. Check EXC_RETURN bit 4: if FPU was active (`bit4 == 0`), save s16-s31 via
-   `vstmdb`
-3. `stmdb r0!, {r4-r11, lr}` — save callee-saved + EXC_RETURN (Thumb-2
-   supports full register list)
-4. Same scheduler/MPU/breakpoint calls
-5. `ldmia r0!, {r4-r11, lr}` — restore + EXC_RETURN
-6. If EXC_RETURN bit 4 == 0, restore s16-s31 via `vldmia`
-7. `msr psp, r0` + `bx lr`
+**Thread-mode `arch_sched_switch()`:** issues `svc #0xFF`.  The SVC
+handler reads the immediate from the stacked PC; on `0xFF` it skips the
+syscall dispatch and calls `arm_kernel_sched_switch()` directly — same
+shape m68k uses with TRAP #1.
 
-### Stack Layout (Suspended Process)
-
-**ARMv6-M:**
+### SW Frame Layout (Suspended Process, both v6 and v8)
 
 ```
-[PSP+0 ]  r4          ← pcb_t.sp points here
-[PSP+4 ]  r5
+[MSP+0 ]  r4          ← pcb_t.sp points here
+[MSP+4 ]  r5
   ...
-[PSP+28]  r11
-[PSP+32]  r0   ─┐
-  ...             │  hardware exception frame (8 words)
-[PSP+60]  xpsr ─┘
+[MSP+28]  r11
+[MSP+32]  saved lr    (EXC_RETURN for fresh / SysTick-saved;
+                       C return addr for syscall-body callers)
+[MSP+36]  saved PSP   (HW exception frame base on the user stack)
 ```
 
-**ARMv8-M with FPU:**
-
-```
-[PSP+0 ]  r4          ← pcb_t.sp points here
-  ...
-[PSP+28]  r11
-[PSP+32]  EXC_RETURN  (bit 4 encodes FPU frame type)
-[PSP+36]  s16         ─┐  (only when EXC_RETURN bit 4 = 0)
-  ...                   │  callee-saved FP registers
-[PSP+96]  s31         ─┘
-[PSP+36 or 100]  r0   ─┐
-  ...                    │  hardware exception frame (8 or 26 words)
-[PSP+xx]  xpsr         ─┘
-```
+The HW exception frame lives on PSP independently and is unwound by the
+final `bx lr` (when the saved lr is an EXC_RETURN value).  On ARMv8-M
+with FPU, callee-saved s16-s31 sit above the SW frame when the
+suspended process had FPU state active.
 
 ---
 
@@ -215,8 +210,8 @@ ARMv8-M separates memory type attributes into MAIR0/MAIR1, referenced by a
 | 4–7 | — | — | — | — | — | **Unused (available)** |
 
 Region 2 is reprogrammed on every context switch by `mpu_switch()` (called from
-PendSV_Handler). The implementation uses `#if __ARM_ARCH >= 8` to select the
-correct register encoding in `mpu.c`.
+`arm_kernel_sched_switch()`). The implementation uses `#if __ARM_ARCH >= 8`
+to select the correct register encoding in `mpu.c`.
 
 ### Per-Process Data Protection (Current Limitation)
 
@@ -409,8 +404,9 @@ first 4 KB for a PICOBIN block.
 - **CPACR**: CP10+CP11 set to full access in Reset_Handler
 - **FPCCR**: ASPEN + LSPEN enabled (lazy stacking)
 - **ABI**: softfp (float arguments in integer registers, computed in FPU)
-- **Context switch**: PendSV checks EXC_RETURN bit 4; saves/restores s16-s31
-  only when FPU was active. Hardware lazy-stacks s0-s15 automatically.
+- **Context switch**: `arm_kernel_sched_switch()` checks the saved lr — if
+  it's recognisably an EXC_RETURN value (top byte `0xFF`), bit 4 selects
+  whether to restore s16-s31.  Hardware lazy-stacks s0-s15 automatically.
 - **Signal delivery**: Must handle FPU state correctly for FPU-active processes
   (EXC_RETURN bit 4 encoding)
 
@@ -558,8 +554,10 @@ src/drivers/arch/arm_m/
 src/arch/arm_m/
   boot.S             — vector table + Reset_Handler (.data copy, .bss zero, FPU init)
   stage1.S           — stage1 bootloader (VTOR redirect to kernel)
-  switch.S           — PendSV_Handler (context switch, FPU lazy stacking)
-  trap.S             — SVC_Handler (syscall dispatch, exec restore, restart)
+  switch.S           — arm_kernel_sched_switch (unified context switch,
+                       FPU lazy stacking on M33)
+  trap.S             — SVC_Handler (syscall dispatch, sentinel-SVC yield,
+                       exec restore)
   arm_m_common.c     — ARM M-profile common code
   arch.h             — IRQ save/restore, yield, core_id, WFI
   cpu.h              — exception frame layout, SR bits
@@ -719,7 +717,7 @@ openocd (RP fork)     — flash/debug for Pico 2 (RP2350 support)
 | Multi-core | Dual-core, HW spinlocks | Single-core |
 | Memory protection | MPU (4-8 regions) | None |
 | Timer | SysTick (built-in) | External (Goldfish PIT / 8253 / MFP) |
-| Context switch | PendSV (deferred lowest priority) | Direct in timer ISR |
+| Context switch | SysTick inline (`switch_pending` flag) + `svc #0xFF` sentinel for Thread-mode yields | Direct in timer ISR / TRAP #1 |
 | User/kernel | Thread mode + PSP / Handler mode + MSP | User mode (USP) / Supervisor mode (SSP) |
 | Division | Software on M0+, hardware on M3/M33 | Hardware (`divs`/`divu`) |
 | PIC register | r9 = GOT base | a5 = data base |

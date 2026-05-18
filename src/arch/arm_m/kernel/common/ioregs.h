@@ -38,27 +38,16 @@
 
 /* ── SCB — System Control Block ──────────────────────────────────────────
  *
- * ICSR:  Interrupt Control and State Register
  * VTOR:  Vector Table Offset Register
- * SHPR3: System Handler Priority Register 3 (PendSV + SysTick priority)
+ * SHPR2: System Handler Priority Register 2 (SVCall priority byte)
  * ────────────────────────────────────────────────────────────────────────── */
 
-#define SCB_ICSR (*(volatile uint32_t *)0xE000ED04u)
 #define SCB_VTOR (*(volatile uint32_t *)0xE000ED08u)
-#define SCB_SHPR3 (*(volatile uint32_t *)0xE000ED20u)
-
-/* ICSR bits */
-#define PENDSVSET (1u << 28) /* set pending PendSV exception           */
 
 /* SHPR2: SVCall priority at [31:24] */
 #define SCB_SHPR2 (*(volatile uint32_t *)0xE000ED1Cu)
 #define SVCALL_PRIO_SHIFT 24u
 #define SVCALL_PRIO_MASK (0xFFu << SVCALL_PRIO_SHIFT)
-
-/* SHPR3: PendSV priority at [23:16] */
-#define PENDSV_PRIO_SHIFT 16u
-#define PENDSV_PRIO_MASK (0xFFu << PENDSV_PRIO_SHIFT)
-#define PENDSV_PRIO_LOWEST (0xFFu << PENDSV_PRIO_SHIFT)
 
 /* ── NVIC — Nested Vectored Interrupt Controller ─────────────────────────── */
 

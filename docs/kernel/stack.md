@@ -39,7 +39,7 @@ The common defaults are:
 
 | Arch | Kernel stack owner | Saved PCB fields | Switch mechanism |
 |------|--------------------|------------------|------------------|
-| `arm_m` | Fixed region per process, MSP kernel stack | `sp` = PSP/user context, `kernel_sp` = MSP, `svc_msp` = SVC entry MSP, `kernel_context` distinguishes suspended kernel continuations | PendSV for async preemption; direct `arm_kernel_sched_switch()` for blocked non-restart syscalls inside SVC |
+| `arm_m` | Fixed region per process, MSP kernel stack | `sp` = saved MSP at SW frame base, `kernel_sp` = slot top (immutable); saved PSP / EXC_RETURN live inside the SW frame | SysTick checks `switch_pending` on exit; Handler-mode `sched_switch` calls `arm_kernel_sched_switch()` directly; Thread-mode uses `svc #0xFF` sentinel into the same helper |
 | `ia16` | Fixed region per process, SS=0 kernel stack | `sp` = saved kernel-stack SP, `kernel_sp` = slot top, plus entry-stub shadows | Timer INT 08h and `i16_ctx_switch()` save `SS:SP` on the kernel stack and restore through a shared IRET tail |
 | `m68k` | Fixed region per process, SSP kernel stack | `sp` = saved SSP frame, `usp` = user stack pointer, `kernel_sp` = slot top | TRAP/timer paths save full frames on SSP, call `sched_next()`, then restore incoming SSP/USP |
 | `riscv` | Fixed region per process, `mscratch` kernel stack | `sp` = trap-frame SP, `kernel_sp` = `mscratch` kernel-stack top | Trap entry swaps `sp` with `mscratch`; `riscv_ctx_switch()` swaps trap-frame SPs and trap return refreshes `mscratch` |
@@ -48,25 +48,26 @@ The common defaults are:
 ## ARM Cortex-M
 
 ARM uses two hardware stack pointers: PSP for Thread/user mode and MSP for
-Handler/kernel mode.  Each process has a fixed MSP slot and
-`pcb_t.kernel_sp` tracks the live MSP for that process.
+Handler/kernel mode.  Each process has a fixed MSP slot;
+`pcb_t.kernel_sp` is the immutable slot top (planted once, never written
+by save paths).
 
-`SVC_Handler` saves the original MSP in `current->svc_msp`, switches MSP to
-`current->kernel_sp` when needed, and runs the syscall body on that per-process
-kernel stack.  On SVC exit it restores the saved entry MSP before touching the
-original entry frame.
+Every suspended process is anchored by a unified 10-word SW frame on MSP:
+`{r4-r11, saved lr, saved PSP}`.  SVC entry pushes it at slot_top-40;
+`arm_kernel_sched_switch` pushes it at whatever depth the bl reaches.
+`pcb_t.sp` records the saved MSP.  Restore is a single path: MSR MSP =
+`pcb_t.sp`, pop the SW frame, MSR PSP from sw[+36], `bx lr` — where the
+saved-lr value dispatches between EXC_RETURN unwinds (fresh / SysTick-
+saved) and C-return continuations (syscall-body callers).
 
-PendSV remains the low-priority async preemption path.  Its switch code saves
-the outgoing MSP into `current->kernel_sp` and restores the incoming MSP from
-`next->kernel_sp`, so later exceptions for that process run on its own slot.
-PendSV must stay below SVC priority; it is not used to preempt an active SVC.
+SysTick handler sets / honors the cross-arch `switch_pending` flag and
+drops into `arm_kernel_sched_switch` on exit when set.  Thread-mode
+`arch_sched_switch` issues `svc #0xFF`; the SVC handler detects the
+sentinel from the stacked PC and short-circuits into
+`arm_kernel_sched_switch` — same shape m68k uses with TRAP #1.
 
-When `sched_switch()` is called inside Handler mode and the current process is
-`PROC_BLOCKED` without SVC restart, `arch_sched_switch()` calls
-`arm_kernel_sched_switch()` directly.  That path saves the in-flight kernel
-continuation on MSP, saves PSP in `pcb_t.sp`, marks the PCB as a kernel
-continuation, selects the next runnable process, and restores either the next
-kernel continuation or the next normal user/PSP context.
+PendSV was retired in Phase B; vector slot 14 now points at
+`Default_Handler`.
 
 All ARM Cortex-M targets use 2 KB user-process slots:
 

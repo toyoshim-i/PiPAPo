@@ -24,8 +24,8 @@ for operations that are explicitly replay-safe.
    later resumed.
 
 `arch_yield()` is weaker.  It only requests a switch, usually for timer/user
-preemption or wakeups.  On flag-based architectures it sets
-`switch_pending`; on ARM Cortex-M it pends PendSV.
+preemption or wakeups.  All architectures now set the cross-arch
+`switch_pending` flag; the trap-return / IRQ-exit path checks it.
 
 `sched_check_preempt()` consumes pending switch requests in shared idle paths.
 Trap and interrupt return paths also check their architecture-specific pending
@@ -35,7 +35,7 @@ state before returning to user code.
 
 | Arch | Async preemption | `sched_switch()` from kernel context | Trap-return switch |
 |------|------------------|--------------------------------------|--------------------|
-| `arm_m` | SysTick pends PendSV | Direct `arm_kernel_sched_switch()` for blocked syscalls in Handler mode; otherwise PendSV | PendSV tail-chain after SVC/IRQ return |
+| `arm_m` | SysTick sets `switch_pending` and swaps inline on exit | Direct `arm_kernel_sched_switch()` from Handler mode; Thread-mode callers issue `svc #0xFF` sentinel | SysTick exit checks `switch_pending`; SVC sentinel dispatches into `arm_kernel_sched_switch` |
 | `ia16` | PIT INT 08h checks `switch_pending` | Direct `i16_ctx_switch()` builds the same frame shape as interrupt/syscall paths | `i16_trap_after_switch` restores via the shared IRET tail |
 | `m68k` | Timer/trap return checks `switch_pending` | TRAP #1 switches immediately through `m68k_trap1_handler` | TRAP/timer assembly saves SSP/USP, calls `sched_next()`, restores incoming SSP/USP |
 | `riscv` | Timer interrupt sets `switch_pending` | Machine-mode `ecall` switches immediately through `riscv_ctx_switch()` | `riscv_ctx_switch(current_sp)` swaps trap-frame SPs and refreshes `mscratch` |
@@ -43,20 +43,30 @@ state before returning to user code.
 
 ## ARM Cortex-M
 
-ARM uses PendSV for asynchronous preemption.  PendSV stays at the lowest
-priority and must not preempt SVC.  SVC runs with the process's per-process
-MSP; see [`stack.md`](stack.md).
+ARM uses a single 10-word SW frame ({r4-r11, saved lr, saved PSP}) on MSP
+for every suspended process.  `arm_kernel_sched_switch()` is the one
+switch primitive — SVC entry, the SysTick exit-time check, and the
+sentinel-SVC trampoline all push this frame and call it.  See
+[`stack.md`](stack.md) for the slot layout.
 
-When `sched_switch()` is called inside Handler mode and the current process is
-`PROC_BLOCKED`, `arch_sched_switch()` calls
-`arm_kernel_sched_switch()` directly.  That path saves the live kernel
-continuation on MSP, saves PSP in `pcb_t.sp`, marks the PCB as a kernel
-continuation, calls the scheduler, reloads MPU/debug state for the incoming
-process, and restores either an incoming kernel continuation or a normal
-Thread/PSP frame.
+From Handler mode (the in-syscall sched_switch case),
+`arch_sched_switch()` calls `arm_kernel_sched_switch()` directly.  It
+pushes the SW frame at the current MSP depth, swaps MSP+PSP between
+PCBs, and pops the incoming frame.  Saved-lr dispatch handles the
+return target: EXC_RETURN for fresh / SysTick-saved processes (unwinds
+through HW frame on PSP into Thread mode); C return address for
+syscall-body callers (continues the syscall body, eventually unwinding
+to SVC normal_return).
 
-If the process is not eligible for the direct blocked-syscall path,
-`arch_sched_switch()` pends PendSV instead.
+From Thread mode (idle yield, kernel-resident subsystem yields like
+`cpm_run_process` reaching `sys_exit`), `arch_sched_switch()` issues
+`svc #0xFF`.  The SVC handler detects the sentinel immediate from the
+stacked PC and calls `arm_kernel_sched_switch()` directly without
+running the syscall dispatch — same shape m68k uses with TRAP #1.
+
+`arch_yield()` from a context that can wait (timer ISR, sched_wakeup
+from a peripheral IRQ) sets `switch_pending`; the SysTick handler
+honors it on its next exit.  Latency is bounded by the tick period.
 
 ## ia16
 
