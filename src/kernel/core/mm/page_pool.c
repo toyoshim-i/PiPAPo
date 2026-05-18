@@ -1,13 +1,13 @@
 /*
- * page_alloc.c — Pure page-allocator core
+ * page_pool.c — Pure page-allocator core
  *
- * See page_alloc.h for the algorithm overview and invariants.  This file
+ * See page_pool.h for the algorithm overview and invariants.  This file
  * contains the address-sorted free-list implementation with no external
  * dependencies — callers (page.c on target, the host test on dev machine)
  * serialize access themselves.
  */
 
-#include "kernel/core/mm/page_alloc.h"
+#include "kernel/core/mm/page_pool.h"
 
 #include <stdint.h>
 
@@ -121,12 +121,12 @@ static int block_insert_or_merge(page_id_t base, uint16_t n) {
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
-void page_alloc_reset(void) {
+void pool_reset(void) {
   free_block_count = 0;
   free_page_total = 0;
 }
 
-int page_alloc_add_range(page_id_t base, uint16_t n) {
+int pool_add(page_id_t base, uint16_t n) {
   if (n == 0) return 0;
   if (free_block_count >= FREE_BLOCKS_MAX) return -1;
   free_blocks[free_block_count].base = base;
@@ -136,7 +136,7 @@ int page_alloc_add_range(page_id_t base, uint16_t n) {
   return 0;
 }
 
-page_id_t page_alloc_n(uint16_t n) {
+page_id_t pool_take_n(uint16_t n) {
   if (n == 0) return PAGE_ID_INVALID;
 
   /* Single-page allocs take the BACK of the HIGHEST-address block
@@ -165,8 +165,8 @@ page_id_t page_alloc_n(uint16_t n) {
   return base;
 }
 
-page_id_t page_alloc_largest(uint16_t min_pages, uint16_t max_pages,
-                             uint16_t *got) {
+page_id_t pool_take_largest(uint16_t min_pages, uint16_t max_pages,
+                            uint16_t *got) {
   if (got) *got = 0;
   if (min_pages == 0 || max_pages < min_pages) return PAGE_ID_INVALID;
 
@@ -188,7 +188,7 @@ page_id_t page_alloc_largest(uint16_t min_pages, uint16_t max_pages,
   return base;
 }
 
-int page_alloc_at_id(page_id_t id) {
+int pool_take_at(page_id_t id) {
   uint32_t idx = block_find_containing(id);
   if (idx == BLOCK_NONE) return -1;
   free_block_t b = free_blocks[idx];
@@ -207,16 +207,16 @@ int page_alloc_at_id(page_id_t id) {
   return 0;
 }
 
-int page_alloc_free_range(page_id_t base, uint16_t n) {
+int pool_release(page_id_t base, uint16_t n) {
   if (n == 0) return 0;
   if (block_insert_or_merge(base, n) < 0) return -1;
   free_page_total += n;
   return 0;
 }
 
-uint32_t page_alloc_free_total(void) { return free_page_total; }
+uint32_t pool_free_total(void) { return free_page_total; }
 
-uint16_t page_alloc_max_contiguous(void) {
+uint16_t pool_max_contig(void) {
   uint16_t best = 0;
   for (uint32_t i = 0; i < free_block_count; i++) {
     if (free_blocks[i].pages > best) best = free_blocks[i].pages;
@@ -224,14 +224,14 @@ uint16_t page_alloc_max_contiguous(void) {
   return best;
 }
 
-int page_alloc_is_free(page_id_t id) {
+int pool_is_free(page_id_t id) {
   return block_find_containing(id) != BLOCK_NONE;
 }
 
 #if defined(PPAP_HOST_TEST)
-uint32_t page_alloc_block_count(void) { return free_block_count; }
+uint32_t pool_block_count(void) { return free_block_count; }
 
-void page_alloc_block_get(uint32_t idx, page_id_t *base, uint16_t *pages) {
+void pool_block_get(uint32_t idx, page_id_t *base, uint16_t *pages) {
   if (idx >= free_block_count) {
     if (base) *base = PAGE_ID_INVALID;
     if (pages) *pages = 0;

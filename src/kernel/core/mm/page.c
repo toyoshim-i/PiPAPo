@@ -28,7 +28,7 @@
 #include "kernel/common/spinlock.h"
 #include "kernel/core/mm/mem_helper.h"
 #include "kernel/core/mm/mem_region.h"
-#include "kernel/core/mm/page_alloc.h"
+#include "kernel/core/mm/page_pool.h"
 #include "kernel/core/panic.h"
 
 /* ── Linker-provided symbols ────────────────────────────────────────────────
@@ -47,10 +47,10 @@ extern char __stack_top;
 
 /* ── Allocator state ────────────────────────────────────────────────────────
  *
- * The actual free-list lives in page_alloc.c; this file wraps it with
+ * The actual free-list lives in page_pool.c; this file wraps it with
  * SPIN_PAGE, OOM/double-free klogf messages, and the memory-map print.
  * The split also lets the pure allocator be unit-tested on the host
- * (tests/host/test_page_alloc.c). */
+ * (tests/host/test_page_pool.c). */
 uint32_t page_count = 0u; /* runtime pool page count (set by mm_init)  */
 uint32_t oom_count = 0u;  /* number of page_alloc() failures */
 
@@ -65,8 +65,8 @@ uint32_t oom_count = 0u;  /* number of page_alloc() failures */
  * op just done. */
 static void page_trace_tail(const char *op, unsigned id, unsigned arg) {
 #if defined(PPAP_PAGE_TRACE) && PPAP_PAGE_TRACE
-  unsigned free_total = (unsigned)page_alloc_free_total();
-  unsigned max_contig = (unsigned)page_alloc_max_contiguous();
+  unsigned free_total = (unsigned)pool_free_total();
+  unsigned max_contig = (unsigned)pool_max_contig();
   mod_vfs.klogf("PAGE: %s id=%u arg=%u free=%u maxc=%u\n", op, id, arg,
                 free_total, max_contig);
 #else
@@ -172,7 +172,7 @@ void mm_init(void) {
    * pages in address order; when we hit a skipped-page boundary, flush
    * the run-in-progress as one add_range() call.  The allocator expects
    * ranges to be sorted ascending, which this loop trivially satisfies. */
-  page_alloc_reset();
+  pool_reset();
   {
     page_id_t run_base = 0;
     uint16_t run_len = 0;
@@ -187,12 +187,12 @@ void mm_init(void) {
         }
         run_len++;
       } else if (run_len > 0) {
-        page_alloc_add_range(run_base, run_len);
+        pool_add(run_base, run_len);
         run_len = 0;
       }
       (void)run_first;
     }
-    if (run_len > 0) page_alloc_add_range(run_base, run_len);
+    if (run_len > 0) pool_add(run_base, run_len);
   }
 
   /* ── Boot-time memory map ─────────────────────────────────────────────── */
@@ -209,7 +209,7 @@ void mm_init(void) {
     mod_vfs.klogf("MM:     .data/.bss:  %lx B used\n",
                   (unsigned long)kern_used);
 
-  uint32_t free_total = page_alloc_free_total();
+  uint32_t free_total = pool_free_total();
   mod_vfs.klogf("MM:   pages   %lx-%lx %lu KB (%u x 4 KB, all free)\n",
                 (unsigned long)pool_base,
                 (unsigned long)(pool_base + page_count * PAGE_SIZE - 1u),
@@ -234,7 +234,7 @@ void mm_init(void) {
 
 void *page_alloc(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  page_id_t id = page_alloc_n(1);
+  page_id_t id = pool_take_n(1);
   if (id == PAGE_ID_INVALID) oom_count++;
   page_trace_tail("alloc1", (unsigned)id, 1);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
@@ -256,7 +256,7 @@ void *page_alloc_at(void *addr) {
   page_id_t target_id = linear_page_id(target);
 
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  int rc = page_alloc_at_id(target_id);
+  int rc = pool_take_at(target_id);
   page_trace_tail(rc == 0 ? "alloc_at" : "alloc_at_FAIL", (unsigned)target_id,
                   1);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
@@ -301,14 +301,14 @@ void page_free(void *page) {
   page_id_t id = linear_page_id(addr);
 
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  if (page_alloc_is_free(id)) {
+  if (pool_is_free(id)) {
     spin_unlock_irqrestore(SPIN_PAGE, saved);
     mod_vfs.klogf("MM: double-free @ %lx (ra=%lx)\n", (unsigned long)addr,
                   (unsigned long)(uintptr_t)__builtin_return_address(0));
     stack_backtrace();
     return;
   }
-  int rc = page_alloc_free_range(id, 1);
+  int rc = pool_release(id, 1);
   page_trace_tail("free1", (unsigned)id, 1);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
   if (rc < 0) {
@@ -321,14 +321,14 @@ uint32_t page_pool_base(void) { return (uint32_t)s_pool_base; }
 
 uint32_t page_free_count(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  uint32_t count = page_alloc_free_total();
+  uint32_t count = pool_free_total();
   spin_unlock_irqrestore(SPIN_PAGE, saved);
   return count;
 }
 
 uint32_t page_max_contiguous(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  uint32_t best = page_alloc_max_contiguous();
+  uint32_t best = pool_max_contig();
   spin_unlock_irqrestore(SPIN_PAGE, saved);
   return best;
 }
@@ -342,7 +342,7 @@ uint8_t *page_alloc_contiguous(uint32_t n_pages) {
 page_id_t mm_page_alloc_contiguous(uint32_t n_pages) {
   if (n_pages == 0 || n_pages > 0xFFFFu) return PAGE_ID_INVALID;
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  page_id_t id = page_alloc_n((uint16_t)n_pages);
+  page_id_t id = pool_take_n((uint16_t)n_pages);
   page_trace_tail("alloc_contig", (unsigned)id, (unsigned)n_pages);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
   return id;
@@ -359,7 +359,7 @@ page_id_t mm_page_alloc_largest_contiguous(uint32_t min_pages,
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
   uint16_t got = 0;
   page_id_t base =
-      page_alloc_largest((uint16_t)min_pages, (uint16_t)max_pages, &got);
+      pool_take_largest((uint16_t)min_pages, (uint16_t)max_pages, &got);
   page_trace_tail("alloc_largest", (unsigned)base, (unsigned)got);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
   if (got_pages) *got_pages = got;
@@ -370,7 +370,7 @@ page_id_t mm_page_alloc_largest_contiguous(uint32_t min_pages,
 
 page_id_t mm_page_alloc(void) {
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  page_id_t id = page_alloc_n(1);
+  page_id_t id = pool_take_n(1);
   if (id == PAGE_ID_INVALID) oom_count++;
   page_trace_tail("alloc1", (unsigned)id, 1);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
@@ -386,12 +386,12 @@ uint32_t mm_page_linear(page_id_t id) {
 void mm_page_free(page_id_t id) {
   if (id == PAGE_ID_INVALID || !pool_page_id_to_index(id, NULL)) return;
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  if (page_alloc_is_free(id)) {
+  if (pool_is_free(id)) {
     spin_unlock_irqrestore(SPIN_PAGE, saved);
     mod_vfs.klogf("MM: double-free page %u\n", (unsigned)id);
     return;
   }
-  int rc = page_alloc_free_range(id, 1);
+  int rc = pool_release(id, 1);
   page_trace_tail("free1", (unsigned)id, 1);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
   if (rc < 0) {

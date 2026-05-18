@@ -322,7 +322,7 @@ set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/core/core.c
   ${PPAP_ROOT}/src/kernel/core/panic.c
   ${PPAP_ROOT}/src/kernel/core/mm/page.c
-  ${PPAP_ROOT}/src/kernel/core/mm/page_alloc.c
+  ${PPAP_ROOT}/src/kernel/core/mm/page_pool.c
   ${PPAP_ROOT}/src/kernel/core/mm/kmem.c
   ${PPAP_ROOT}/src/kernel/core/mm/mem_helper.c
   ${PPAP_ROOT}/src/kernel/core/mm/mem_region.c

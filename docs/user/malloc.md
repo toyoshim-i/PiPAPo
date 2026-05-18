@@ -8,7 +8,7 @@ and a compact heap buys a lot of room back).
 
 > See also: [src/user/lib/alloc.c](/src/user/lib/alloc.c),
 > [tests/host/test_alloc.c](/tests/host/test_alloc.c).
-> Inspired by the kernel's [page_alloc](/src/kernel/core/mm/page_alloc.c)
+> Inspired by the kernel's [page_pool](/src/kernel/core/mm/page_pool.c)
 > policy (address-sorted free list, best-fit, always-coalesced on
 > free) but with metadata stored inline in the pool rather than in
 > an external array — appropriate when caller-owned storage is a
@@ -88,7 +88,7 @@ zero overhead beyond the 4-byte header**.
 
 ## Algorithm
 
-### Invariants (mirrored from `page_alloc`)
+### Invariants (mirrored from `page_pool`)
 
 - The free list is sorted by address, ascending.
 - No two free blocks are physically adjacent — every `free`
@@ -129,7 +129,7 @@ zero overhead beyond the 4-byte header**.
 
 The "sorted-list implies physical neighbors" property makes
 backward coalesce O(1) once the insertion point is known — same
-trick `page_alloc` uses with its run table.
+trick `page_pool` uses with its run table.
 
 ## Limits
 

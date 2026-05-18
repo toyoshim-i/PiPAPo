@@ -152,7 +152,13 @@ collapsing the abstractions.
 
 ## Phased plan
 
-Each phase is independently buildable and testable.  Land in order.
+Land in order: **M-1 → M-4 → M-2 → M-3**.  M-4 is moved ahead of
+M-2 because the pool core already exports `page_alloc_n` and
+`page_alloc_largest`; M-2 wants the same names at the wrapper layer,
+and `page.c` includes both headers, so the rename in M-2 only
+compiles cleanly after the pool core has been renamed away from
+those names by M-4.  Other than that, each phase is independently
+buildable and testable.
 
 ### Phase M-1 — split `mem_layout.h`
 
@@ -318,7 +324,7 @@ wrapper in name as well as in role.
 1. Rename file and `page_alloc_*` symbols to `pool_*`:
    - `page_alloc_reset` → `pool_reset`
    - `page_alloc_add_range` → `pool_add`
-   - `page_alloc_n` → `pool_take` (or `pool_take_n`)
+   - `page_alloc_n` → `pool_take_n`
    - `page_alloc_largest` → `pool_take_largest`
    - `page_alloc_at_id` → `pool_take_at`
    - `page_alloc_free_range` → `pool_release`
@@ -375,6 +381,8 @@ wrapper in name as well as in role.
 
 ## Status
 
-Not started.  Land phases in M-1 → M-2 → M-3 → M-4 order.  No phase
-can be merged out of order without re-introducing the layering smell
-the next phase removes.
+M-1 landed in `b61b9a92`.  Remaining order is **M-4 → M-2 → M-3**
+(see top of "Phased plan" section for why M-4 moves ahead of M-2).
+No phase can be merged out of order without either a compile-time
+name collision (M-2 before M-4) or re-introducing the layering smell
+the next phase removes (M-3 before M-2).

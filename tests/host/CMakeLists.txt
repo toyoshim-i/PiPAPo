@@ -38,15 +38,15 @@ target_include_directories(test_alloc PRIVATE
     ${SRC} ${SRC}/user ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME alloc COMMAND test_alloc)
 
-# ── test_page_alloc ────────────────────────────────────────────────────────
-# page_alloc.c is the pure allocator core — no locking, klogf, or hardware
+# ── test_page_pool ────────────────────────────────────────────────────────
+# page_pool.c is the pure allocator core — no locking, klogf, or hardware
 # probes.  Factored out of page.c so it can be unit-tested on the host.
-add_executable(test_page_alloc
-    ${SRC}/kernel/core/mm/page_alloc.c
-    test_page_alloc.c
+add_executable(test_page_pool
+    ${SRC}/kernel/core/mm/page_pool.c
+    test_page_pool.c
 )
-target_include_directories(test_page_alloc PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
-add_test(NAME page_alloc COMMAND test_page_alloc)
+target_include_directories(test_page_pool PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME page_pool COMMAND test_page_pool)
 
 # ── test_h68k_path ──────────────────────────────────────────────────────────
 # Disabled: test references h68k_util.h / h68k_translate_path symbols that
