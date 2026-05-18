@@ -34,8 +34,10 @@ int mem_helper_init_arenas(void);
  * untouched.  Targets that allocate the pool from a runtime heap
  * override this to fill *base_out with the aligned pool base and
  * write to page_count via the shared global.  Returns 0 on success
- * or -errno on out-of-memory. */
-int mem_helper_init_pool(uintptr_t *base_out);
+ * or -errno on out-of-memory.  *base_out is uint32_t (not uintptr_t)
+ * because on ia16 uintptr_t is the 16-bit near-pointer type and the
+ * linear pool base can sit above 64 KB. */
+int mem_helper_init_pool(uint32_t *base_out);
 
 /* mem_region_alloc dispatch hook.  Return 0 if the request was
  * handled and *out filled, -ENOSYS to fall through to the generic

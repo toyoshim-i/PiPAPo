@@ -14,7 +14,7 @@
 
 __attribute__((weak)) int mem_helper_init_arenas(void) { return 0; }
 
-__attribute__((weak)) int mem_helper_init_pool(uintptr_t *base_out) {
+__attribute__((weak)) int mem_helper_init_pool(uint32_t *base_out) {
   (void)base_out;
   return 0;
 }

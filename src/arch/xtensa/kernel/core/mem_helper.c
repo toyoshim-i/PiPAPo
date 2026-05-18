@@ -278,7 +278,7 @@ int mem_helper_init_arenas(void) {
   return 0;
 }
 
-int mem_helper_init_pool(uintptr_t *base_out) {
+int mem_helper_init_pool(uint32_t *base_out) {
   const uint32_t caps = MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL;
   uint32_t free_before = (uint32_t)heap_caps_get_free_size(caps);
   uint32_t want = PAGE_COUNT_MAX;

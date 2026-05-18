@@ -121,8 +121,11 @@ static int pool_page_id_to_index(page_id_t id, uint32_t *index) {
 /* Aligned base of the runtime page pool.  Set during mm_init: for
  * targets with a fixed/linker-located pool this stays at PAGE_POOL_BASE;
  * targets that allocate the pool at boot overwrite it through
- * mem_helper_init_pool. */
-static uintptr_t s_pool_base;
+ * mem_helper_init_pool.  Must be uint32_t — on ia16 the page pool can
+ * sit above 64 KB (linear address space > 16 bits) and uintptr_t there
+ * is the 16-bit near-pointer type, which would silently truncate the
+ * upper half of the base address. */
+static uint32_t s_pool_base;
 
 void mm_init(void) {
   uintptr_t bss_end = (uintptr_t)&__bss_end;
