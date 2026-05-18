@@ -218,7 +218,7 @@ static void proc_release_stack_page(void **page) {
   *page = NULL;
 }
 
-#if defined(__m68k__) || defined(__xtensa__)
+#if defined(__xtensa__)
 /* Allocate a user-stack copy for a vfork child.
  *
  * The child must have its own user stack page.  Without this, the
@@ -241,7 +241,7 @@ static int vfork_copy_user_stack(void *parent_ustack, uint32_t parent_usp,
   *usp_out = (uint32_t)(uintptr_t)child_ustack + usp_off;
   return 0;
 }
-#endif /* __m68k__ || __xtensa__ */
+#endif /* __xtensa__ */
 
 static void trace_clear_swbp(pcb_t *target);
 static void trace_clear_hwbp(pcb_t *target);
@@ -1755,7 +1755,16 @@ long sys_vfork(uint32_t *frame) {
    *
    * frame = &regs[1] (d1 slot).  Copy the live frame range from the
    * parent's fixed kstack to the child's fixed kstack at the same top
-   * distance, then patch the child's d0/a5 slots. */
+   * distance, then patch the child's d0/a5 slots.
+   *
+   * No-copy vfork: the child shares the parent's user_stack_page.  m68k
+   * trap #0 pushes nothing on USP, and the vfork stub pushes nothing
+   * either, but the parent's bsr-pushed return address (4 bytes at
+   * parent->usp+0..3) is exactly the address the child's first execve-arg
+   * push writes to.  m68k_vfork_save_parent_frame() saves those 4 bytes
+   * so m68k_vfork_restore_frame() can put them back before the parent's
+   * next user-mode rte.  a6 (frame pointer) stays valid because parent
+   * and child point at the same user_stack_page — no remap. */
   uint32_t *parent_regs = frame - 1; /* d0 slot */
   uintptr_t parent_top = (uintptr_t)current->kernel_sp;
   uintptr_t parent_base = (uintptr_t)parent_regs;
@@ -1767,33 +1776,10 @@ long sys_vfork(uint32_t *frame) {
   child_regs[13] = current->got_base; /* a5 = GOT base for PIC */
 
   child->sp = (uint32_t)(uintptr_t)child_regs;
+  child->user_stack_page = current->user_stack_page;
+  child->usp = current->usp;
 
-  /* m68k user mode: USP points to a user_stack_page (separate from
-   * stack_page / SSP).  The child must have its own user stack copy. */
-  {
-    void *parent_ustack = current->user_stack_page;
-    if (parent_ustack) {
-      void *child_ustack = NULL;
-      uint32_t child_usp = 0;
-      if (vfork_copy_user_stack(parent_ustack, current->usp, &child_ustack,
-                                &child_usp) < 0) {
-        proc_free(child);
-        return -(long)ENOMEM;
-      }
-      child->user_stack_page = child_ustack;
-      child->usp = child_usp;
-
-      /* Patch a6 (frame pointer) if it points into the user stack */
-      uint32_t parent_base = (uint32_t)(uintptr_t)parent_ustack;
-      uint32_t child_base = (uint32_t)(uintptr_t)child_ustack;
-      if (child_regs[14] >= parent_base &&
-          child_regs[14] < parent_base + PAGE_SIZE) {
-        child_regs[14] += child_base - parent_base;
-      }
-    } else {
-      child->usp = current->usp;
-    }
-  }
+  m68k_vfork_save_parent_frame(current);
 #elif defined(__riscv)
   /* RISC-V: The ecall trap frame (36 words) lives on the parent's fixed
    * kernel stack.  Copy that frame into the child's fixed kstack slot and

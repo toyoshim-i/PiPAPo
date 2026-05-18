@@ -238,3 +238,24 @@ uint32_t *arch_build_initial_frame_kernel(uint32_t *sp, void (*entry)(void)) {
   for (int i = 0; i < 15; i++) *--sp = 0u;
   return sp;
 }
+
+/* ── vfork parent-resume hooks ─────────────────────────────────────────────
+ *
+ * The m68k vfork stub pushes nothing on USP, but the parent's bsr-pushed
+ * return address (4 bytes at parent's USP+0..3) is exactly the address the
+ * child's first execve-setup push writes to.  Save those 4 bytes during
+ * sys_vfork and restore them on every user-mode rte that could resume the
+ * parent.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+void m68k_vfork_save_parent_frame(struct pcb *parent) {
+  parent->vfork_saved_ra = *(volatile uint32_t *)(uintptr_t)parent->usp;
+  parent->vfork_frame_saved = 1;
+}
+
+void m68k_vfork_restore_frame(void) {
+  pcb_t *p = current;
+  if (!p || !p->vfork_frame_saved) return;
+  p->vfork_frame_saved = 0;
+  *(volatile uint32_t *)(uintptr_t)p->usp = p->vfork_saved_ra;
+}

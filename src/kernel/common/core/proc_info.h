@@ -119,6 +119,8 @@ typedef struct pcb {
   uint32_t sp;                 /* saved SSP               (offset 44)      */
   uint32_t usp;                /* saved USP               (offset 48)      */
   uint32_t kernel_sp;          /* fixed kernel-stack top  (offset 52)      */
+  uint32_t vfork_saved_ra;     /* parent's user-stack ra at vfork-trap;
+                                  restored before parent returns to user   */
 #elif defined(__riscv)
   uint32_t s0, s1;         /* callee-saved (offsets 0-7)               */
   uint32_t s2, s3, s4, s5; /* callee-saved (offsets 8-23)              */
@@ -174,13 +176,15 @@ typedef struct pcb {
   uint8_t is_idle;          /* 1 = idle thread (ticks count as idle)      */
 
   /* ── vfork / waitpid ──────────────────────────────────────────────── */
-  struct pcb *vfork_parent; /* non-NULL while child shares parent's space */
-#if defined(__ia16__)
-  uint8_t vfork_frame_saved; /* 1 if 24B GP+IRET frame saved on kstack */
-#endif
-  int exit_status;    /* set by _exit(), read by waitpid()          */
-  uintptr_t got_base; /* r9 value (GOT SRAM address) for PIC       */
-  void *wait_channel; /* sleep/wakeup target (e.g. pipe_t*)        */
+  struct pcb *vfork_parent;  /* non-NULL while child shares parent's space */
+  uint8_t vfork_frame_saved; /* 1 if a parent-resume slice was saved during
+                                vfork and must be restored before this PCB
+                                returns to user mode.  The saved slice size
+                                and storage are arch-specific (see Phase 0
+                                in docs/proposals/no_stack_copy_on_vfork.md). */
+  int exit_status;           /* set by _exit(), read by waitpid()          */
+  uintptr_t got_base;        /* r9 value (GOT SRAM address) for PIC       */
+  void *wait_channel;        /* sleep/wakeup target (e.g. pipe_t*)        */
 
   /* ── Heap (brk) ──────────────────────────────────────────────────── */
   uintptr_t brk_base;    /* initial break = end of .data+.bss         */

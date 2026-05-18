@@ -90,6 +90,11 @@ m68k_trap0_handler:
     | Return value is already in regs[0] (d0 slot on stack),
     | written by m68k_syscall_entry.
 
+    | Restore any saved vfork-parent slice before user-mode rte.
+    | No-op unless current->vfork_frame_saved (set in sys_vfork for the
+    | parent only); see docs/proposals/no_stack_copy_on_vfork.md.
+    jsr     m68k_vfork_restore_frame
+
     | Restore all registers (d0 now contains return value)
     movem.l %sp@+,%d0-%d7/%a0-%a6
 
@@ -118,6 +123,11 @@ m68k_trap0_handler:
     jsr     m68k_ctx_switch
 
 .Lexec_return:
+    | Defensive restore — current is normally the child (post-execve),
+    | which has vfork_frame_saved == 0, so this is a no-op.  Kept on
+    | every user-mode rte path to honor the Phase 0 invariant.
+    jsr     m68k_vfork_restore_frame
+
     | Restore all registers from the new frame and return
     movem.l %sp@+,%d0-%d7/%a0-%a6
     rte

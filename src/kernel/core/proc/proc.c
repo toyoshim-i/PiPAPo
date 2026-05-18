@@ -426,16 +426,18 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
 /* Privileged-mode entry — same layout as proc_setup_stack with
  * user_sp = 0, but routed through arch_build_initial_frame_kernel so
  * the restored privilege level matches a kernel-mode entry point. */
-void proc_setup_kernel_stack(pcb_t *p, void (*entry)(void)) {
-  uint32_t *sp;
-
 #if defined(__ia16__)
+void proc_setup_kernel_stack(pcb_t *p, void (*entry)(void)) {
   /* i16 has no privilege separation; CP/M / S-OS are not wired up on
    * pcxt today, so no kernel-mode subsystem entry hits this path. */
   (void)p;
   (void)entry;
-  return;
-#elif defined(__riscv)
+}
+#else
+void proc_setup_kernel_stack(pcb_t *p, void (*entry)(void)) {
+  uint32_t *sp;
+
+#if defined(__riscv)
   sp = (uint32_t *)(uintptr_t)p->kernel_sp;
   sp = arch_build_initial_frame_kernel(sp, entry);
   sp[32] = 0u; /* TF_USER_SP — unused for kernel-mode entry */
@@ -473,6 +475,7 @@ void proc_setup_kernel_stack(pcb_t *p, void (*entry)(void)) {
 
   p->ticks_remaining = PROC_DEFAULT_TICKS;
 }
+#endif /* __ia16__ */
 
 /* Default: same frame as arch_build_initial_frame.  Archs that need a
  * privileged-mode entry frame (rv32, m68k) override this with a strong

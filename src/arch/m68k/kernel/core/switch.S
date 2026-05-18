@@ -115,6 +115,9 @@ m68k_trace_handler:
     jsr     m68k_ctx_switch
 
 .Ltrace_no_switch:
+    | Restore vfork parent slice on every user-mode rte path.
+    jsr     m68k_vfork_restore_frame
+
     | Restore all registers and return from exception
     movem.l %sp@+,%d0-%d7/%a0-%a6
     rte
@@ -153,6 +156,9 @@ m68k_timer_isr:
     jsr     m68k_ctx_switch
 
 .Lno_switch:
+    | Restore vfork parent slice on every user-mode rte path.
+    jsr     m68k_vfork_restore_frame
+
     | Restore all registers
     movem.l %sp@+,%d0-%d7/%a0-%a6
 
