@@ -126,7 +126,7 @@ static int cpm_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
     return -(int)ENOMEM;
   }
 
-  if (proc_track_page_range(p, 0, mem_region_ptr_to_page(data_region.base),
+  if (proc_track_page_range(p, 0, page_from_ptr(data_region.base),
                             data_region.size / PAGE_SIZE) < 0) {
     mem_region_free(&data_region);
     mem_region_free(&staging);
@@ -144,7 +144,7 @@ static int cpm_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
     mem_region_free(&staging);
     return -(int)ENOMEM;
   }
-  p->stack_page_id = mem_region_ptr_to_page(stack_region.base);
+  p->stack_page_id = page_from_ptr(stack_region.base);
   p->image.stack = stack_region;
 
   /* ── 3. Initialize Z80 emulator ────────────────────────────────────── */

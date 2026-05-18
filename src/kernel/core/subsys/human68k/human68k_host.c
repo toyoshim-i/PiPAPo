@@ -27,9 +27,9 @@ int human68k_build_env(const exec_args_t *args, page_id_t *out_env_page,
     return 0;
   }
 
-  page_id_t pg = mem_region_page_alloc();
+  page_id_t pg = page_alloc();
   if (pg == PAGE_ID_INVALID) return -(int)ENOMEM;
-  uint8_t *p = (uint8_t *)mem_region_page_to_ptr(pg);
+  uint8_t *p = (uint8_t *)page_to_ptr(pg);
   memset(p, 0, PAGE_SIZE);
 
   /* Payload starts after the 4-byte BE size header.  Fit up to

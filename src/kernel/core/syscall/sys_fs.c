@@ -25,7 +25,7 @@ static int sys_copy_path(char *dst, size_t dst_size, page_id_t page,
                          uint16_t off) {
   user_page_ref_t ref = {.page = page, .off = off};
   for (size_t i = 0; i < dst_size; i++) {
-    mem_region_page_read(ref.page, ref.off, &dst[i], 1);
+    page_read(ref.page, ref.off, &dst[i], 1);
     if (dst[i] == '\0') return 0;
     if (++ref.off >= PAGE_SIZE) {
       ref.page++;

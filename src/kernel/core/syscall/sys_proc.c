@@ -106,7 +106,7 @@ static int exec_snapshot_segment_contains_page_id(page_id_t snapshot_page,
 
   if (snapshot_page == PAGE_ID_INVALID) return 0;
   if (page_id == PAGE_ID_INVALID) return 0;
-  mem_region_page_read(snapshot_page, seg_off, &seg, sizeof(seg));
+  page_read(snapshot_page, seg_off, &seg, sizeof(seg));
   return image_segment_contains_page_id(&seg, page_id);
 }
 
@@ -146,31 +146,29 @@ static int exec_snapshot_save(page_id_t *snapshot_page, const pcb_t *p) {
   page_id_t page;
 
   if (!snapshot_page || !p) return -(int)EINVAL;
-  page = mem_region_page_alloc();
+  page = page_alloc();
   if (page == PAGE_ID_INVALID) return -(int)ENOMEM;
 
-  mem_region_page_write(page, EXEC_SNAPSHOT_IMAGE_OFF, &p->image,
-                        sizeof(p->image));
-  mem_region_page_write(page, EXEC_SNAPSHOT_USER_OFF, p->user_pages,
-                        sizeof(p->user_pages));
+  page_write(page, EXEC_SNAPSHOT_IMAGE_OFF, &p->image, sizeof(p->image));
+  page_write(page, EXEC_SNAPSHOT_USER_OFF, p->user_pages,
+             sizeof(p->user_pages));
   *snapshot_page = page;
   return 0;
 }
 
 static void exec_snapshot_restore(page_id_t snapshot_page, pcb_t *p) {
   if (snapshot_page == PAGE_ID_INVALID || !p) return;
-  mem_region_page_read(snapshot_page, EXEC_SNAPSHOT_IMAGE_OFF, &p->image,
-                       sizeof(p->image));
-  mem_region_page_read(snapshot_page, EXEC_SNAPSHOT_USER_OFF, p->user_pages,
-                       sizeof(p->user_pages));
+  page_read(snapshot_page, EXEC_SNAPSHOT_IMAGE_OFF, &p->image,
+            sizeof(p->image));
+  page_read(snapshot_page, EXEC_SNAPSHOT_USER_OFF, p->user_pages,
+            sizeof(p->user_pages));
 }
 
 static void exec_snapshot_release_owned_segments(page_id_t snapshot_page) {
   proc_image_t image;
 
   if (snapshot_page == PAGE_ID_INVALID) return;
-  mem_region_page_read(snapshot_page, EXEC_SNAPSHOT_IMAGE_OFF, &image,
-                       sizeof(image));
+  page_read(snapshot_page, EXEC_SNAPSHOT_IMAGE_OFF, &image, sizeof(image));
   image_release_owned_segments(&image);
 }
 
@@ -180,13 +178,12 @@ static void exec_snapshot_release_tracked_pages(page_id_t snapshot_page) {
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     page_id_t page_id;
 
-    mem_region_page_read(
-        snapshot_page,
-        (uint16_t)(EXEC_SNAPSHOT_USER_OFF + i * sizeof(page_id_t)), &page_id,
-        sizeof(page_id));
+    page_read(snapshot_page,
+              (uint16_t)(EXEC_SNAPSHOT_USER_OFF + i * sizeof(page_id_t)),
+              &page_id, sizeof(page_id));
     if (page_id == PAGE_ID_INVALID) continue;
     if (exec_snapshot_contains_owned_page_id(snapshot_page, page_id)) continue;
-    mem_region_page_free(page_id);
+    page_free(page_id);
   }
 }
 
@@ -197,14 +194,13 @@ static void exec_snapshot_release_private_tracked_pages(
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     page_id_t page_id;
 
-    mem_region_page_read(
-        snapshot_page,
-        (uint16_t)(EXEC_SNAPSHOT_USER_OFF + i * sizeof(page_id_t)), &page_id,
-        sizeof(page_id));
+    page_read(snapshot_page,
+              (uint16_t)(EXEC_SNAPSHOT_USER_OFF + i * sizeof(page_id_t)),
+              &page_id, sizeof(page_id));
     if (page_id == PAGE_ID_INVALID) continue;
     if (shared && shared[i] == page_id) continue;
     if (exec_snapshot_contains_owned_page_id(snapshot_page, page_id)) continue;
-    mem_region_page_free(page_id);
+    page_free(page_id);
   }
 }
 
@@ -585,8 +581,7 @@ static int trace_native_contains(const pcb_t *target, uint32_t addr) {
   }
 #if !defined(__ia16__)
   if (target->stack_page_id != PAGE_ID_INVALID) {
-    uint32_t base =
-        (uint32_t)(uintptr_t)mem_region_page_to_ptr(target->stack_page_id);
+    uint32_t base = (uint32_t)(uintptr_t)page_to_ptr(target->stack_page_id);
     if (addr >= base && addr < base + PAGE_SIZE) return 1;
   }
 #endif
@@ -1518,7 +1513,7 @@ long sys_exit(long status) {
 #if !defined(__ia16__)
     if (current->stack_page_id != PAGE_ID_INVALID &&
         proc_page_backed_contains(
-            current, (uintptr_t)mem_region_page_to_ptr(current->stack_page_id)))
+            current, (uintptr_t)page_to_ptr(current->stack_page_id)))
       current->stack_page_id = PAGE_ID_INVALID;
 #endif
     proc_release_tracked_pages(current, 0, USER_PAGES_MAX);
@@ -1640,7 +1635,7 @@ long sys_vfork(uint32_t *frame) {
 
     /* Compute the user frame's page location */
     uint32_t frame_linear = (uint32_t)parent_user_ss * 16 + parent_user_sp;
-    uint32_t data_base = mem_region_page_linear(current->image.data.base_page);
+    uint32_t data_base = page_linear(current->image.data.base_page);
     uint32_t rel = frame_linear - data_base;
     page_id_t frame_page =
         current->image.data.base_page + (page_id_t)(rel / PAGE_SIZE);
@@ -1660,7 +1655,7 @@ long sys_vfork(uint32_t *frame) {
      * Patch the AX slot (offset 16) with child PID so the parent
      * sees the correct vfork return value when the frame is restored. */
     uint8_t saved_frame[34];
-    mem_region_page_read(frame_page, frame_page_off, saved_frame, 34);
+    page_read(frame_page, frame_page_off, saved_frame, 34);
     uint16_t child_pid16 = (uint16_t)child->pid;
     saved_frame[16] = (uint8_t)(child_pid16 & 0xFF);
     saved_frame[17] = (uint8_t)(child_pid16 >> 8);
@@ -1684,7 +1679,7 @@ long sys_vfork(uint32_t *frame) {
     page_id_t ax_page =
         current->image.data.base_page + (page_id_t)(ax_rel / PAGE_SIZE);
     uint16_t ax_off = ax_rel % PAGE_SIZE;
-    mem_region_page_write(ax_page, ax_off, &zero, 2);
+    page_write(ax_page, ax_off, &zero, 2);
   }
 #elif defined(__m68k__)
   /* m68k: The TRAP #0 frame (15 regs + SR + PC) has the same layout as
@@ -1927,10 +1922,10 @@ long sys_waitpid(long pid, long status_ptr, long options) {
       /* Free zombie's stack page */
       if (zombie->stack_page_id != PAGE_ID_INVALID) {
 #if defined(__ia16__)
-        mem_region_page_free(zombie->stack_page_id);
+        page_free(zombie->stack_page_id);
 #else
         {
-          void *zs = mem_region_page_to_ptr(zombie->stack_page_id);
+          void *zs = page_to_ptr(zombie->stack_page_id);
           proc_release_stack_page(&zs);
         }
 #endif
@@ -2003,8 +1998,8 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
 
   /* Allocate a single page from the data region for the captured
    * (path, argv, envp) payload.  All access goes through
-   * mem_region_page_read/write, so the same code runs on 32-bit and ia16. */
-  page_id_t args_page = mem_region_page_alloc();
+   * page_read/write, so the same code runs on 32-bit and ia16. */
+  page_id_t args_page = page_alloc();
   if (args_page == PAGE_ID_INVALID) return -(long)ENOMEM;
   exec_args_init(&args, args_page);
 
@@ -2015,9 +2010,8 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
     uint16_t i;
     for (i = 0; i < VFS_PATH_MAX; i++) {
       uint8_t c;
-      mem_region_page_read(pref.page, pref.off, &c, 1);
-      mem_region_page_write(args_page, (uint16_t)(EXEC_ARGS_PATH_OFF + i), &c,
-                            1);
+      page_read(pref.page, pref.off, &c, 1);
+      page_write(args_page, (uint16_t)(EXEC_ARGS_PATH_OFF + i), &c, 1);
       if (c == 0) break;
       if (++pref.off >= PAGE_SIZE) {
         pref.page++;
@@ -2025,19 +2019,19 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
       }
     }
     if (i >= VFS_PATH_MAX) {
-      mem_region_page_free(args_page);
+      page_free(args_page);
       return -(long)ENAMETOOLONG;
     }
   }
 
   int rc = sys_execve_copy_user_vec(&args, argv_ptr, /*is_envp=*/0);
   if (rc < 0) {
-    mem_region_page_free(args_page);
+    page_free(args_page);
     return (long)rc;
   }
   rc = sys_execve_copy_user_vec(&args, envp_ptr, /*is_envp=*/1);
   if (rc < 0) {
-    mem_region_page_free(args_page);
+    page_free(args_page);
     return (long)rc;
   }
 
@@ -2050,17 +2044,17 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
     uint16_t dst_max;
     rc = exec_args_argv_begin(&args, &dst_page, &dst_off, &dst_max);
     if (rc < 0) {
-      mem_region_page_free(args_page);
+      page_free(args_page);
       return (long)rc;
     }
     int plen = exec_args_path_to_page(&args, dst_page, dst_off, dst_max);
     if (plen < 0) {
-      mem_region_page_free(args_page);
+      page_free(args_page);
       return (long)plen;
     }
     rc = exec_args_argv_commit(&args, (uint16_t)plen);
     if (rc < 0) {
-      mem_region_page_free(args_page);
+      page_free(args_page);
       return (long)rc;
     }
   }
@@ -2070,7 +2064,7 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
   int owns_pages = (current->vfork_parent == NULL);
   rc = exec_snapshot_save(&exec_snapshot, current);
   if (rc < 0) {
-    mem_region_page_free(args_page);
+    page_free(args_page);
     return (long)rc;
   }
   void *old_user_stack = current->user_stack_page;
@@ -2090,13 +2084,13 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
     current->stack_page_id = old_stack_id;
     exec_snapshot_restore(exec_snapshot, current);
     current->user_stack_page = old_user_stack;
-    mem_region_page_free(exec_snapshot);
-    mem_region_page_free(args_page);
+    page_free(exec_snapshot);
+    page_free(args_page);
     return (long)err;
   }
   /* exec_execve has consumed args; release the page before we wire up
    * the rest of the new image. */
-  mem_region_page_free(args_page);
+  page_free(args_page);
 
   /* POSIX: preserve open fds across execve (redirections, pipes).
    * Only install default tty stdio if fd 0/1/2 are not already open
@@ -2113,10 +2107,10 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
    * storage. ARM also runs kernel continuations on MSP, so the old PSP page
    * can be freed immediately. */
 #if defined(__ia16__)
-  if (old_stack_id != PAGE_ID_INVALID) mem_region_page_free(old_stack_id);
+  if (old_stack_id != PAGE_ID_INVALID) page_free(old_stack_id);
 #else
   if (old_stack_id != PAGE_ID_INVALID) {
-    void *os = mem_region_page_to_ptr(old_stack_id);
+    void *os = page_to_ptr(old_stack_id);
     proc_release_stack_page(&os);
   }
 #endif
@@ -2133,7 +2127,7 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
     exec_snapshot_release_private_tracked_pages(
         exec_snapshot, current->vfork_parent->user_pages);
   }
-  mem_region_page_free(exec_snapshot);
+  page_free(exec_snapshot);
 
   /* Unblock vfork parent — we have our own pages now */
   if (current->vfork_parent) {

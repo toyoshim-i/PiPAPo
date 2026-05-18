@@ -209,7 +209,7 @@ static int sd_blk_read(struct blkdev *dev, page_id_t page, uint16_t off,
     uint32_t addr = sd_sdhc ? raw_sector : raw_sector * BLKDEV_SECTOR_SIZE;
     int rc = sd_read_sector(addr, buf);
     if (rc < 0) return rc;
-    mod_core.mem_region_page_write(page, off, buf, BLKDEV_SECTOR_SIZE);
+    mod_core.page_write(page, off, buf, BLKDEV_SECTOR_SIZE);
     off += BLKDEV_SECTOR_SIZE;
   }
   return 0;
@@ -223,7 +223,7 @@ static int sd_blk_write(struct blkdev *dev, page_id_t page, uint16_t off,
   for (uint32_t i = 0; i < count; i++) {
     uint32_t raw_sector = sd_part_lba + sector + i;
     uint32_t addr = sd_sdhc ? raw_sector : raw_sector * BLKDEV_SECTOR_SIZE;
-    mod_core.mem_region_page_read(page, off, buf, BLKDEV_SECTOR_SIZE);
+    mod_core.page_read(page, off, buf, BLKDEV_SECTOR_SIZE);
     int rc = sd_write_sector(addr, buf);
     if (rc < 0) return rc;
     off += BLKDEV_SECTOR_SIZE;

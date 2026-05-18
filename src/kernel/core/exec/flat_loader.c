@@ -80,7 +80,7 @@ static int flat_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
 
   /* Zero the remaining stack area after the binary. */
   if (file_size < PAGE_SIZE)
-    mem_region_page_zero(pid, (uint16_t)file_size, PAGE_SIZE - file_size);
+    page_zero(pid, (uint16_t)file_size, PAGE_SIZE - file_size);
 
   if (proc_track_page(p, 0, pid) < 0) {
     page_free(pid);

@@ -66,8 +66,8 @@ static long devzero_read(page_id_t page, uint16_t page_off, size_t n,
   while (written < (uint16_t)n) {
     uint16_t zero_len = (uint16_t)n - written;
     if (zero_len > sizeof(zero_chunk)) zero_len = sizeof(zero_chunk);
-    mod_core.mem_region_page_write(page, (uint16_t)(page_off + written),
-                                   zero_chunk, zero_len);
+    mod_core.page_write(page, (uint16_t)(page_off + written), zero_chunk,
+                        zero_len);
     written = (uint16_t)(written + zero_len);
   }
   return (long)n;
@@ -84,7 +84,7 @@ static long devtty_read(page_id_t page, uint16_t page_off, size_t n,
     int c = tty_raw_getc(TTY_SERIAL);
     if (c < 0) break; /* no more data available */
     uint8_t ch = (uint8_t)c;
-    mod_core.mem_region_page_write(page, page_off, &ch, 1);
+    mod_core.page_write(page, page_off, &ch, 1);
     count++;
     page_off++;
   }
@@ -96,7 +96,7 @@ static long devtty_write(page_id_t page, uint16_t page_off, size_t n,
   (void)off;
   for (size_t i = 0; i < n; i++) {
     uint8_t ch;
-    mod_core.mem_region_page_read(page, page_off, &ch, 1);
+    mod_core.page_read(page, page_off, &ch, 1);
     tty_raw_putc(TTY_SERIAL, (char)ch, NULL);
     page_off++;
   }
@@ -145,7 +145,7 @@ static long devrandom_read(page_id_t page, uint16_t page_off, size_t n,
   (void)off;
   for (size_t i = 0; i < n; i++) {
     uint8_t ch = random_byte();
-    mod_core.mem_region_page_write(page, page_off, &ch, 1);
+    mod_core.page_write(page, page_off, &ch, 1);
     page_off++;
   }
   return (long)n;
@@ -178,8 +178,7 @@ static long devbacklight_read(page_id_t page, uint16_t page_off, size_t n,
   if (off >= (uint32_t)len) return 0;
   size_t remaining = (size_t)(len - (int)off);
   if (remaining > n) remaining = n;
-  mod_core.mem_region_page_write(page, page_off, tmp + off,
-                                 (uint16_t)remaining);
+  mod_core.page_write(page, page_off, tmp + off, (uint16_t)remaining);
   return (long)remaining;
 }
 
@@ -192,7 +191,7 @@ static long devbacklight_write(page_id_t page, uint16_t page_off, size_t n,
   int digits = 0;
   for (size_t i = 0; i < n; i++) {
     uint8_t ch;
-    mod_core.mem_region_page_read(page, page_off, &ch, 1);
+    mod_core.page_read(page, page_off, &ch, 1);
     if (ch >= '0' && ch <= '9') {
       val = val * 10 + (uint32_t)(ch - '0');
       digits++;
@@ -222,8 +221,7 @@ static long devpower_read(page_id_t page, uint16_t page_off, size_t n,
   if (off >= (uint32_t)len) return 0;
   size_t remaining = (size_t)(len - (int)off);
   if (remaining > n) remaining = n;
-  mod_core.mem_region_page_write(page, page_off, msg + off,
-                                 (uint16_t)remaining);
+  mod_core.page_write(page, page_off, msg + off, (uint16_t)remaining);
   return (long)remaining;
 }
 
@@ -233,11 +231,9 @@ static long devpower_write(page_id_t page, uint16_t page_off, size_t n,
   (void)off;
   if (!power_hw_off) return -(long)ENODEV;
   uint8_t p0 = 0, p1 = 0, p2 = 0;
-  if (n >= 1) mod_core.mem_region_page_read(page, page_off, &p0, 1);
-  if (n >= 2)
-    mod_core.mem_region_page_read(page, (uint16_t)(page_off + 1), &p1, 1);
-  if (n >= 3)
-    mod_core.mem_region_page_read(page, (uint16_t)(page_off + 2), &p2, 1);
+  if (n >= 1) mod_core.page_read(page, page_off, &p0, 1);
+  if (n >= 2) mod_core.page_read(page, (uint16_t)(page_off + 1), &p1, 1);
+  if (n >= 3) mod_core.page_read(page, (uint16_t)(page_off + 2), &p2, 1);
   /* Accept "off", "off\n", "0", "0\n" */
   if ((n >= 3 && p0 == 'o' && p1 == 'f' && p2 == 'f') ||
       (n >= 1 && p0 == '0')) {

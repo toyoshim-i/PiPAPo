@@ -138,13 +138,13 @@ int exec_execve(pcb_t *p, const exec_args_t *args) {
 }
 
 int exec_execve_simple(pcb_t *p, const char *path) {
-  page_id_t args_page = mem_region_page_alloc();
+  page_id_t args_page = page_alloc();
   if (args_page == PAGE_ID_INVALID) return -(int)ENOMEM;
   exec_args_t args;
   exec_args_init(&args, args_page);
   int rc = exec_args_set_path(&args, path);
   if (rc < 0) {
-    mem_region_page_free(args_page);
+    page_free(args_page);
     return rc;
   }
   /* argv[0] = path, copied intra-page (path slot → argv slot). */
@@ -153,20 +153,20 @@ int exec_execve_simple(pcb_t *p, const char *path) {
   uint16_t dst_max;
   rc = exec_args_argv_begin(&args, &dst_page, &dst_off, &dst_max);
   if (rc < 0) {
-    mem_region_page_free(args_page);
+    page_free(args_page);
     return rc;
   }
   int plen = exec_args_path_to_page(&args, dst_page, dst_off, dst_max);
   if (plen < 0) {
-    mem_region_page_free(args_page);
+    page_free(args_page);
     return plen;
   }
   rc = exec_args_argv_commit(&args, (uint16_t)plen);
   if (rc < 0) {
-    mem_region_page_free(args_page);
+    page_free(args_page);
     return rc;
   }
   rc = exec_execve(p, &args);
-  mem_region_page_free(args_page);
+  page_free(args_page);
   return rc;
 }

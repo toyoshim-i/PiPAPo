@@ -102,7 +102,7 @@ static long pipe_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
       size_t count = (n < avail) ? n : avail;
       for (size_t i = 0; i < count; i++) {
         char ch = (char)p->buf[p->tail];
-        mod_core.mem_region_page_write(page, off, &ch, 1);
+        mod_core.page_write(page, off, &ch, 1);
         pipe_advance(&page, &off);
         p->tail = (uint16_t)((p->tail + 1u) & PIPE_MASK);
       }
@@ -131,7 +131,7 @@ static long pipe_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
       size_t count = (n < space) ? n : space;
       for (size_t i = 0; i < count; i++) {
         uint8_t ch;
-        mod_core.mem_region_page_read(page, off, &ch, 1);
+        mod_core.page_read(page, off, &ch, 1);
         pipe_advance(&page, &off);
         p->buf[p->head] = ch;
         p->head = (uint16_t)((p->head + 1u) & PIPE_MASK);

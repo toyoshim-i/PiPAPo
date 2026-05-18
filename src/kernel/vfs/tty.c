@@ -214,7 +214,7 @@ static void tty_copy_to_pages(page_id_t page, uint16_t off, const void *src,
     size_t chunk = PAGE_SIZE - off;
 
     if (chunk > len) chunk = len;
-    mod_core.mem_region_page_write(page, off, in, (uint16_t)chunk);
+    mod_core.page_write(page, off, in, (uint16_t)chunk);
     in += chunk;
     len -= chunk;
     tty_advance(&page, &off, chunk);
@@ -289,7 +289,7 @@ static long tty_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
 
   while (pos < n) {
     char c;
-    mod_core.mem_region_page_read(cur_page, cur_off, &c, 1);
+    mod_core.page_read(cur_page, cur_off, &c, 1);
 
     /* OPOST: expand \n → \r\n */
     if (onlcr && c == '\n') {
@@ -482,7 +482,7 @@ static long tty_read_raw(tty_dev_t *t, int nonblock, page_id_t page,
 
   {
     char out = (char)c;
-    mod_core.mem_region_page_write(page, off, &out, 1);
+    mod_core.page_write(page, off, &out, 1);
   }
   return 1; /* raw mode: return after first char (VMIN=1) */
 }

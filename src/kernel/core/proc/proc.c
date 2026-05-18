@@ -256,7 +256,7 @@ int proc_page_backed_contains(const pcb_t *p, uintptr_t addr) {
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     uint32_t base;
     if (p->user_pages[i] == PAGE_ID_INVALID) continue;
-    base = mem_region_page_linear(p->user_pages[i]);
+    base = page_linear(p->user_pages[i]);
     if (addr >= base && addr < base + PAGE_SIZE) return 1;
   }
   return 0;
@@ -264,7 +264,7 @@ int proc_page_backed_contains(const pcb_t *p, uintptr_t addr) {
 
 page_id_t proc_user_stack_page_id(const pcb_t *p) {
   if (!p) return PAGE_ID_INVALID;
-  if (p->user_stack_page) return mem_region_ptr_to_page(p->user_stack_page);
+  if (p->user_stack_page) return page_from_ptr(p->user_stack_page);
   return p->stack_page_id;
 }
 
@@ -275,7 +275,7 @@ void *proc_user_stack_base(const pcb_t *p) {
   (void)page_id;
   return NULL;
 #else
-  return mem_region_page_to_ptr(page_id);
+  return page_to_ptr(page_id);
 #endif
 }
 
@@ -316,7 +316,7 @@ void proc_release_tracked_pages(pcb_t *p, uint32_t start_slot,
      * underlying page. */
     p->user_pages[i] = PAGE_ID_INVALID;
 #else
-    mem_region_free_tracked_page_id(p->user_pages[i]);
+    page_free(p->user_pages[i]);
     p->user_pages[i] = PAGE_ID_INVALID;
 #endif
   }
@@ -330,7 +330,7 @@ void proc_release_private_tracked_pages(pcb_t *p, const pcb_t *shared_owner) {
 #if defined(__ia16__)
     p->user_pages[i] = PAGE_ID_INVALID;
 #else
-    mem_region_free_tracked_page_id(p->user_pages[i]);
+    page_free(p->user_pages[i]);
     p->user_pages[i] = PAGE_ID_INVALID;
 #endif
   }
@@ -341,7 +341,7 @@ void proc_release_tracked_pages_from_array(page_id_t pages[USER_PAGES_MAX]) {
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     if (pages[i] == PAGE_ID_INVALID) continue;
 #if !defined(__ia16__)
-    mem_region_free_tracked_page_id(pages[i]);
+    page_free(pages[i]);
 #endif
   }
 }
@@ -353,7 +353,7 @@ void proc_release_private_tracked_pages_from_array(
     if (pages[i] == PAGE_ID_INVALID) continue;
     if (pages[i] == shared[i]) continue;
 #if !defined(__ia16__)
-    mem_region_free_tracked_page_id(pages[i]);
+    page_free(pages[i]);
 #endif
   }
 }
@@ -364,7 +364,7 @@ void proc_setup_stack(pcb_t *p, void (*entry)(void), uintptr_t user_sp) {
   {
 #if defined(__ia16__)
     /* i16: stack_base not used — frame is built at user_sp or via
-     * mem_region_page_write.  arch_build_initial_frame handles it. */
+     * page_write.  arch_build_initial_frame handles it. */
     if (user_sp)
       sp = (uint32_t *)(void *)user_sp;
     else {
@@ -449,8 +449,7 @@ void proc_setup_kernel_stack(pcb_t *p, void (*entry)(void)) {
   /* Kernel-mode loops run on the same page; mirror the old per-loader
    * fix-up that set usp to the stack-page top. */
   if (p->stack_page_id != PAGE_ID_INVALID) {
-    p->usp = (uint32_t)(uintptr_t)mem_region_page_to_ptr(p->stack_page_id) +
-             PAGE_SIZE;
+    p->usp = (uint32_t)(uintptr_t)page_to_ptr(p->stack_page_id) + PAGE_SIZE;
   }
 #elif defined(__xtensa__)
   sp = (uint32_t *)(uintptr_t)p->kernel_sp;

@@ -3,7 +3,7 @@
  *
  * Holds the (path, argv[], envp[]) triple copied out of user memory
  * during sys_execve, in a single data-region page accessed exclusively
- * via mem_region_page_read/write.  Using the page API lets the same
+ * via page_read/write.  Using the page API lets the same
  * code run on 32-bit arches (where the page lives in kernel-addressable
  * RAM) and on ia16 (where pool pages sit above 64 KB and require
  * segment-setup under the hood).

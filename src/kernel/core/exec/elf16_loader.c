@@ -129,30 +129,28 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   if (brk_base > USER_STACK_BASE) return -ENOMEM;
 
   /* Allocate contiguous pages via page-indexed API.
-   * mem_region_page_alloc_contiguous returns a page_id_t (index), not a
+   * page_alloc_n returns a page_id_t (index), not a
    * pointer — safe on i16 where near pointers can't address pages
-   * above 64 KB.  mem_region_page_write copies data via segment:offset. */
-  page_id_t base_id = mem_region_page_alloc_contiguous(USER_SEG_PAGES);
+   * above 64 KB.  page_write copies data via segment:offset. */
+  page_id_t base_id = page_alloc_n(USER_SEG_PAGES);
   if (base_id == PAGE_ID_INVALID) return -ENOMEM;
 
   /* Zero entire region via page-indexed writes */
   for (uint16_t pg = 0; pg < USER_SEG_PAGES; pg++)
-    mem_region_page_zero(base_id + pg, 0, PAGE_SIZE);
+    page_zero(base_id + pg, 0, PAGE_SIZE);
 
-  /* Second pass: copy PT_LOAD segment data via mem_region_page_write */
+  /* Second pass: copy PT_LOAD segment data via page_write */
   for (uint16_t i = 0; i < phnum; i++) {
     int rc = elf16_read_phdr(ehdr, phdrs, vn, i, &phdr);
     if (rc < 0) {
-      for (uint16_t j = 0; j < USER_SEG_PAGES; j++)
-        mem_region_page_free(base_id + j);
+      for (uint16_t j = 0; j < USER_SEG_PAGES; j++) page_free(base_id + j);
       return rc;
     }
     if (phdr.p_type != PT_LOAD) continue;
     if (phdr.p_filesz == 0) continue;
 
     if (phdr.p_offset + phdr.p_filesz > file_size) {
-      for (uint16_t j = 0; j < USER_SEG_PAGES; j++)
-        mem_region_page_free(base_id + j);
+      for (uint16_t j = 0; j < USER_SEG_PAGES; j++) page_free(base_id + j);
       return -ENOEXEC;
     }
 
@@ -161,8 +159,7 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
     uint32_t src_off = phdr.p_offset;
 
     if (vaddr + remaining > USER_STACK_BASE) {
-      for (uint16_t j = 0; j < USER_SEG_PAGES; j++)
-        mem_region_page_free(base_id + j);
+      for (uint16_t j = 0; j < USER_SEG_PAGES; j++) page_free(base_id + j);
       return -ENOMEM;
     }
 
@@ -173,14 +170,12 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
       if (chunk > remaining) chunk = (uint16_t)remaining;
 
       if (file_buf != NULL) {
-        mem_region_page_write(base_id + pg_idx, pg_off, file_buf + src_off,
-                              chunk);
+        page_write(base_id + pg_idx, pg_off, file_buf + src_off, chunk);
       } else {
         long nread =
             mod_vfs.vnode_read(vn, base_id + pg_idx, pg_off, chunk, src_off);
         if (nread < 0 || (uint16_t)nread != chunk) {
-          for (uint16_t j = 0; j < USER_SEG_PAGES; j++)
-            mem_region_page_free(base_id + j);
+          for (uint16_t j = 0; j < USER_SEG_PAGES; j++) page_free(base_id + j);
           return (nread < 0) ? (int)nread : -ENOEXEC;
         }
       }
@@ -191,7 +186,7 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   }
 
   /* Compute process segment from the 32-bit linear address of page 0. */
-  uint32_t base_linear = mem_region_page_linear(base_id);
+  uint32_t base_linear = page_linear(base_id);
   uint16_t proc_seg = (uint16_t)(base_linear >> 4);
   uint16_t entry_ip = (uint16_t)ehdr->e_entry;
   uint16_t brk_pages = (uint16_t)((brk_base + PAGE_SIZE - 1u) / PAGE_SIZE);
@@ -233,8 +228,7 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
     /* Write argc */
     uint16_t pos = (uint16_t)user_sp_top;
     uint16_t argc16 = (uint16_t)argc;
-    mem_region_page_write(base_id + pos / PAGE_SIZE, pos % PAGE_SIZE, &argc16,
-                          2);
+    page_write(base_id + pos / PAGE_SIZE, pos % PAGE_SIZE, &argc16, 2);
 
     /* Cursor through the pointer section; strings start immediately
      * after both NULL terminators. */
@@ -244,8 +238,8 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
     uint16_t null16 = 0;
 
     for (int i = 0; i < argc; i++) {
-      mem_region_page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE,
-                            &str_pos, 2);
+      page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE, &str_pos,
+                 2);
       ptr_pos += 2;
 
       /* Stream the string byte-by-byte from the args page directly into
@@ -254,30 +248,28 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
       uint16_t slen = exec_args_argv_len(args, i);
       exec_args_argv_to_page(args, i, base_id, (uint32_t)str_pos);
       uint16_t nul_pos = (uint16_t)(str_pos + slen);
-      mem_region_page_write(base_id + nul_pos / PAGE_SIZE, nul_pos % PAGE_SIZE,
-                            &null16, 1);
+      page_write(base_id + nul_pos / PAGE_SIZE, nul_pos % PAGE_SIZE, &null16,
+                 1);
       str_pos += (uint16_t)(slen + 1u);
     }
     /* argv terminator */
-    mem_region_page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE,
-                          &null16, 2);
+    page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE, &null16, 2);
     ptr_pos += 2;
 
     for (int i = 0; i < envc; i++) {
-      mem_region_page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE,
-                            &str_pos, 2);
+      page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE, &str_pos,
+                 2);
       ptr_pos += 2;
 
       uint16_t slen = exec_args_envp_len(args, i);
       exec_args_envp_to_page(args, i, base_id, (uint32_t)str_pos);
       uint16_t nul_pos = (uint16_t)(str_pos + slen);
-      mem_region_page_write(base_id + nul_pos / PAGE_SIZE, nul_pos % PAGE_SIZE,
-                            &null16, 1);
+      page_write(base_id + nul_pos / PAGE_SIZE, nul_pos % PAGE_SIZE, &null16,
+                 1);
       str_pos += (uint16_t)(slen + 1u);
     }
     /* envp terminator */
-    mem_region_page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE,
-                          &null16, 2);
+    page_write(base_id + ptr_pos / PAGE_SIZE, ptr_pos % PAGE_SIZE, &null16, 2);
   }
 
   /* Build the 24-byte frame on the user stack (proc_seg segment).
@@ -304,14 +296,14 @@ static int elf16_load_from_headers(pcb_t *p, const elf32_ehdr_t *ehdr,
   uint32_t hw_pos = base_linear + hw_off_seg;
   uint16_t hw_pg = (uint16_t)((hw_pos - base_linear) / PAGE_SIZE);
   uint16_t hw_off = (uint16_t)((hw_pos - base_linear) % PAGE_SIZE);
-  mem_region_page_write(base_id + hw_pg, hw_off, hw_frame, sizeof(hw_frame));
+  page_write(base_id + hw_pg, hw_off, hw_frame, sizeof(hw_frame));
 
   /* Write software frame (18B) below hardware frame */
   uint16_t sw_off_seg = hw_off_seg - sizeof(sw_frame);
   uint32_t sw_pos = base_linear + sw_off_seg;
   uint16_t sw_pg = (uint16_t)((sw_pos - base_linear) / PAGE_SIZE);
   uint16_t sw_off = (uint16_t)((sw_pos - base_linear) % PAGE_SIZE);
-  mem_region_page_write(base_id + sw_pg, sw_off, sw_frame, sizeof(sw_frame));
+  page_write(base_id + sw_pg, sw_off, sw_frame, sizeof(sw_frame));
 
   /* user_SP points to top of GP frame (segment-relative) */
   uint16_t user_sp = sw_off_seg;

@@ -85,14 +85,14 @@ static uint32_t dos_to_linear(uint16_t seg, uint16_t off) {
 
 static void dos_get_proc(struct pcb *p, dos_proc_t *out) {
   uint32_t slot = (uint32_t)(p - proc_table);
-  mem_region_page_read(dos_data_page, (uint16_t)(slot * sizeof(dos_proc_t)),
-                       out, sizeof(dos_proc_t));
+  page_read(dos_data_page, (uint16_t)(slot * sizeof(dos_proc_t)), out,
+            sizeof(dos_proc_t));
 }
 
 static void dos_put_proc(struct pcb *p, const dos_proc_t *in) {
   uint32_t slot = (uint32_t)(p - proc_table);
-  mem_region_page_write(dos_data_page, (uint16_t)(slot * sizeof(dos_proc_t)),
-                        in, sizeof(dos_proc_t));
+  page_write(dos_data_page, (uint16_t)(slot * sizeof(dos_proc_t)), in,
+             sizeof(dos_proc_t));
 }
 
 /* Read / write the per-process dos_proc_cold_t slot directly on
@@ -102,16 +102,16 @@ static void dos_put_proc(struct pcb *p, const dos_proc_t *in) {
  * chain. */
 static void dos_get_cold(struct pcb *p, dos_proc_cold_t *out) {
   uint32_t slot = (uint32_t)(p - proc_table);
-  mem_region_page_read(
-      dos_data_page, (uint16_t)(DOS_COLD_OFF + slot * sizeof(dos_proc_cold_t)),
-      out, sizeof(dos_proc_cold_t));
+  page_read(dos_data_page,
+            (uint16_t)(DOS_COLD_OFF + slot * sizeof(dos_proc_cold_t)), out,
+            sizeof(dos_proc_cold_t));
 }
 
 static void dos_put_cold(struct pcb *p, const dos_proc_cold_t *in) {
   uint32_t slot = (uint32_t)(p - proc_table);
-  mem_region_page_write(
-      dos_data_page, (uint16_t)(DOS_COLD_OFF + slot * sizeof(dos_proc_cold_t)),
-      in, sizeof(dos_proc_cold_t));
+  page_write(dos_data_page,
+             (uint16_t)(DOS_COLD_OFF + slot * sizeof(dos_proc_cold_t)), in,
+             sizeof(dos_proc_cold_t));
 }
 
 /* Single-byte accessors for dos_data_page — used by path-building and
@@ -119,12 +119,12 @@ static void dos_put_cold(struct pcb *p, const dos_proc_cold_t *in) {
  * scratch in the page instead of on the kernel stack saves the
  * 128-byte local buffers those helpers used to carry. */
 static void dos_scratch_putb(uint16_t off, uint8_t b) {
-  mem_region_page_write(dos_data_page, off, &b, 1);
+  page_write(dos_data_page, off, &b, 1);
 }
 
 static uint8_t dos_scratch_getb(uint16_t off) {
   uint8_t b;
-  mem_region_page_read(dos_data_page, off, &b, 1);
+  page_read(dos_data_page, off, &b, 1);
   return b;
 }
 
@@ -204,9 +204,9 @@ __attribute__((noinline)) static void dos_tty_restore(struct pcb *p) {
 
 static void msdos_on_init(struct pcb *p) {
   if (dos_data_page == PAGE_ID_INVALID) {
-    dos_data_page = mem_region_page_alloc();
+    dos_data_page = page_alloc();
     if (dos_data_page == PAGE_ID_INVALID) return;
-    mem_region_page_zero(dos_data_page, 0, PAGE_SIZE);
+    page_zero(dos_data_page, 0, PAGE_SIZE);
   }
 
   dos_proc_t dos;
@@ -231,8 +231,8 @@ static void msdos_on_init(struct pcb *p) {
   /* Zero the paths slot (exec_dir / cwd_c / cwd_z) so a stale prior
    * DOS tenant doesn't leak in.  dos_set_exec_dir overwrites
    * exec_dir right after this for C:, cwd_* start empty. */
-  mem_region_page_zero(dos_data_page, dos_paths_base(p),
-                       (uint16_t)sizeof(dos_proc_paths_t));
+  page_zero(dos_data_page, dos_paths_base(p),
+            (uint16_t)sizeof(dos_proc_paths_t));
   /* Zero the cold slot (IVT saves / termios snapshot). */
   dos_proc_cold_t cold;
   __builtin_memset(&cold, 0, sizeof(cold));
@@ -512,7 +512,7 @@ const subsys_ops_t msdos_subsys_ops = {
 
 static long dos_io_putc(uint8_t c) {
   if (dos_data_page == PAGE_ID_INVALID) return -1;
-  mem_region_page_write(dos_data_page, DOS_IO_SCRATCH_OFF, &c, 1);
+  page_write(dos_data_page, DOS_IO_SCRATCH_OFF, &c, 1);
   return sys_write(1, dos_data_page, DOS_IO_SCRATCH_OFF, 1);
 }
 
@@ -525,7 +525,7 @@ static long dos_io_getc(uint8_t *out) {
     long n = sys_read(0, dos_data_page, DOS_IO_SCRATCH_OFF, 1);
     if (n == -(long)EINTR) continue;
     if (n != 1) return n;
-    mem_region_page_read(dos_data_page, DOS_IO_SCRATCH_OFF, out, 1);
+    page_read(dos_data_page, DOS_IO_SCRATCH_OFF, out, 1);
     return 1;
   }
 }
@@ -546,7 +546,7 @@ static int dos_stdin_peek(dos_proc_t *dos) {
 
   if (n == 1) {
     uint8_t c;
-    mem_region_page_read(dos_data_page, DOS_IO_SCRATCH_OFF, &c, 1);
+    page_read(dos_data_page, DOS_IO_SCRATCH_OFF, &c, 1);
     dos->stdin_pushback_char = c;
     dos->stdin_pushback_valid = 1;
     return 1;
@@ -922,8 +922,7 @@ static int __attribute__((noinline)) dos_stat_entry(const char *name,
   char path[DOS_STAT_FULL_MAX];
   for (uint16_t i = 0; i < DOS_STAT_FULL_MAX; i++) {
     uint8_t b;
-    mem_region_page_read(dos_data_page, (uint16_t)(DOS_STAT_FULL_OFF + i), &b,
-                         1);
+    page_read(dos_data_page, (uint16_t)(DOS_STAT_FULL_OFF + i), &b, 1);
     path[i] = (char)b;
     if (!b) break;
   }
@@ -967,8 +966,7 @@ static int dos_find_scan(dos_proc_t *dos) {
     }
 
     struct dirent d;
-    mem_region_page_read(dos_data_page, (uint16_t)DOS_DIRENT_SCRATCH_OFF, &d,
-                         sizeof(d));
+    page_read(dos_data_page, (uint16_t)DOS_DIRENT_SCRATCH_OFF, &d, sizeof(d));
 
     if (!dos_glob_match(dos->find_pattern, d.d_name)) continue;
 
@@ -1031,8 +1029,7 @@ static int dos_lfn_truename(dos_proc_t *dos, dos_regs_t *regs) {
   uint32_t dst_linear = ((uint32_t)regs->es << 4) + regs->di;
   for (uint16_t i = 0; i < DOS_PATH_SCRATCH_MAX; i++) {
     uint8_t b;
-    mem_region_page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i),
-                         &b, 1);
+    page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i), &b, 1);
     current->cpu_ops->write8(dos->cpu_state, dst_linear + i, b);
     if (b == 0) return 0;
   }
@@ -1142,8 +1139,7 @@ static int dos_lfn_find_scan(dos_proc_t *dos, dos_regs_t *regs) {
     }
 
     struct dirent d;
-    mem_region_page_read(dos_data_page, (uint16_t)DOS_DIRENT_SCRATCH_OFF, &d,
-                         sizeof(d));
+    page_read(dos_data_page, (uint16_t)DOS_DIRENT_SCRATCH_OFF, &d, sizeof(d));
 
     if (!dos_glob_match(dos->find_pattern, d.d_name)) continue;
 
@@ -1257,8 +1253,7 @@ static int dos_get_set_attr(dos_proc_t *dos, dos_regs_t *regs) {
   char path[DOS_PATH_SCRATCH_MAX];
   for (uint16_t i = 0; i < DOS_PATH_SCRATCH_MAX; i++) {
     uint8_t b;
-    mem_region_page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i),
-                         &b, 1);
+    page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i), &b, 1);
     path[i] = (char)b;
     if (!b) break;
   }
@@ -1524,7 +1519,7 @@ static int dos_rw_common(dos_proc_t *dos, dos_regs_t *regs, int is_write) {
    * buffers in a separate paragraph of its conventional-memory window). */
   user_page_ref_t ref;
   page_id_t base = current->image.data.base_page;
-  uint32_t base_linear = mem_region_page_linear(base);
+  uint32_t base_linear = page_linear(base);
   uint32_t flat = ((uint32_t)regs->ds << 4) + regs->dx;
   if (flat < base_linear ||
       flat + (uint32_t)count > base_linear + current->image.data.size)
@@ -1751,10 +1746,8 @@ static int dos_rename(dos_proc_t *dos, dos_regs_t *regs) {
   uint8_t buf;
   uint16_t i = 0;
   for (; i < DOS_PATH_SCRATCH_MAX; i++) {
-    mem_region_page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i),
-                         &buf, 1);
-    mem_region_page_write(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH2_OFF + i),
-                          &buf, 1);
+    page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i), &buf, 1);
+    page_write(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH2_OFF + i), &buf, 1);
     if (buf == 0) break;
   }
   if (i >= DOS_PATH_SCRATCH_MAX) return -DOS_ERR_PATH_NOT_FOUND;
@@ -1782,7 +1775,7 @@ static void dos_mcb_read(page_id_t base_page, uint32_t off,
   uint8_t hdr[5];
   page_id_t pg = base_page + (page_id_t)(off / PAGE_SIZE);
   uint16_t pgo = (uint16_t)(off % PAGE_SIZE);
-  mem_region_page_read(pg, pgo, hdr, 5);
+  page_read(pg, pgo, hdr, 5);
   out->sig = hdr[DOS_MCB_OFF_SIG];
   out->owner = (uint16_t)hdr[DOS_MCB_OFF_OWNER] |
                ((uint16_t)hdr[DOS_MCB_OFF_OWNER + 1] << 8);
@@ -1801,7 +1794,7 @@ static void dos_mcb_write(page_id_t base_page, uint32_t off, uint8_t sig,
   b[DOS_MCB_OFF_SIZE + 1] = (uint8_t)(size >> 8);
   page_id_t pg = base_page + (page_id_t)(off / PAGE_SIZE);
   uint16_t pgo = (uint16_t)(off % PAGE_SIZE);
-  mem_region_page_write(pg, pgo, b, DOS_MCB_BYTES);
+  page_write(pg, pgo, b, DOS_MCB_BYTES);
 }
 
 /* The PSP segment of the calling DOS process — also the owner stored
@@ -1841,7 +1834,7 @@ static int dos_resize_block(dos_proc_t *dos, dos_regs_t *regs) {
   uint16_t new_size = regs->bx;
 
   page_id_t base_page = current->image.data.base_page;
-  uint32_t base_linear = mem_region_page_linear(base_page);
+  uint32_t base_linear = page_linear(base_page);
   uint32_t run_size = current->image.data.size;
   uint16_t caller_psp = dos_caller_psp(base_linear);
 
@@ -1931,7 +1924,7 @@ static int dos_alloc_block(dos_proc_t *dos, dos_regs_t *regs) {
   uint16_t want = regs->bx;
 
   page_id_t base_page = current->image.data.base_page;
-  uint32_t base_linear = mem_region_page_linear(base_page);
+  uint32_t base_linear = page_linear(base_page);
   uint32_t run_size = current->image.data.size;
   uint16_t caller_psp = dos_caller_psp(base_linear);
 
@@ -1998,7 +1991,7 @@ static int dos_free_block(dos_proc_t *dos, dos_regs_t *regs) {
   uint16_t es = regs->es;
 
   page_id_t base_page = current->image.data.base_page;
-  uint32_t base_linear = mem_region_page_linear(base_page);
+  uint32_t base_linear = page_linear(base_page);
   uint32_t run_size = current->image.data.size;
   uint16_t caller_psp = dos_caller_psp(base_linear);
 
@@ -2054,14 +2047,14 @@ static int dos_free_block(dos_proc_t *dos, dos_regs_t *regs) {
 static int dos_get_sysvars(dos_proc_t *dos, dos_regs_t *regs) {
   (void)dos;
   page_id_t base_page = current->image.data.base_page;
-  uint32_t base_linear = mem_region_page_linear(base_page);
+  uint32_t base_linear = page_linear(base_page);
   uint16_t proc_seg = dos_caller_psp(base_linear);
   uint16_t first_mcb = (uint16_t)(proc_seg - 1u);
 
   /* PSP starts at base_id:DOS_MCB_BYTES.  Write the first-MCB segment
    * at PSP offset 0x3E (= base_id:0x4E). */
   uint8_t bytes[2] = {(uint8_t)(first_mcb & 0xFF), (uint8_t)(first_mcb >> 8)};
-  mem_region_page_write(base_page, (uint16_t)(DOS_MCB_BYTES + 0x3Eu), bytes, 2);
+  page_write(base_page, (uint16_t)(DOS_MCB_BYTES + 0x3Eu), bytes, 2);
 
   regs->es = proc_seg;
   regs->bx = 0x40;
@@ -2167,8 +2160,7 @@ static int __attribute__((noinline)) dos_lfn_extended_open(dos_proc_t *dos,
   char path[DOS_PATH_SCRATCH_MAX];
   for (uint16_t i = 0; i < DOS_PATH_SCRATCH_MAX; i++) {
     uint8_t b;
-    mem_region_page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i),
-                         &b, 1);
+    page_read(dos_data_page, (uint16_t)(DOS_PATH_SCRATCH_OFF + i), &b, 1);
     path[i] = (char)b;
     if (!b) break;
   }

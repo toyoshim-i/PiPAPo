@@ -1763,7 +1763,7 @@ static void signal_stack_overflow_test(void)
     if (!ok) return;
 
     /* Give it a stack page */
-    p->stack_page_id = mem_region_page_alloc();
+    p->stack_page_id = page_alloc();
     ok = (p->stack_page_id != PAGE_ID_INVALID);
     test_report("alloc stack page", ok);
     if (!ok) {
@@ -1775,7 +1775,7 @@ static void signal_stack_overflow_test(void)
      * signal_setup_frame checks new_psp < stack_base.
      * new_psp = psp - 32, so overflow occurs when psp < stack_base + 32.
      * We test the condition directly since signal_setup_frame is static. */
-    uint32_t stack_base = (uint32_t)(uintptr_t)mem_region_page_to_ptr(p->stack_page_id);
+    uint32_t stack_base = (uint32_t)(uintptr_t)page_to_ptr(p->stack_page_id);
     uint32_t psp_at_limit = stack_base + 32;  /* new_psp = stack_base: OK */
     uint32_t psp_overflow = stack_base + 31;  /* new_psp = stack_base - 1: overflow */
 
@@ -1786,7 +1786,7 @@ static void signal_stack_overflow_test(void)
     test_report("frame below stack base is overflow", new_psp_bad < stack_base);
 
     /* Clean up */
-    mem_region_page_free(p->stack_page_id);
+    page_free(p->stack_page_id);
     p->stack_page_id = PAGE_ID_INVALID;
     proc_free(p);
 

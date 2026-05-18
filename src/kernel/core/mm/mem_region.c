@@ -105,45 +105,6 @@ void mem_region_free(const proc_image_segment_t *seg) {
   mem_region_free_page_backed(seg);
 }
 
-void mem_region_free_tracked_page_id(page_id_t id) { page_free(id); }
-
-/* ── Page-index wrappers ────────────────────────────────────────────── */
-
-page_id_t mem_region_page_alloc(void) { return page_alloc(); }
-
-page_id_t mem_region_page_alloc_contiguous(uint32_t n_pages) {
-  return page_alloc_n(n_pages);
-}
-
-page_id_t mem_region_page_alloc_largest_contiguous(uint32_t min_pages,
-                                                   uint32_t max_pages,
-                                                   uint32_t *got_pages) {
-  return page_alloc_largest(min_pages, max_pages, got_pages);
-}
-
-void mem_region_page_free(page_id_t id) { page_free(id); }
-
-uint32_t mem_region_page_linear(page_id_t id) { return page_linear(id); }
-
-page_id_t mem_region_ptr_to_page(void *ptr) { return page_from_ptr(ptr); }
-
-#if !defined(__ia16__)
-void *mem_region_page_to_ptr(page_id_t id) { return page_to_ptr(id); }
-#endif
-
-void mem_region_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len) {
-  page_read(id, off, buf, len);
-}
-
-void mem_region_page_write(page_id_t id, uint16_t off, const void *buf,
-                           uint16_t len) {
-  page_write(id, off, buf, len);
-}
-
-void mem_region_page_zero(page_id_t id, uint16_t off, uint16_t len) {
-  page_zero(id, off, len);
-}
-
 /* ── Capacity queries ──────────────────────────────────────────────── */
 
 /* Each query first asks the arch helper.  A negative return means

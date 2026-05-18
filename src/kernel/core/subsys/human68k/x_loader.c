@@ -218,7 +218,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
     rc = -(int)ENOMEM;
     goto out;
   }
-  p->stack_page_id = mem_region_ptr_to_page(stack_region.base);
+  p->stack_page_id = page_from_ptr(stack_region.base);
   p->image.stack = stack_region;
 #endif
 
@@ -246,7 +246,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
     goto out;
   }
 
-  if (proc_track_page_range(p, 0, mem_region_ptr_to_page(image_region.base),
+  if (proc_track_page_range(p, 0, page_from_ptr(image_region.base),
                             image_region.size / PAGE_SIZE) < 0) {
     mem_region_free(&image_region);
     mem_region_free(&stack_region);
@@ -352,7 +352,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
     goto out;
   }
 
-  if (proc_track_page_range(p, 0, mem_region_ptr_to_page(image_region.base),
+  if (proc_track_page_range(p, 0, page_from_ptr(image_region.base),
                             image_region.size / PAGE_SIZE) < 0) {
     mem_region_free(&image_region);
     mem_region_free(&stack_region);
@@ -385,7 +385,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   }
   if (env_page != PAGE_ID_INVALID) {
     if (proc_track_page(p, USER_PAGES_MAX - 1, env_page) < 0) {
-      mem_region_page_free(env_page);
+      page_free(env_page);
       env_addr = 0xFFFFFFFFu;
     }
   }

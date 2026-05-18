@@ -34,7 +34,7 @@ static uint16_t i16_user_page_count(uintptr_t end_off) {
 }
 
 static void i16_user_zero_page(page_id_t page_id) {
-  mem_region_page_zero(page_id, 0, PAGE_SIZE);
+  page_zero(page_id, 0, PAGE_SIZE);
 }
 
 static void sys_brk_zero_owned_range(page_id_t base_id, uintptr_t start_off,
@@ -47,7 +47,7 @@ static void sys_brk_zero_owned_range(page_id_t base_id, uintptr_t start_off,
     uint16_t pg_off = (uint16_t)(pos % PAGE_SIZE);
     uint16_t chunk = PAGE_SIZE - pg_off;
     if (chunk > end_off - pos) chunk = (uint16_t)(end_off - pos);
-    mem_region_page_zero(base_id + (page_id_t)(pos / PAGE_SIZE), pg_off, chunk);
+    page_zero(base_id + (page_id_t)(pos / PAGE_SIZE), pg_off, chunk);
     pos += chunk;
   }
 }
@@ -122,7 +122,7 @@ long sys_brk(long addr) {
   page_id_t page0_id = proc_page_backed_base(current);
   if (page0_id == PAGE_ID_INVALID)
     return (long)(current->brk_current); /* unchanged = failure */
-  uintptr_t page0_base = (uintptr_t)mem_region_page_linear(page0_id);
+  uintptr_t page0_base = (uintptr_t)page_linear(page0_id);
   uintptr_t old_top = current->brk_current;
   uintptr_t new_top = new_brk;
   uint32_t old_pages;
@@ -146,7 +146,7 @@ long sys_brk(long addr) {
       return (long)(current->brk_current); /* unchanged = failure */
     }
     memset(page_region.base, 0, PAGE_SIZE);
-    proc_track_page(current, i, mem_region_ptr_to_page(page_region.base));
+    proc_track_page(current, i, page_from_ptr(page_region.base));
   }
 
   /* Shrink: free excess pages */
@@ -261,7 +261,7 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
       return -(long)ENOMEM;
     }
     memset(region.base, 0, region.size);
-    page_id_t base_id = mem_region_ptr_to_page(region.base);
+    page_id_t base_id = page_from_ptr(region.base);
     for (uint32_t i = 0; i < num_pages; i++)
       current->user_pages[(uint32_t)slot + i] = base_id + (page_id_t)i;
     return (long)((uintptr_t)base);
@@ -274,7 +274,7 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
       return -(long)ENOMEM;
     }
     memset(region.base, 0, region.size);
-    page_id_t base_id = mem_region_ptr_to_page(region.base);
+    page_id_t base_id = page_from_ptr(region.base);
     for (uint32_t i = 0; i < num_pages; i++)
       current->user_pages[(uint32_t)slot + i] = base_id + (page_id_t)i;
     return (long)((uintptr_t)region.base);
@@ -313,13 +313,12 @@ long sys_munmap(uintptr_t addr, size_t len) {
   /* Find the matching page in user_pages[] by linear address */
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
     if (current->user_pages[i] == PAGE_ID_INVALID) continue;
-    if (mem_region_page_linear(current->user_pages[i]) != (uint32_t)addr)
-      continue;
+    if (page_linear(current->user_pages[i]) != (uint32_t)addr) continue;
 
     /* Free num_pages contiguous slots from this position */
     for (uint32_t j = 0; j < num_pages && (i + j) < USER_PAGES_MAX; j++) {
       if (current->user_pages[i + j] == PAGE_ID_INVALID) break;
-      mem_region_free_tracked_page_id(current->user_pages[i + j]);
+      page_free(current->user_pages[i + j]);
       current->user_pages[i + j] = PAGE_ID_INVALID;
     }
     return 0;

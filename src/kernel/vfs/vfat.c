@@ -503,8 +503,7 @@ static long vfat_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
       uint32_t start = (s == sec_off) ? byte_off : 0;
       uint32_t avail = 512 - start;
       if (avail > n - total) avail = (uint32_t)(n - total);
-      mod_core.mem_region_page_write(page, page_off, &sector_buf[start],
-                                     (uint16_t)avail);
+      mod_core.page_write(page, page_off, &sector_buf[start], (uint16_t)avail);
       page_off += (uint16_t)avail;
       total += avail;
     }
@@ -601,8 +600,7 @@ static long vfat_write(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
         int rc = read_sector(sb, sec_base + s, sector_buf);
         if (rc < 0) return (long)(total > 0 ? (int)total : rc);
       }
-      mod_core.mem_region_page_read(page, page_off, &sector_buf[start],
-                                    (uint16_t)avail);
+      mod_core.page_read(page, page_off, &sector_buf[start], (uint16_t)avail);
       int rc = write_sector(sb, sec_base + s, sector_buf);
       if (rc < 0) return (long)(total > 0 ? (int)total : rc);
       page_off += (uint16_t)avail;

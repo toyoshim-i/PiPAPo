@@ -173,10 +173,8 @@ static long tmpfs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
     while (copied < (uint16_t)n) {
       uint16_t chunk = (uint16_t)n - copied;
       if (chunk > sizeof(buf)) chunk = sizeof(buf);
-      mod_core.mem_region_page_read(ti->data_page, (uint16_t)(off + copied),
-                                    buf, chunk);
-      mod_core.mem_region_page_write(page, (uint16_t)(page_off + copied), buf,
-                                     chunk);
+      mod_core.page_read(ti->data_page, (uint16_t)(off + copied), buf, chunk);
+      mod_core.page_write(page, (uint16_t)(page_off + copied), buf, chunk);
       copied = (uint16_t)(copied + chunk);
     }
   } else {
@@ -186,8 +184,8 @@ static long tmpfs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
     while (zero_off < (uint16_t)n) {
       uint16_t zero_len = (uint16_t)n - zero_off;
       if (zero_len > sizeof(zero_chunk)) zero_len = sizeof(zero_chunk);
-      mod_core.mem_region_page_write(page, (uint16_t)(page_off + zero_off),
-                                     zero_chunk, zero_len);
+      mod_core.page_write(page, (uint16_t)(page_off + zero_off), zero_chunk,
+                          zero_len);
       zero_off = (uint16_t)(zero_off + zero_len);
     }
   }
@@ -224,7 +222,7 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
     /* Zero the freshly allocated page via the page-indexed API.  Direct
      * memset on data_region.base would write through a 16-bit-truncated
      * pointer on i16 and corrupt arbitrary low memory. */
-    mod_core.mem_region_page_zero(ti->data_page, 0, PAGE_SIZE);
+    mod_core.page_zero(ti->data_page, 0, PAGE_SIZE);
     data_pages_used++;
   }
 
@@ -236,10 +234,8 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
     while (copied < (uint16_t)n) {
       uint16_t chunk = (uint16_t)n - copied;
       if (chunk > sizeof(buf)) chunk = sizeof(buf);
-      mod_core.mem_region_page_read(page, (uint16_t)(page_off + copied), buf,
-                                    chunk);
-      mod_core.mem_region_page_write(ti->data_page, (uint16_t)(off + copied),
-                                     buf, chunk);
+      mod_core.page_read(page, (uint16_t)(page_off + copied), buf, chunk);
+      mod_core.page_write(ti->data_page, (uint16_t)(off + copied), buf, chunk);
       copied = (uint16_t)(copied + chunk);
     }
   }

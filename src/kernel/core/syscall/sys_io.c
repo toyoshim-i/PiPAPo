@@ -39,7 +39,7 @@ static void sys_io_copy_from_user_ref(void *dst, user_page_ref_t *ref,
     size_t chunk = PAGE_SIZE - ref->off;
 
     if (chunk > len) chunk = len;
-    mem_region_page_read(ref->page, ref->off, out, (uint16_t)chunk);
+    page_read(ref->page, ref->off, out, (uint16_t)chunk);
     out += chunk;
     len -= chunk;
     sys_io_advance_ref(ref, chunk);
@@ -65,7 +65,7 @@ int sys_copy_to_user(uintptr_t user_ptr, const void *src, size_t len) {
     size_t chunk = PAGE_SIZE - ref.off;
 
     if (chunk > len) chunk = len;
-    mem_region_page_write(ref.page, ref.off, in, (uint16_t)chunk);
+    page_write(ref.page, ref.off, in, (uint16_t)chunk);
     in += chunk;
     len -= chunk;
     sys_io_advance_ref(&ref, chunk);
@@ -82,7 +82,7 @@ int sys_copy_user_string(char *dst, size_t dst_size, uintptr_t user_ptr) {
   if (rc < 0) return rc;
 
   for (size_t i = 0; i < dst_size; i++) {
-    mem_region_page_read(ref.page, ref.off, &dst[i], 1);
+    page_read(ref.page, ref.off, &dst[i], 1);
     if (dst[i] == '\0') return 0;
     sys_io_advance_ref(&ref, 1);
   }
@@ -98,8 +98,8 @@ int sys_copy_user_string_to_page(page_id_t dst_page, uint16_t dst_off,
 
   for (uint16_t i = 0; i < max_len; i++) {
     uint8_t c;
-    mem_region_page_read(ref.page, ref.off, &c, 1);
-    mem_region_page_write(dst_page, (uint16_t)(dst_off + i), &c, 1);
+    page_read(ref.page, ref.off, &c, 1);
+    page_write(dst_page, (uint16_t)(dst_off + i), &c, 1);
     if (c == 0) return (int)i;
     sys_io_advance_ref(&ref, 1);
   }

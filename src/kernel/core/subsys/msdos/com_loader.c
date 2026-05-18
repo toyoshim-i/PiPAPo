@@ -64,11 +64,11 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
    *    image — real DOS gives a .COM all conventional RAM by default, so
    *    we mimic that within whatever fragment the page pool can offer. */
   uint32_t got_pages = 0;
-  page_id_t base_id = mem_region_page_alloc_largest_contiguous(
-      DOS_SEG_PAGES, DOS_SEG_PAGES_MAX, &got_pages);
+  page_id_t base_id =
+      page_alloc_largest(DOS_SEG_PAGES, DOS_SEG_PAGES_MAX, &got_pages);
   if (base_id == PAGE_ID_INVALID) return -(int)ENOMEM;
 
-  uint32_t base_linear = mem_region_page_linear(base_id);
+  uint32_t base_linear = page_linear(base_id);
   /* Paragraph 0 of the run holds the process's MCB; the PSP starts
    * at paragraph 1 (= base_linear + DOS_MCB_BYTES). */
   uint16_t proc_seg = (uint16_t)((base_linear >> 4) + 1u);
@@ -79,8 +79,7 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   int rc = dos_build_com_image(base_id, proc_seg, got_pages, vn, file_size,
                                args, &user_sp);
   if (rc < 0) {
-    for (uint32_t i = 0; i < got_pages; i++)
-      mem_region_page_free(base_id + (page_id_t)i);
+    for (uint32_t i = 0; i < got_pages; i++) page_free(base_id + (page_id_t)i);
     return rc;
   }
 

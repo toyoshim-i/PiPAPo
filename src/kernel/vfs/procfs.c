@@ -703,7 +703,7 @@ static long procfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
   uint32_t avail = (uint32_t)total - off;
   if (n > avail) n = avail;
 
-  mod_core.mem_region_page_write(page, page_off, tmp + off, (uint16_t)n);
+  mod_core.page_write(page, page_off, tmp + off, (uint16_t)n);
   return (long)n;
 }
 

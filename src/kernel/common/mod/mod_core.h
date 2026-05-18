@@ -109,45 +109,6 @@ MOD_FUNC(core, void, mem_region_free, const proc_image_segment_t *)
 MOD_FUNC(core, uint32_t, mem_region_free_bytes, ppap_mem_class_t)
 
 /*
- * mem_region_page_read — Read bytes from a page at an offset.
- *
- *   id   Page index.
- *   off  Byte offset within page (0..PAGE_SIZE-1).
- *   buf  Destination buffer.
- *   len  Bytes to read.
- *
- * Safe on all architectures including i16 (handles segment
- * register setup internally).
- */
-MOD_FUNC(core, void, mem_region_page_read, page_id_t, uint16_t, void *,
-         uint16_t)
-
-/*
- * mem_region_page_write — Write bytes to a page at an offset.
- *
- *   id   Page index.
- *   off  Byte offset within page (0..PAGE_SIZE-1).
- *   buf  Source buffer.
- *   len  Bytes to write.
- *
- * Safe on all architectures including i16.
- */
-MOD_FUNC(core, void, mem_region_page_write, page_id_t, uint16_t, const void *,
-         uint16_t)
-
-/*
- * mem_region_page_zero — Write `len` zero bytes to a page at an offset.
- *
- *   id   Page index.
- *   off  Byte offset within page (0..PAGE_SIZE-1).
- *   len  Bytes to zero (0..65535).  Callers that need to zero more
- *        should invoke once per page.
- *
- * Safe on all architectures including i16.
- */
-MOD_FUNC(core, void, mem_region_page_zero, page_id_t, uint16_t, uint16_t)
-
-/*
  * mem_region_total_bytes — Query total capacity of a memory class.
  *
  *   mem_class  Memory type to query.
@@ -157,11 +118,56 @@ MOD_FUNC(core, void, mem_region_page_zero, page_id_t, uint16_t, uint16_t)
 MOD_FUNC(core, uint32_t, mem_region_total_bytes, ppap_mem_class_t)
 
 /*
+ * page_read — Read bytes from a page at an offset.
+ *
+ *   id   Page index.
+ *   off  Byte offset within page (0..PAGE_SIZE-1).
+ *   buf  Destination buffer.
+ *   len  Bytes to read.
+ *
+ * Safe on all architectures including i16 (handles segment
+ * register setup internally).
+ */
+MOD_FUNC(core, void, page_read, page_id_t, uint16_t, void *, uint16_t)
+
+/*
+ * page_write — Write bytes to a page at an offset.
+ *
+ *   id   Page index.
+ *   off  Byte offset within page (0..PAGE_SIZE-1).
+ *   buf  Source buffer.
+ *   len  Bytes to write.
+ *
+ * Safe on all architectures including i16.
+ */
+MOD_FUNC(core, void, page_write, page_id_t, uint16_t, const void *, uint16_t)
+
+/*
+ * page_zero — Write `len` zero bytes to a page at an offset.
+ *
+ *   id   Page index.
+ *   off  Byte offset within page (0..PAGE_SIZE-1).
+ *   len  Bytes to zero (0..65535).  Callers that need to zero more
+ *        should invoke once per page.
+ *
+ * Safe on all architectures including i16.
+ */
+MOD_FUNC(core, void, page_zero, page_id_t, uint16_t, uint16_t)
+
+/*
  * sched_get_ticks — Get monotonic tick count since boot.
  *
  * Returns uint32_t tick counter.  One tick = 10 ms (100 Hz).
  */
 MOD_FUNC(core, uint32_t, sched_get_ticks, void)
+
+/*
+ * sched_switch — Voluntarily switch to the next process.
+ *
+ * On ARM, pends PendSV.  On m68k, TRAP #1.  On RISC-V/Xtensa/i16,
+ * arch_yield().
+ */
+MOD_FUNC(core, void, sched_switch, void)
 
 /*
  * sched_wakeup — Wake all processes blocked on a wait channel.
@@ -172,14 +178,6 @@ MOD_FUNC(core, uint32_t, sched_get_ticks, void)
  * a reschedule.
  */
 MOD_FUNC(core, void, sched_wakeup, void *)
-
-/*
- * sched_switch — Voluntarily switch to the next process.
- *
- * On ARM, pends PendSV.  On m68k, TRAP #1.  On RISC-V/Xtensa/i16,
- * arch_yield().
- */
-MOD_FUNC(core, void, sched_switch, void)
 
 /*
  * subsys_read_proc — Generate /proc content for a subsystem.

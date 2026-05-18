@@ -109,72 +109,89 @@ stack.  Everything from there to the detected RAM end is the page pool.
 
 ## 3. Allocation Layers
 
-### 3.1 Public API: `mem_region`
+Three layers, three prefixes, each with one job:
 
-All code outside `src/kernel/mm/` allocates through `mem_region_*`:
+| Prefix | File | Role | Public? |
+|---|---|---|---|
+| `pool_*` | `mm/page_pool.{c,h}` | Pure address-sorted free-block list.  No locking, no logging.  Host-testable via `tests/host/test_page_pool.c`. | mm-internal |
+| `page_*` | `mm/page.{c,h}` | Locked, logged wrapper.  `page_alloc/_n/_largest`, `page_free`, `page_linear/_to_ptr/_from_ptr`, `page_read/_write/_zero`.  This is the surface kernel code allocates through. | Public |
+| `mem_region_*` | `mm/mem_region.{c,h}` | Typed class-dispatched allocation.  `mem_region_alloc(seg, class, size, flags)` and its arch-hook plumbing for non-page-backed arenas (Xtensa).  Returns `proc_image_segment_t` descriptors used by loaders / procfs. | Public |
+
+### 3.1 Public API: `page_*`
+
+Code outside `mm/` allocates and frees pool pages through these.  All
+return / take `page_id_t` (linear page number, `address / PAGE_SIZE`)
+rather than `void *`, because on ia16 a near pointer truncates to 16
+bits and can't represent pages above the first 64 KB.
+
+| Function | Returns | i16-safe? | Use when |
+|---|---|---|---|
+| `page_alloc()` | `page_id_t` | **Yes** | Allocate one page |
+| `page_alloc_n(n)` | `page_id_t` | **Yes** | Allocate n contiguous pages |
+| `page_alloc_largest(min, max, *got)` | `page_id_t` | **Yes** | Take the longest run within [min, max] |
+| `page_alloc_at(id)` | `int` | **Yes** | Allocate a specific page (e.g. brk extend at a fixed address) |
+| `page_free(id)` | — | **Yes** | Return a page to the pool |
+| `page_linear(id)` | `uint32_t` | **Yes** | Linear address for arithmetic, comparisons, hardware programming |
+| `page_to_ptr(id)` | `void *` | **No** | Dereferenceable pointer (32-bit only — i16 must use `page_read/_write` instead) |
+| `page_from_ptr(ptr)` | `page_id_t` | **Yes** | Reverse lookup from kernel-buffer pointer to page index |
+| `page_read(id, off, buf, len)` | — | **Yes** | Read page payload into kernel buffer |
+| `page_write(id, off, buf, len)` | — | **Yes** | Write kernel buffer into page payload |
+| `page_zero(id, off, len)` | — | **Yes** | Zero a span within a page |
+| `page_pool_base()` / `page_free_count()` / `page_max_contiguous()` | `uint32_t` | **Yes** | Pool introspection |
+
+For kernel-owned buffer conversion, use `mem_region_kbuf_to_page()`
+from `kernel/common/mem_region_kbuf.h`.  `void *` → `(page, off)`
+conversion is **not** a general-purpose utility — only `user_to_page`
+(at the syscall dispatcher) and `kbuf_to_page` (for kernel metadata
+buffers) exist.
+
+### 3.2 Public API: `mem_region_*`
+
+For typed, class-dispatched allocation that produces a
+`proc_image_segment_t` descriptor.  Used by loaders building process
+images, and by `sys_brk` / `sys_mmap2` for placed allocations.
 
 | API | Returns | Used by |
 |-----|---------|---------|
 | `mem_region_alloc()` | `proc_image_segment_t` (with `base_page`) | All loaders, syscalls |
 | `mem_region_alloc_at()` | `proc_image_segment_t` | `sys_brk`, `sys_mmap2` (MAP_FIXED) |
 | `mem_region_free()` | — | OWNED segment cleanup |
-| `mem_region_free_tracked_page_id()` | — | `proc_release_tracked_pages` |
-
-### 3.2 Page-Index Wrappers
-
-Code outside `mm/` accesses pages by index.  Most are exposed via
-`mod_core` for cross-module use.  For kernel-owned buffer conversion,
-use `mem_region_kbuf_to_page()` from `kernel/common/mem_region_kbuf.h`.
-`void *` → `(page, off)` conversion is **not** a general-purpose
-utility — only `user_to_page` (at the syscall dispatcher) and
-`kbuf_to_page` (for kernel metadata buffers) exist.
-
-| Function | Returns | i16-safe? | Use when |
-|---|---|---|---|
-| `mem_region_page_alloc()` | `page_id_t` | **Yes** | Allocate one page by index |
-| `mem_region_page_alloc_contiguous(n)` | `page_id_t` | **Yes** | Allocate n contiguous pages |
-| `mem_region_page_free(id)` | — | **Yes** | Free a page by index |
-| `mem_region_page_linear(id)` | `uint32_t` | **Yes** | Linear address for arithmetic, comparisons |
-| `mem_region_page_to_ptr(id)` | `void *` | **No** | Dereferenceable pointer (32-bit only) |
-| `mem_region_ptr_to_page(ptr)` | `page_id_t` | **Yes** | Reverse lookup from pointer to index |
-| `mem_region_page_read(id, off, buf, len)` | — | **Yes** | Read page payload (i16-safe) |
-| `mem_region_page_write(id, off, buf, len)` | — | **Yes** | Write page payload (i16-safe) |
-
-### 3.3 Internal Backend: `mm_page_*`
-
-The `mm_page_*` functions in `page.h` are internal to `src/kernel/mm/`.
-They are the implementation behind the `mem_region_page_*` wrappers.
-Code outside `mm/` must not call them directly.
+| `mem_region_*_bytes()` | `uint32_t` | Capacity queries per `mem_class_t` |
 
 On Xtensa, some memory classes (RAM_TEXT, RAM_DATA, EXT_TEXT,
 EXT_RODATA) use ESP-IDF `heap_caps_malloc` arenas instead of the
-page pool.  These classes are never used on i16.
+page pool — `mem_region_alloc` dispatches through the `mem_helper`
+hook to pick the right backend.  These classes are never used on
+i16.
 
-### 3.4 Module Interface
+### 3.3 Module Interface
 
-The `mod_core` vtable exposes page and region operations:
+The `mod_core` vtable exposes the cross-module subset of the above:
 
 | vtable field | Implementation |
 |---|---|
-| `mem_region_alloc` | `mem_region_alloc()` |
+| `mem_region_alloc` | `mem_region_alloc()` (typed allocation) |
 | `mem_region_free` | `mem_region_free()` |
 | `mem_region_free_bytes` | `mem_region_free_bytes()` |
 | `mem_region_total_bytes` | `mem_region_total_bytes()` |
-| `mem_region_page_alloc` | `mem_region_page_alloc()` → `mm_page_alloc()` |
-| `mem_region_page_free` | `mem_region_page_free()` → `mm_page_free()` |
-| `mem_region_page_linear` | `mem_region_page_linear()` → `mm_page_linear()` |
-| `mem_region_page_read` | `mem_region_page_read()` → `mm_page_read()` |
-| `mem_region_page_write` | `mem_region_page_write()` → `mm_page_write()` |
+| `page_read` | `page_read()` (payload access — i16 cross-segment safe) |
+| `page_write` | `page_write()` |
+| `page_zero` | `page_zero()` |
 
-`mem_region_page_linear` is the sanctioned API for obtaining the 32-bit
-linear address of a page (see §9).  Use it for address arithmetic,
-range checks, reporting addresses to userspace, and programming hardware.
+`page_alloc` / `page_free` are not in `mod_core` today — VFS code that
+needs a raw page goes through `mem_region_alloc(..., size = PAGE_SIZE)`
+or owns its own page via tmpfs / pipe metadata.  Kernel-side callers
+in `core/` reach `page_alloc` directly through `page.h`.
+
+`page_linear` is the sanctioned API for obtaining the 32-bit linear
+address of a page (see §9).  Use it for address arithmetic, range
+checks, reporting addresses to userspace, and programming hardware.
 Do **not** cast the result to `void *` to feed another API — pass
 `(page, off)` to the callee instead.
 
-The i16 module loader patches these into cross-segment far-call
-entries so modules can allocate and access pages without linking
-directly against `page.c`.
+The i16 module loader patches the `mod_core` entries into
+cross-segment far-call entries so VFS code can allocate and access
+pages without linking directly against `page.c`.
 
 ---
 
@@ -295,7 +312,7 @@ When `execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
    reflect the actual SRAM addresses.
 
 5. **Track pages** — Data pages are stored in `user_pages[]` via
-   `proc_track_page_range()` using `mem_region_ptr_to_page()` to convert
+   `proc_track_page_range()` using `page_from_ptr()` to convert
    the allocation pointer to a page index.
 
 6. **Set up brk** — The initial program break is set to the end of the data
@@ -400,18 +417,18 @@ work rather than part of the context-switch migration.
 
 ### When to use each function
 
-- **Default to `mem_region_page_linear()`.**  It returns a 32-bit
+- **Default to `page_linear()`.**  It returns a 32-bit
   linear address that works on every architecture including i16.
   Use it for:
   - Computing offsets and sizes (e.g. `brk` arithmetic).
   - Address-range containment checks (e.g. `proc_page_backed_contains`).
   - Returning addresses to userspace or subsystem bridges.
 
-- **Use `mem_region_page_to_ptr()` only when you need a dereferenceable
+- **Use `page_to_ptr()` only when you need a dereferenceable
   pointer** (e.g. to pass to `memcpy`, `memset`, or to cast to a typed
   pointer for direct access).  This function is unavailable on i16.
 
-- **Use `mem_region_page_read()` / `mem_region_page_write()` to access
+- **Use `page_read()` / `page_write()` to access
   page payloads on i16.**  On i16, `void *` is 16-bit and cannot
   address pages above 64 KB, so there is no dereferenceable pointer.
   These functions handle segment register setup internally and work on
@@ -419,7 +436,7 @@ work rather than part of the context-switch migration.
 
 ### Reverse lookup
 
-`mem_region_ptr_to_page(ptr)` converts a `void *` from
+`page_from_ptr(ptr)` converts a `void *` from
 `mem_region_alloc()` to a page index.  Returns `PAGE_ID_INVALID`
 if the pointer is not in the page pool.
 
@@ -444,7 +461,7 @@ drivers handle at most one page's worth of data per call.
 - `void *` is 16-bit.  All memory tracking uses `page_id_t` (uint16_t
   index), not pointers.
 - All access to user-process pages goes through
-  `mem_region_page_read/write`.
+  `page_read/write`.
 - `SS=0` means SP is a 20-bit linear address.  Stack pages must be
   allocated at low addresses (< 64 KB) for SP to fit in 16 bits.
 - `proc_image_segment_t.base` pointer is meaningless on i16 for
@@ -460,9 +477,9 @@ drivers handle at most one page's worth of data per call.
 
 ### ARM / m68k / RISC-V
 
-- `void *` is 32-bit; `mem_region_page_to_ptr()` is available.
+- `void *` is 32-bit; `page_to_ptr()` is available.
 - Page tracking is index-based for consistency with i16, but pointers
-  are derived via `mem_region_page_to_ptr()` where needed.
+  are derived via `page_to_ptr()` where needed.
 
 ---
 

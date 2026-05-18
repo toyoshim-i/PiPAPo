@@ -17,9 +17,8 @@
 #error "ZEXALL_COM_PATH must be defined at compile time"
 #endif
 
-/* ── Stubs for page allocator (not linked in host tests) ────────────────── */
-void *page_alloc(void) { return NULL; }
-void  page_free(void *p) { (void)p; }
+/* page_alloc / page_free stubs come from test_mem_region_stubs.c, which
+ * is linked into this host test executable alongside test_zexall.c. */
 
 /* ── CP/M memory map constants ──────────────────────────────────────────── */
 #define CPM_TPA_BASE    0x0100

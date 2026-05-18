@@ -16,20 +16,20 @@
 #include "kernel/core/syscall/syscall.h"
 
 mod_core_t mod_core = {
-    .kmem_pool_init = kmem_pool_init,
     .kmem_alloc = kmem_alloc,
     .kmem_free = kmem_free,
     .kmem_free_count = kmem_free_count,
+    .kmem_pool_init = kmem_pool_init,
     .mem_region_alloc = mem_region_alloc,
     .mem_region_free = mem_region_free,
     .mem_region_free_bytes = mem_region_free_bytes,
-    .mem_region_page_read = mem_region_page_read,
-    .mem_region_page_write = mem_region_page_write,
-    .mem_region_page_zero = mem_region_page_zero,
     .mem_region_total_bytes = mem_region_total_bytes,
-    .sched_wakeup = sched_wakeup,
-    .sched_switch = sched_switch,
+    .page_read = page_read,
+    .page_write = page_write,
+    .page_zero = page_zero,
     .sched_get_ticks = sched_get_ticks,
+    .sched_switch = sched_switch,
+    .sched_wakeup = sched_wakeup,
     .subsys_read_proc = subsys_read_proc,
     .time_now_sec = time_now_sec,
 };

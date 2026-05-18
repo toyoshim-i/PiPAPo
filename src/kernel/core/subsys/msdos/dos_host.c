@@ -35,8 +35,7 @@ static void dos_write_run_bytes(page_id_t base_id, uint32_t off_from_base,
     uint16_t pg_off = (uint16_t)(off_from_base % PAGE_SIZE);
     uint32_t chunk = PAGE_SIZE - pg_off;
     if (chunk > len) chunk = len;
-    mem_region_page_write(base_id + (page_id_t)pg, pg_off, src,
-                          (uint16_t)chunk);
+    page_write(base_id + (page_id_t)pg, pg_off, src, (uint16_t)chunk);
     src += chunk;
     off_from_base += chunk;
     len -= chunk;
@@ -51,7 +50,7 @@ static void dos_read_run_bytes(page_id_t base_id, uint32_t off_from_base,
     uint16_t pg_off = (uint16_t)(off_from_base % PAGE_SIZE);
     uint32_t chunk = PAGE_SIZE - pg_off;
     if (chunk > len) chunk = len;
-    mem_region_page_read(base_id + (page_id_t)pg, pg_off, dst, (uint16_t)chunk);
+    page_read(base_id + (page_id_t)pg, pg_off, dst, (uint16_t)chunk);
     dst += chunk;
     off_from_base += chunk;
     len -= chunk;
@@ -62,7 +61,7 @@ static void dos_read_run_bytes(page_id_t base_id, uint32_t off_from_base,
 
 static void dos_zero_segment(page_id_t base_id, uint32_t seg_pages) {
   for (uint32_t pg = 0; pg < seg_pages; pg++)
-    mem_region_page_zero(base_id + (page_id_t)pg, 0, PAGE_SIZE);
+    page_zero(base_id + (page_id_t)pg, 0, PAGE_SIZE);
 }
 
 /* ── MCB construction ─────────────────────────────────────────────────── */
@@ -328,7 +327,7 @@ int dos_build_com_image(page_id_t base_id, uint16_t proc_seg,
                         const struct exec_args *args, uint16_t *out_user_sp) {
   if (seg_pages < DOS_SEG_PAGES) seg_pages = DOS_SEG_PAGES;
 
-  uint32_t base_linear = mem_region_page_linear(base_id);
+  uint32_t base_linear = page_linear(base_id);
 
   dos_zero_segment(base_id, seg_pages);
 
@@ -401,8 +400,7 @@ static int dos_apply_relocations(page_id_t base_id, uint32_t base_linear,
 
     for (uint32_t i = 0; i < batch; i++) {
       uint8_t entry[4];
-      mem_region_page_read(base_id, (uint16_t)(DOS_MCB_BYTES + i * 4u), entry,
-                           4);
+      page_read(base_id, (uint16_t)(DOS_MCB_BYTES + i * 4u), entry, 4);
       uint16_t r_off = (uint16_t)entry[0] | ((uint16_t)entry[1] << 8);
       uint16_t r_seg = (uint16_t)entry[2] | ((uint16_t)entry[3] << 8);
 
@@ -425,7 +423,7 @@ int dos_build_exe_image(page_id_t base_id, uint16_t proc_seg,
                         uint16_t *out_user_ss, uint16_t *out_user_sp) {
   if (seg_pages < DOS_SEG_PAGES) seg_pages = DOS_SEG_PAGES;
 
-  uint32_t base_linear = mem_region_page_linear(base_id);
+  uint32_t base_linear = page_linear(base_id);
 
   /* Size math from the header. */
   uint32_t header_bytes = (uint32_t)hdr->header_size * 16u;

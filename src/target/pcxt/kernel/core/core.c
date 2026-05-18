@@ -12,43 +12,44 @@
 #include "kernel/common/mod/module.h"
 #include "kernel/core/mm/kmem.h"  /* kmem_pool_t */
 
-/* Forward-declare the caller-side stubs from core_stubs.S. */
-void kmem_pool_init(kmem_pool_t *, void *, size_t, uint32_t);
+/* Forward-declare the caller-side stubs from core_stubs.S, in mod_core.inc
+ * order. */
 void *kmem_alloc(kmem_pool_t *);
 void kmem_free(kmem_pool_t *, void *);
 uint32_t kmem_free_count(const kmem_pool_t *);
+void kmem_pool_init(kmem_pool_t *, void *, size_t, uint32_t);
 int mem_region_alloc(proc_image_segment_t *, ppap_mem_class_t,
                      uint32_t, uint32_t);
 void mem_region_free(const proc_image_segment_t *);
-uint32_t mem_region_total_bytes(ppap_mem_class_t);
 uint32_t mem_region_free_bytes(ppap_mem_class_t);
-void mem_region_page_read(page_id_t, uint16_t, void *, uint16_t);
-void mem_region_page_write(page_id_t, uint16_t, const void *, uint16_t);
-void mem_region_page_zero(page_id_t, uint16_t, uint16_t);
-void sched_wakeup(void *);
-void sched_switch(void);
+uint32_t mem_region_total_bytes(ppap_mem_class_t);
+void page_read(page_id_t, uint16_t, void *, uint16_t);
+void page_write(page_id_t, uint16_t, const void *, uint16_t);
+void page_zero(page_id_t, uint16_t, uint16_t);
 uint32_t sched_get_ticks(void);
+void sched_switch(void);
+void sched_wakeup(void *);
 struct pcb;
 int subsys_read_proc(int, struct pcb *, const char *, char *, int);
 uint32_t time_now_sec(void);
 
 /* MOD_IMPL(core, X) expands to .X = core_X — alias stubs */
-#define core_kmem_pool_init      kmem_pool_init
-#define core_kmem_alloc          kmem_alloc
-#define core_kmem_free           kmem_free
-#define core_kmem_free_count     kmem_free_count
-#define core_mem_region_alloc    mem_region_alloc
-#define core_mem_region_free     mem_region_free
+#define core_kmem_alloc             kmem_alloc
+#define core_kmem_free              kmem_free
+#define core_kmem_free_count        kmem_free_count
+#define core_kmem_pool_init         kmem_pool_init
+#define core_mem_region_alloc       mem_region_alloc
+#define core_mem_region_free        mem_region_free
+#define core_mem_region_free_bytes  mem_region_free_bytes
 #define core_mem_region_total_bytes mem_region_total_bytes
-#define core_mem_region_free_bytes mem_region_free_bytes
-#define core_mem_region_page_read   mem_region_page_read
-#define core_mem_region_page_write  mem_region_page_write
-#define core_mem_region_page_zero   mem_region_page_zero
-#define core_sched_wakeup        sched_wakeup
-#define core_sched_switch        sched_switch
-#define core_sched_get_ticks     sched_get_ticks
-#define core_subsys_read_proc    subsys_read_proc
-#define core_time_now_sec        time_now_sec
+#define core_page_read              page_read
+#define core_page_write             page_write
+#define core_page_zero              page_zero
+#define core_sched_get_ticks        sched_get_ticks
+#define core_sched_switch           sched_switch
+#define core_sched_wakeup           sched_wakeup
+#define core_subsys_read_proc       subsys_read_proc
+#define core_time_now_sec           time_now_sec
 
 #include "kernel/common/mod/mod_core.h"
 

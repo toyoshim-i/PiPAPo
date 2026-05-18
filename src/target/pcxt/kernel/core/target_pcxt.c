@@ -98,13 +98,13 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   PATCH_CORE( 4, mem_region_alloc);
   PATCH_CORE( 5, mem_region_free);
   PATCH_CORE( 6, mem_region_free_bytes);
-  PATCH_CORE( 7, mem_region_page_read);
-  PATCH_CORE( 8, mem_region_page_write);
-  PATCH_CORE( 9, mem_region_page_zero);
-  PATCH_CORE(10, mem_region_total_bytes);
+  PATCH_CORE( 7, mem_region_total_bytes);
+  PATCH_CORE( 8, page_read);
+  PATCH_CORE( 9, page_write);
+  PATCH_CORE(10, page_zero);
   PATCH_CORE(11, sched_get_ticks);
-  PATCH_CORE(12, sched_wakeup);
-  PATCH_CORE(13, sched_switch);
+  PATCH_CORE(12, sched_switch);
+  PATCH_CORE(13, sched_wakeup);
   PATCH_CORE(14, subsys_read_proc);
   PATCH_CORE(15, time_now_sec);
 #undef PATCH_CORE

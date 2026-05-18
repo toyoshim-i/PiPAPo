@@ -92,7 +92,7 @@ static inline page_id_t arch_user_ptr_to_page(page_id_t base_page,
                                               uint16_t *off) {
   (void)base_page;
   *off = (uint16_t)((uintptr_t)user_ptr & (PAGE_SIZE - 1u));
-  return mem_region_ptr_to_page((void *)(uintptr_t)user_ptr);
+  return page_from_ptr((void *)(uintptr_t)user_ptr);
 }
 
 #endif /* PPAP_ARCH_XTENSA_KERNEL_CORE_ARCH_H */

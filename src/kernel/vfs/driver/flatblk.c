@@ -21,9 +21,9 @@ static int flatblk_read(struct blkdev *dev, page_id_t page, uint16_t off,
                         uint32_t sector, uint32_t count) {
   (void)dev;
   if (sector + count > flat_sectors) return -EIO;
-  mod_core.mem_region_page_write(
-      page, off, flat_base + (uint32_t)sector * BLKDEV_SECTOR_SIZE,
-      (uint16_t)((uint32_t)count * BLKDEV_SECTOR_SIZE));
+  mod_core.page_write(page, off,
+                      flat_base + (uint32_t)sector * BLKDEV_SECTOR_SIZE,
+                      (uint16_t)((uint32_t)count * BLKDEV_SECTOR_SIZE));
   return 0;
 }
 

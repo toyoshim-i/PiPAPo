@@ -1,7 +1,7 @@
 /*
  * exec_args.c — Populate and read the captured execve arguments page.
  *
- * All page accesses go through mem_region_page_read / mem_region_page_write
+ * All page accesses go through page_read / page_write
  * so i16 (where pool pages live above 64 KB) and 32-bit targets share the
  * same code path.
  */
@@ -16,15 +16,15 @@
 static uint16_t exec_args_read_off(page_id_t page, uint16_t table_off,
                                    int idx) {
   uint16_t value = 0;
-  mem_region_page_read(page, (uint16_t)(table_off + idx * sizeof(uint16_t)),
-                       &value, sizeof(value));
+  page_read(page, (uint16_t)(table_off + idx * sizeof(uint16_t)), &value,
+            sizeof(value));
   return value;
 }
 
 static void exec_args_write_off(page_id_t page, uint16_t table_off, int idx,
                                 uint16_t value) {
-  mem_region_page_write(page, (uint16_t)(table_off + idx * sizeof(uint16_t)),
-                        &value, sizeof(value));
+  page_write(page, (uint16_t)(table_off + idx * sizeof(uint16_t)), &value,
+             sizeof(value));
 }
 
 static int exec_args_append(page_id_t page, uint16_t table_off,
@@ -36,9 +36,9 @@ static int exec_args_append(page_id_t page, uint16_t table_off,
   uint16_t need = (uint16_t)(len + 1u);
   uint16_t used = (uint16_t)(end - buf_off);
   if ((uint16_t)(buf_size - used) < need) return -E2BIG;
-  mem_region_page_write(page, end, str, len);
+  page_write(page, end, str, len);
   uint8_t nul = 0;
-  mem_region_page_write(page, (uint16_t)(end + len), &nul, 1);
+  page_write(page, (uint16_t)(end + len), &nul, 1);
   *count = (uint8_t)(*count + 1);
   exec_args_write_off(page, table_off, *count, (uint16_t)(end + need));
   return 0;
@@ -51,7 +51,7 @@ static int exec_args_copy(page_id_t page, uint16_t table_off, int count,
   uint16_t next = exec_args_read_off(page, table_off, idx + 1);
   uint16_t slen = (uint16_t)(next - start - 1u); /* exclude NUL */
   if ((uint16_t)(slen + 1u) > out_size) return -ENAMETOOLONG;
-  mem_region_page_read(page, start, out, slen);
+  page_read(page, start, out, slen);
   out[slen] = '\0';
   return (int)slen;
 }
@@ -72,7 +72,7 @@ void exec_args_init(exec_args_t *a, page_id_t page) {
   a->envc = 0;
   /* Zero the path byte so exec_args_path() finds an empty string. */
   uint8_t zero = 0;
-  mem_region_page_write(page, EXEC_ARGS_PATH_OFF, &zero, 1);
+  page_write(page, EXEC_ARGS_PATH_OFF, &zero, 1);
   /* Seed the first offset-table entry for each buffer. */
   exec_args_write_off(page, EXEC_ARGS_ARGV_TBL_OFF, 0, EXEC_ARGS_ARGV_BUF_OFF);
   exec_args_write_off(page, EXEC_ARGS_ENVP_TBL_OFF, 0, EXEC_ARGS_ENVP_BUF_OFF);
@@ -81,13 +81,12 @@ void exec_args_init(exec_args_t *a, page_id_t page) {
 int exec_args_set_path(exec_args_t *a, const char *path) {
   uint16_t i = 0;
   while (i < VFS_PATH_MAX && path[i]) {
-    mem_region_page_write(a->page, (uint16_t)(EXEC_ARGS_PATH_OFF + i), &path[i],
-                          1);
+    page_write(a->page, (uint16_t)(EXEC_ARGS_PATH_OFF + i), &path[i], 1);
     i++;
   }
   if (i >= VFS_PATH_MAX) return -ENAMETOOLONG;
   uint8_t nul = 0;
-  mem_region_page_write(a->page, (uint16_t)(EXEC_ARGS_PATH_OFF + i), &nul, 1);
+  page_write(a->page, (uint16_t)(EXEC_ARGS_PATH_OFF + i), &nul, 1);
   return 0;
 }
 
@@ -126,7 +125,7 @@ static int exec_args_commit(page_id_t page, uint16_t table_off,
   uint16_t used = (uint16_t)(end - buf_off);
   if ((uint16_t)(buf_size - used) < (uint16_t)(len + 1u)) return -E2BIG;
   uint8_t nul = 0;
-  mem_region_page_write(page, (uint16_t)(end + len), &nul, 1);
+  page_write(page, (uint16_t)(end + len), &nul, 1);
   *count = (uint8_t)(*count + 1);
   exec_args_write_off(page, table_off, *count, (uint16_t)(end + len + 1u));
   return 0;
@@ -164,7 +163,7 @@ int exec_args_path(const exec_args_t *a, char *out, uint16_t out_size) {
   uint16_t i = 0;
   while (i < VFS_PATH_MAX && i + 1 < out_size) {
     uint8_t c = 0;
-    mem_region_page_read(a->page, (uint16_t)(EXEC_ARGS_PATH_OFF + i), &c, 1);
+    page_read(a->page, (uint16_t)(EXEC_ARGS_PATH_OFF + i), &c, 1);
     out[i] = (char)c;
     if (c == 0) return (int)i;
     i++;
@@ -201,7 +200,7 @@ static int exec_args_byte(page_id_t src_page, uint16_t table_off, int count,
   uint16_t slen = (uint16_t)(next - start - 1u);
   if (byte_off >= slen) return -1;
   uint8_t c;
-  mem_region_page_read(src_page, (uint16_t)(start + byte_off), &c, 1);
+  page_read(src_page, (uint16_t)(start + byte_off), &c, 1);
   *out = (char)c;
   return 0;
 }
@@ -221,7 +220,7 @@ int exec_args_envp_byte(const exec_args_t *a, int idx, uint16_t byte_off,
 static void exec_args_put_byte(page_id_t base_page, uint32_t off, uint8_t c) {
   page_id_t pg = base_page + (page_id_t)(off / PAGE_SIZE);
   uint16_t pg_off = (uint16_t)(off % PAGE_SIZE);
-  mem_region_page_write(pg, pg_off, &c, 1);
+  page_write(pg, pg_off, &c, 1);
 }
 
 static int exec_args_to_page(page_id_t src_page, uint16_t table_off, int count,
@@ -232,7 +231,7 @@ static int exec_args_to_page(page_id_t src_page, uint16_t table_off, int count,
   uint16_t slen = (uint16_t)(next - start - 1u); /* exclude NUL */
   for (uint16_t i = 0; i < slen; i++) {
     uint8_t c;
-    mem_region_page_read(src_page, (uint16_t)(start + i), &c, 1);
+    page_read(src_page, (uint16_t)(start + i), &c, 1);
     exec_args_put_byte(base_page, start_off + i, c);
   }
   return (int)slen;
@@ -255,7 +254,7 @@ int exec_args_path_to_page(const exec_args_t *a, page_id_t base_page,
   uint16_t limit = dst_max < VFS_PATH_MAX ? dst_max : (uint16_t)VFS_PATH_MAX;
   for (uint16_t i = 0; i < limit; i++) {
     uint8_t c;
-    mem_region_page_read(a->page, (uint16_t)(EXEC_ARGS_PATH_OFF + i), &c, 1);
+    page_read(a->page, (uint16_t)(EXEC_ARGS_PATH_OFF + i), &c, 1);
     if (c == 0) return (int)i;
     exec_args_put_byte(base_page, start_off + i, c);
   }

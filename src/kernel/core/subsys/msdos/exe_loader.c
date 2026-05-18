@@ -43,8 +43,7 @@ static int exe_detect(const uint8_t *header, uint32_t header_len,
 /* ── Loading ───────────────────────────────────────────────────────────── */
 
 static void exe_free_run(page_id_t base_id, uint32_t got_pages) {
-  for (uint32_t i = 0; i < got_pages; i++)
-    mem_region_page_free(base_id + (page_id_t)i);
+  for (uint32_t i = 0; i < got_pages; i++) page_free(base_id + (page_id_t)i);
 }
 
 static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
@@ -61,11 +60,11 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
    *    DOS_SEG_PAGES_MAX.  The MZ header tells us the exact minimum,
    *    but we need scratch pages to read the header into first. */
   uint32_t got_pages = 0;
-  page_id_t base_id = mem_region_page_alloc_largest_contiguous(
-      DOS_SEG_PAGES, DOS_SEG_PAGES_MAX, &got_pages);
+  page_id_t base_id =
+      page_alloc_largest(DOS_SEG_PAGES, DOS_SEG_PAGES_MAX, &got_pages);
   if (base_id == PAGE_ID_INVALID) return -(int)ENOMEM;
 
-  uint32_t base_linear = mem_region_page_linear(base_id);
+  uint32_t base_linear = page_linear(base_id);
   /* Paragraph 0 of the run holds the process's MCB; the PSP starts
    * at paragraph 1 (= base_linear + DOS_MCB_BYTES). */
   uint16_t proc_seg = (uint16_t)((base_linear >> 4) + 1u);
@@ -83,7 +82,7 @@ static int exe_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   }
 
   mz_header_t hdr;
-  mem_region_page_read(base_id, 0, &hdr, sizeof(hdr));
+  page_read(base_id, 0, &hdr, sizeof(hdr));
 
   /* 3. Validate header and compute image size.  dos_build_exe_image()
    *    repeats these checks; doing them here lets us reject before

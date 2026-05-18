@@ -103,13 +103,11 @@ static int ufs_free_block(ufs_priv_t *priv, uint32_t frag);
  * the former `uint32_t saved[128]` stack array. */
 static void ufs_free_indirect_ptrs(ufs_priv_t *priv, uint32_t start,
                                    uint32_t count) {
-  mod_core.mem_region_page_write(priv->scratch_page, 0, ufs_buf,
-                                 BLKDEV_SECTOR_SIZE);
+  mod_core.page_write(priv->scratch_page, 0, ufs_buf, BLKDEV_SECTOR_SIZE);
   for (uint32_t j = start; j < count; j++) {
     uint32_t ptr;
-    mod_core.mem_region_page_read(priv->scratch_page,
-                                  (uint16_t)(j * sizeof(uint32_t)), &ptr,
-                                  sizeof(ptr));
+    mod_core.page_read(priv->scratch_page, (uint16_t)(j * sizeof(uint32_t)),
+                       &ptr, sizeof(ptr));
     if (ptr != 0) ufs_free_block(priv, ptr);
   }
 }
@@ -128,14 +126,14 @@ static void ufs_free_double_indirect(ufs_priv_t *priv, uint32_t ib2_frag,
   for (uint32_t s = 0; s < UFS_FRAGS_PER_BLK; s++) {
     int rc = ufs_read_sector(priv, ib2_frag + s);
     if (rc < 0) return;
-    mod_core.mem_region_page_write(priv->scratch_page, UFS_SCRATCH_OUTER_OFF,
-                                   ufs_buf, BLKDEV_SECTOR_SIZE);
+    mod_core.page_write(priv->scratch_page, UFS_SCRATCH_OUTER_OFF, ufs_buf,
+                        BLKDEV_SECTOR_SIZE);
     int sector_dirty = 0;
     for (uint32_t i = 0; i < ptrs_per_sec; i++) {
       uint32_t outer_idx = s * ptrs_per_sec + i;
       uint32_t block_start = outer_idx * ptrs_per_block;
       uint32_t inner_frag;
-      mod_core.mem_region_page_read(
+      mod_core.page_read(
           priv->scratch_page,
           (uint16_t)(UFS_SCRATCH_OUTER_OFF + i * sizeof(uint32_t)), &inner_frag,
           sizeof(inner_frag));
@@ -152,7 +150,7 @@ static void ufs_free_double_indirect(ufs_priv_t *priv, uint32_t ib2_frag,
         /* Clear the outer slot so a later extend doesn't reuse a stale
          * pointer to a recycled block. */
         uint32_t zero = 0;
-        mod_core.mem_region_page_write(
+        mod_core.page_write(
             priv->scratch_page,
             (uint16_t)(UFS_SCRATCH_OUTER_OFF + i * sizeof(uint32_t)), &zero,
             sizeof(zero));
@@ -173,8 +171,8 @@ static void ufs_free_double_indirect(ufs_priv_t *priv, uint32_t ib2_frag,
       /* else: block_start + ptrs_per_block <= keep → keep fully. */
     }
     if (sector_dirty) {
-      mod_core.mem_region_page_read(priv->scratch_page, UFS_SCRATCH_OUTER_OFF,
-                                    ufs_buf, BLKDEV_SECTOR_SIZE);
+      mod_core.page_read(priv->scratch_page, UFS_SCRATCH_OUTER_OFF, ufs_buf,
+                         BLKDEV_SECTOR_SIZE);
       rc = ufs_write_sector(priv, ib2_frag + s);
       if (rc < 0) return;
     }
@@ -747,8 +745,7 @@ static long ufs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
     uint32_t avail = BLKDEV_SECTOR_SIZE - off_in_sec;
     if (avail > remaining) avail = remaining;
 
-    mod_core.mem_region_page_write(page, page_off, &ufs_buf[off_in_sec],
-                                   (uint16_t)avail);
+    mod_core.page_write(page, page_off, &ufs_buf[off_in_sec], (uint16_t)avail);
     page_off += (uint16_t)avail;
     pos += avail;
     remaining -= avail;
@@ -819,11 +816,9 @@ static long ufs_write(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
         ret = (n - remaining > 0) ? (long)(n - remaining) : (long)rc;
         goto out;
       }
-      mod_core.mem_region_page_read(page, page_off, &ufs_buf[off_in_sec],
-                                    (uint16_t)avail);
+      mod_core.page_read(page, page_off, &ufs_buf[off_in_sec], (uint16_t)avail);
     } else {
-      mod_core.mem_region_page_read(page, page_off, ufs_buf,
-                                    BLKDEV_SECTOR_SIZE);
+      mod_core.page_read(page, page_off, ufs_buf, BLKDEV_SECTOR_SIZE);
     }
 
     rc = ufs_write_sector(priv, phys + sec_in_blk);

@@ -84,7 +84,7 @@ uint16_t signal_check(uint16_t user_sp, uint16_t user_ss) {
   /* All user-stack reads/writes go through the portable sys_copy_*
    * helpers.  On ia16 those resolve the 16-bit near pointer through
    * current->image (proc_seg base + segment offset) and reach into
-   * page storage via mem_region_page_read/write — no arch-specific
+   * page storage via page_read/write — no arch-specific
    * plumbing needed here. */
 
   /* Preserve FLAGS from the original IRET frame so the handler runs

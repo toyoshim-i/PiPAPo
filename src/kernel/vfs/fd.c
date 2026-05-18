@@ -346,8 +346,7 @@ long vfs_fd_getdents(int desc, page_id_t page, uint16_t off, size_t count) {
       uint32_t next;
 
       if ((size_t)chunk > remain) chunk = (uint16_t)remain;
-      mod_core.mem_region_page_write(page, off,
-                                     (const uint8_t *)entries + written, chunk);
+      mod_core.page_write(page, off, (const uint8_t *)entries + written, chunk);
       written += chunk;
       next = (uint32_t)off + chunk;
       page = (page_id_t)(page + (page_id_t)(next / PAGE_SIZE));

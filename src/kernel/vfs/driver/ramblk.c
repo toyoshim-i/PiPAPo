@@ -53,7 +53,7 @@ static int ramblk_read(struct blkdev *dev, page_id_t page, uint16_t off,
         (slot_map[s] != SLOT_CLEAN)
             ? OVERLAY_BASE + (uint32_t)slot_map[s] * BLKDEV_SECTOR_SIZE
             : rom_base + (uint32_t)s * BLKDEV_SECTOR_SIZE;
-    mod_core.mem_region_page_write(page, off, src, BLKDEV_SECTOR_SIZE);
+    mod_core.page_write(page, off, src, BLKDEV_SECTOR_SIZE);
     off += BLKDEV_SECTOR_SIZE;
   }
   return 0;
@@ -74,9 +74,8 @@ static int ramblk_write(struct blkdev *dev, page_id_t page, uint16_t off,
       slot = dirty_count++;
       slot_map[s] = (uint16_t)slot;
     }
-    mod_core.mem_region_page_read(page, off,
-                                  OVERLAY_BASE + slot * BLKDEV_SECTOR_SIZE,
-                                  BLKDEV_SECTOR_SIZE);
+    mod_core.page_read(page, off, OVERLAY_BASE + slot * BLKDEV_SECTOR_SIZE,
+                       BLKDEV_SECTOR_SIZE);
     off += BLKDEV_SECTOR_SIZE;
   }
   return 0;

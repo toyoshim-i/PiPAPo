@@ -11,9 +11,8 @@
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/cpu/ecpu_z80.h"
 
-/* ── Stubs for page allocator (not linked in host tests) ────────────────── */
-void *page_alloc(void) { return NULL; }
-void  page_free(void *p) { (void)p; }
+/* page_alloc / page_free stubs come from test_mem_region_stubs.c (linked
+ * alongside this test executable). */
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 

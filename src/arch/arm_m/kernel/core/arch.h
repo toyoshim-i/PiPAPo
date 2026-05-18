@@ -80,7 +80,7 @@ static inline void arch_sched_switch(void) {
  * this body, and any real function call would force the compiler to emit
  * a push/pop of LR that would straddle the stack switch (push on MSP, pop
  * on PSP) and corrupt the return path.  The inline arithmetic on
- * stack_page_id is deliberate for the same reason — mem_region_page_linear()
+ * stack_page_id is deliberate for the same reason — page_linear()
  * is an extern call and cannot be used here.
  * ────────────────────────────────────────────────────────────────────────── */
 static inline void arch_sched_start_hook(void) {
@@ -134,7 +134,7 @@ static inline page_id_t arch_user_ptr_to_page(page_id_t base_page,
                                               uint16_t *off) {
   (void)base_page;
   *off = (uint16_t)((uintptr_t)user_ptr & (PAGE_SIZE - 1u));
-  return mem_region_ptr_to_page((void *)(uintptr_t)user_ptr);
+  return page_from_ptr((void *)(uintptr_t)user_ptr);
 }
 
 #endif /* PPAP_ARCH_ARM_M_KERNEL_CORE_ARCH_H */

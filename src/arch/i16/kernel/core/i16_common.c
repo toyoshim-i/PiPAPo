@@ -114,12 +114,12 @@ void i16_vfork_restore_frame(void) {
 
   /* Write 34 bytes back to user stack at user_SS:user_SP */
   uint32_t frame_linear = (uint32_t)user_ss * 16 + user_sp;
-  uint32_t data_base = mem_region_page_linear(current->image.data.base_page);
+  uint32_t data_base = page_linear(current->image.data.base_page);
   uint32_t rel = frame_linear - data_base;
   page_id_t page = current->image.data.base_page + (page_id_t)(rel / PAGE_SIZE);
   uint16_t off = (uint16_t)(rel % PAGE_SIZE);
 
-  mem_region_page_write(page, off, saved, 34);
+  page_write(page, off, saved, 34);
 
   /* Catch any kernel-stack overrun before we iret to user mode. */
   proc_check_kstack_canary_panic();
