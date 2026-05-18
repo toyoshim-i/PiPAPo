@@ -488,6 +488,27 @@ coverage is not exhaustive yet.
 
 ## Automated on-target testing
 
+### Required QEMU regression targets
+
+A change is not ready to commit until `./scripts/run.sh --test` passes
+on **every** QEMU target.  All four run under QEMU and have no
+hardware dependency, so there is no excuse to skip them:
+
+| Target | QEMU backend | Notes |
+|--------|--------------|-------|
+| `qemu_arm` | `qemu-system-arm` | ARM Cortex-M reference target |
+| `qemu_m68k` | `qemu-system-m68k` | m68k reference target |
+| `qemu_rv32` | `qemu-system-riscv32` | RISC-V reference target |
+| `pcxt` | `qemu-system-i386` | i16 / 8086 reference target |
+
+Hardware-only targets (`xtensa_cc` on CardComputer, `pico1` /
+`pico1calc` / `pico2` / `pico2rv` on RP2040/RP2350) are verified
+separately when the change touches code those targets exercise.
+`x68k` runs under the XEiJ emulator, not QEMU, and is verified when
+m68k subsystem or X68000 boot code changes.
+
+A "qemu sweep" in commit messages means all four QEMU targets above.
+
 ### `run.sh --test`
 
 Builds with `PPAP_TESTS=ON`, boots the selected target, and captures
@@ -618,6 +639,13 @@ Full CI pipeline:
 2. Build all production targets (ARM and m68k, `PPAP_TESTS=OFF`)
 3. Print binary sizes
 4. QEMU on-target tests (ARM and m68k, `PPAP_TESTS=ON`)
+
+`test.sh --all` currently runs only the ARM and m68k lanes; the
+RISC-V (`qemu_rv32`) and PC/XT (`pcxt`) regression sweeps must be
+run manually via `./scripts/run.sh --test qemu_rv32` and
+`./scripts/run.sh --test pcxt` until they are folded into the
+script.  All four QEMU lanes are required before a commit lands —
+see [Required QEMU regression targets](#required-qemu-regression-targets).
 
 `./scripts/test.sh --all --extended` (or `--all-extended`) replaces step 4
 with extended QEMU lanes (`run.sh --test-extended`).

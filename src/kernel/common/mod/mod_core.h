@@ -29,8 +29,8 @@ struct kmem_pool;
 typedef struct kmem_pool kmem_pool_t;
 struct pcb;
 
-#include "kernel/common/core/mem_layout.h" /* ppap_mem_class_t, proc_image_segment_t,
-                                  * page_id_t (via page.h) */
+#include "kernel/common/core/proc_image.h" /* ppap_mem_class_t, proc_image_segment_t,
+                                  * page_id_t */
 
 #include "kernel/common/mod/module.h"
 

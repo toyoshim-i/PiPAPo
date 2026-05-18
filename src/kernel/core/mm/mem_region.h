@@ -13,7 +13,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "kernel/common/core/mem_layout.h"
+#include "kernel/common/core/proc_image.h"
 #include "kernel/core/mm/page.h"
 
 int mem_region_init(void);

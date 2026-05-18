@@ -15,8 +15,8 @@
 
 #include "common/ptrace.h"
 #include "kernel/common/config.h"
-#include "kernel/common/core/mem_layout.h"
 #include "kernel/common/core/page_types.h"
+#include "kernel/common/core/proc_image.h"
 #include "kernel/common/core/subsys_info.h"
 #include "kernel/common/spinlock.h" /* core_id() for #define current */
 

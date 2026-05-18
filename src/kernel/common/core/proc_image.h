@@ -1,30 +1,19 @@
 /*
- * mem_layout.h — Shared memory-class and process-image descriptors
+ * proc_image.h — Process image segment descriptors
  *
- * Step XT-2.1 introduces explicit memory classes so ports can describe
- * where executable, immutable, mutable, and stack memory live without
- * relying on raw address-range heuristics.
+ * proc/exec-layer types describing how a loaded process image is laid
+ * out across memory regions.  Carries link-time vaddr, OWNED / XIP /
+ * RW flags for the exit-time release path, and the memory class each
+ * segment was allocated from.
  */
 
-#ifndef PPAP_KERNEL_COMMON_CORE_MEM_LAYOUT_H
-#define PPAP_KERNEL_COMMON_CORE_MEM_LAYOUT_H
+#ifndef PPAP_KERNEL_COMMON_CORE_PROC_IMAGE_H
+#define PPAP_KERNEL_COMMON_CORE_PROC_IMAGE_H
 
 #include <stdint.h>
 
-#include "kernel/common/core/page_types.h" /* page_id_t, PAGE_ID_INVALID */
-
-typedef enum {
-  PPAP_MEM_NONE = 0,
-  PPAP_MEM_RAM_TEXT,
-  PPAP_MEM_RAM_RODATA,
-  PPAP_MEM_RAM_DATA,
-  PPAP_MEM_EXT_TEXT,
-  PPAP_MEM_EXT_RODATA,
-  PPAP_MEM_ROM_TEXT,
-  PPAP_MEM_ROM_RODATA,
-  PPAP_MEM_RAM_STACK,
-  PPAP_MEM_DEVICE_DMA,
-} ppap_mem_class_t;
+#include "kernel/common/core/mem_class.h"
+#include "kernel/common/core/page_types.h"
 
 enum {
   PROC_IMAGE_SEG_EXECUTABLE = 1u << 0,
@@ -84,4 +73,4 @@ static inline proc_image_segment_t proc_image_segment_make_vaddr(
   return seg;
 }
 
-#endif /* PPAP_KERNEL_COMMON_CORE_MEM_LAYOUT_H */
+#endif /* PPAP_KERNEL_COMMON_CORE_PROC_IMAGE_H */

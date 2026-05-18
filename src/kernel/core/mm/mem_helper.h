@@ -19,9 +19,9 @@
 
 #include <stdint.h>
 
-#include "kernel/common/core/mem_layout.h" /* proc_image_segment_t */
 #include "kernel/common/core/page_types.h"
-#include "kernel/core/mm/mem_region.h" /* ppap_mem_class_t */
+#include "kernel/common/core/proc_image.h" /* proc_image_segment_t, ppap_mem_class_t */
+#include "kernel/core/mm/mem_region.h"
 
 /* Reserve arch-specific text / rodata arenas.  Called from
  * mem_region_init() before mm_init's page-pool setup so the page-pool

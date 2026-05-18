@@ -383,7 +383,8 @@ src/kernel/
       mod_core.h/.inc   ← core module interface (18 functions)
       mod_vfs.h/.inc    ← VFS module interface (39 functions)
     core/               ← shared data-only headers
-      mem_layout.h      ← memory class enums, proc_image_segment_t
+      mem_class.h       ← memory class enum (ppap_mem_class_t)
+      proc_image.h      ← proc_image_segment_t, proc_image_t, segment flags
       page_types.h      ← page_id_t, PAGE_SIZE, page_count, oom_count
       proc_info.h       ← pcb_t struct, proc_state_t, proc_table, current
       sched_info.h      ← cpu tick counters

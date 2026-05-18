@@ -29,7 +29,8 @@ kernel/
   common/            Shared between core and VFS
     mod/             Module interfaces (mod_core.h/.inc, mod_vfs.h/.inc)
     core/            Data-only shared headers (no function declarations)
-      mem_layout.h   Memory class enums, proc_image_segment_t
+      mem_class.h    Memory class enum (ppap_mem_class_t)
+      proc_image.h   proc_image_segment_t, proc_image_t, segment flags
       page_types.h   page_id_t, PAGE_SIZE, page_count, oom_count
       proc_info.h    pcb_t struct, proc_state_t, proc_table, current
       sched_info.h   CPU tick counters (user/system/idle per core)

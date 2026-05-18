@@ -8,7 +8,7 @@
  * Linked into ppap_pcxt_vfs (VFS binary).
  */
 
-#include "kernel/common/core/mem_layout.h"  /* proc_image_segment_t, ppap_mem_class_t */
+#include "kernel/common/core/proc_image.h"  /* proc_image_segment_t, ppap_mem_class_t */
 #include "kernel/common/mod/module.h"
 #include "kernel/core/mm/kmem.h"  /* kmem_pool_t */
 
