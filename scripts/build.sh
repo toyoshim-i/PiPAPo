@@ -413,6 +413,7 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         -Wl,--emit-relocs -Wl,--gc-sections \
         -I$USER_DIR -I$PROJECT_DIR/src -isystem $USER_DIR/include \
         $USER_ARCH_DIR/crt0.S $USER_ARCH_DIR/syscall.S \
+        $PROJECT_DIR/src/common/math.c \
         $USER_DIR/lib/string.c $USER_DIR/lib/stdio.c \
         $USER_DIR/lib/stdlib.c $USER_DIR/lib/alloc.c \
         $USER_DIR/lib/file.c $USER_DIR/lib/time.c \
@@ -430,11 +431,10 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     # PPAP user-space is built with -mabi=call0.  Linking that libgcc
     # under call0 produces "ABI does not match" warnings and would
     # corrupt the register window at runtime when any 64-bit math
-    # helper (__udivdi3, __ashldi3, …) is actually invoked, since
-    # those helpers begin with `entry` and end with `retw` instead of
-    # the call0 prologue/return.  We therefore do not link libgcc; any
-    # app that needs 64-bit helpers is excluded via XTENSA_CC_APP_SKIP
-    # below until call0-compatible helpers land in src/user/lib/.
+    # helper (__udivdi3, __ashldi3, …) is actually invoked.  We
+    # therefore do not link libgcc; the weak, arch-neutral C
+    # replacements in src/common/math.c are pulled in unconditionally
+    # via XTENSA_USER_COMMON_FLAGS above.
 
     # Pull the canonical USER_APPS / USER_TESTS / per-app multi-source
     # mapping from cmake/user_apps.cmake so this target builds the same
@@ -448,12 +448,10 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
     # shellcheck disable=SC1090
     . "$USER_APPS_SH"
 
-    # Apps that don't yet build cleanly under -mabi=call0 PIC without
-    # the toolchain's (windowed-ABI) libgcc are listed here:
-    #   calc — needs __udivdi3 / __ashldi3 / __umoddi3 etc. for 64-bit
-    #          math in calc_render.c / calc_state.c.  Re-enable once
-    #          call0-compatible 64-bit helpers land in src/user/lib/.
-    XTENSA_CC_APP_SKIP="calc"
+    # Apps not yet building cleanly under -mabi=call0 PIC.  Empty
+    # today — keep the hook so future skip-list entries don't have to
+    # reinstate the helper machinery.
+    XTENSA_CC_APP_SKIP=""
 
     xtensa_app_skipped() {
         case " $XTENSA_CC_APP_SKIP " in *" $1 "*) return 0;; esac
@@ -524,58 +522,51 @@ if [[ "$TARGET" == "xtensa_cc" ]]; then
         done
     fi
 
-    # Strip debug symbols (keep relocation info — XIP loader needs them)
-    for f in "$BUILD_DIR"/user/*.elf; do
-        $XTENSA_STRIP --strip-debug "$f"
-    done
-
     for f in "$BUILD_DIR"/user/*.xip*.elf; do
         xtensa_xip_report "$f"
     done
 
-    # Stage romfs directory.  Per-app destination follows the same
-    # convention as cmake/stage_romfs.cmake: init → /sbin, others →
-    # /bin.  Only the RAM-layout ELFs are staged — the .xip / .xipfix
-    # variants are experimental analysis artifacts (see
-    # src/arch/xtensa/user/user_xip.ld) that the runtime loader does
-    # not consume yet, so embedding them in the romfs would just
-    # double the kernel image footprint.
-    rm -rf "$ROMFS_STAGING"
-    # Match cmake/stage_romfs.cmake's directory layout so a process
-    # whose HOME=/home (set by /etc/profile) can chdir() there, and so
-    # the standard /usr, /mnt mount points exist for future use.
-    mkdir -p "$ROMFS_STAGING"/{bin,sbin,etc,dev,home,proc,tmp,usr/bin,usr/include,mnt/sd,mnt/ufs}
+    # Stage romfs directory via the shared cmake -P stage_romfs.cmake
+    # script every other target uses.  Only the RAM-layout ELFs are
+    # staged — the .xip / .xipfix variants are analysis artifacts that
+    # the runtime loader does not consume yet (see
+    # src/arch/xtensa/user/user_xip.ld); embedding them would just
+    # double the kernel image footprint.  build/user/*.elf is left
+    # unstripped so xtensa_xip_report / nm keep working; the staged
+    # copies are stripped with --strip-debug to preserve relocations
+    # the xtensa loader needs.
+    USER_ELFS_LIST=""
     for app in $USER_APPS; do
         if xtensa_app_skipped "$app"; then continue; fi
-        case "$app" in
-            init) destdir="sbin";;
-            *)    destdir="bin";;
-        esac
-        cp "$BUILD_DIR/user/$app.elf" "$ROMFS_STAGING/$destdir/$app"
+        USER_ELFS_LIST="$USER_ELFS_LIST;$BUILD_DIR/user/$app.elf"
     done
-    ln -sf push "$ROMFS_STAGING/bin/sh"
-    ln -sf pi   "$ROMFS_STAGING/bin/vi"
-
     if [[ "$TESTS" == "ON" && -n "${USER_TESTS:-}" ]]; then
         for t in $USER_TESTS; do
             if xtensa_test_skipped "$t"; then continue; fi
-            cp "$BUILD_DIR/user/$t.elf" "$ROMFS_STAGING/bin/$t"
+            USER_ELFS_LIST="$USER_ELFS_LIST;$BUILD_DIR/user/$t.elf"
         done
     fi
+    USER_ELFS_LIST="${USER_ELFS_LIST#;}"
 
-    # Install /etc files (base + target overlay)
-    cp "$PROJECT_DIR/src/etc/"* "$ROMFS_STAGING/etc/" 2>/dev/null || true
-    OVERLAY_DIR="$PROJECT_DIR/src/target/xtensa_cc/romfs"
-    if [[ -d "$OVERLAY_DIR" ]]; then
-        cp -r "$OVERLAY_DIR"/* "$ROMFS_STAGING/" 2>/dev/null || true
-    fi
+    EXTRA_OVERLAY_ARG=()
     if [[ -n "$OVERLAY" ]]; then
         OVERLAY_ABS="$(cd "$OVERLAY" 2>/dev/null && pwd)" || {
             echo "[build] Error: overlay directory '$OVERLAY' not found" >&2
             exit 1
         }
-        cp -r "$OVERLAY_ABS"/* "$ROMFS_STAGING/" 2>/dev/null || true
+        EXTRA_OVERLAY_ARG=(-D "EXTRA_OVERLAY_DIR=$OVERLAY_ABS")
     fi
+
+    cmake \
+        -D "STAGING=$ROMFS_STAGING" \
+        -D "PROJECT_ROOT=$PROJECT_DIR" \
+        -D "USER_ELFS=$USER_ELFS_LIST" \
+        -D "ETC_DIR=$PROJECT_DIR/src/etc" \
+        -D "STRIP=$XTENSA_STRIP" \
+        -D "STRIP_FLAGS=--strip-debug" \
+        -D "OVERLAY_DIR=$PROJECT_DIR/src/target/xtensa_cc/romfs" \
+        "${EXTRA_OVERLAY_ARG[@]}" \
+        -P "$PROJECT_DIR/cmake/stage_romfs.cmake"
 
     # Generate romfs.bin
     echo "[build] Generating romfs.bin..."
