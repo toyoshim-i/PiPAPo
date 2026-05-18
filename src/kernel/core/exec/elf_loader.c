@@ -466,8 +466,9 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   int need_process_stack = !need_user_stack;
 
   if (need_process_stack) {
-    if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                         PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
+    if (image_segment_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                            PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) <
+        0) {
       return -(int)ENOMEM;
     }
     p->stack_page_id = page_from_ptr(stack_region.base);
@@ -478,9 +479,10 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   }
 
   if (need_user_stack) {
-    if (mem_region_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                         PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
-      mem_region_free(&stack_region);
+    if (image_segment_alloc(&ustack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                            PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) <
+        0) {
+      image_segment_free(&stack_region);
       p->stack_page_id = PAGE_ID_INVALID;
       return -(int)ENOMEM;
     }
@@ -497,11 +499,11 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
         (void *)(uintptr_t)text_base, text_seg->p_memsz, PPAP_MEM_ROM_TEXT,
         PROC_IMAGE_SEG_EXECUTABLE | PROC_IMAGE_SEG_XIP);
   } else {
-    if (mem_region_alloc(&text_region, PPAP_MEM_RAM_TEXT, text_alloc_size,
-                         PROC_IMAGE_SEG_EXECUTABLE | PROC_IMAGE_SEG_OWNED) <
+    if (image_segment_alloc(&text_region, PPAP_MEM_RAM_TEXT, text_alloc_size,
+                            PROC_IMAGE_SEG_EXECUTABLE | PROC_IMAGE_SEG_OWNED) <
         0) {
-      mem_region_free(&ustack_region);
-      mem_region_free(&stack_region);
+      image_segment_free(&ustack_region);
+      image_segment_free(&stack_region);
       p->stack_page_id = PAGE_ID_INVALID;
       return -(int)ENOMEM;
     }
@@ -563,18 +565,18 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   if (data_seg && data_memsz > 0) {
     data_pages = (data_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
     if (data_pages > USER_PAGES_MAX) {
-      mem_region_free(&text_region);
-      mem_region_free(&ustack_region);
-      mem_region_free(&stack_region);
+      image_segment_free(&text_region);
+      image_segment_free(&ustack_region);
+      image_segment_free(&stack_region);
       p->stack_page_id = PAGE_ID_INVALID;
       return -(int)ENOMEM;
     }
 
-    if (mem_region_alloc(&data_region, PPAP_MEM_RAM_DATA, data_memsz,
-                         PROC_IMAGE_SEG_WRITABLE) < 0) {
-      mem_region_free(&text_region);
-      mem_region_free(&ustack_region);
-      mem_region_free(&stack_region);
+    if (image_segment_alloc(&data_region, PPAP_MEM_RAM_DATA, data_memsz,
+                            PROC_IMAGE_SEG_WRITABLE) < 0) {
+      image_segment_free(&text_region);
+      image_segment_free(&ustack_region);
+      image_segment_free(&stack_region);
       p->stack_page_id = PAGE_ID_INVALID;
       return -(int)ENOMEM;
     }
@@ -603,10 +605,10 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
                             text_seg,  data_seg,    cpu_ops,   cpu_state};
     int reloc_rc = elf_reloc_arch(&rctx, out);
     if (reloc_rc < 0) {
-      mem_region_free(&data_region);
-      mem_region_free(&text_region);
-      mem_region_free(&ustack_region);
-      mem_region_free(&stack_region);
+      image_segment_free(&data_region);
+      image_segment_free(&text_region);
+      image_segment_free(&ustack_region);
+      image_segment_free(&stack_region);
       p->stack_page_id = PAGE_ID_INVALID;
       return reloc_rc;
     }
@@ -614,10 +616,10 @@ static int elf_load_image(pcb_t *p, const elf32_ehdr_t *ehdr,
   /* --- 6. Page tracking --- */
   if (data_base) {
     if (proc_track_page_range(p, 0, page_from_ptr(data_base), data_pages) < 0) {
-      mem_region_free(&data_region);
-      mem_region_free(&text_region);
-      mem_region_free(&ustack_region);
-      mem_region_free(&stack_region);
+      image_segment_free(&data_region);
+      image_segment_free(&text_region);
+      image_segment_free(&ustack_region);
+      image_segment_free(&stack_region);
       p->stack_page_id = PAGE_ID_INVALID;
       p->image.stack = (proc_image_segment_t){0};
       return -(int)ENOMEM;
@@ -824,15 +826,15 @@ static int elf_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
      * code below can index it as a flat pointer.  elf_loader is never
      * reached on i16 (elf16_loader wins detect first for CPU_ARCH_8086
      * binaries), so the near-pointer truncation hazard does not apply. */
-    if (mem_region_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
-                         PROC_IMAGE_SEG_WRITABLE) < 0)
+    if (image_segment_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
+                            PROC_IMAGE_SEG_WRITABLE) < 0)
       return -(int)ENOMEM;
     uintptr_t addr = (uintptr_t)staging.base;
     page_id_t page = (page_id_t)(addr / PAGE_SIZE);
     uint16_t page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
     long n = mod_vfs.vnode_read(vn, page, page_off, file_size, 0);
     if (n < 0 || (uint32_t)n != file_size) {
-      mem_region_free(&staging);
+      image_segment_free(&staging);
       return (n < 0) ? (int)n : -(int)ENOEXEC;
     }
     file_buf = (const uint8_t *)staging.base;
@@ -842,7 +844,7 @@ static int elf_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   int rc = elf_load_from_buffer(p, file_buf, file_size, cpu_ops, cpu_state,
                                 args, load_flags);
 
-  if (staging_used) mem_region_free(&staging);
+  if (staging_used) image_segment_free(&staging);
   return rc;
 }
 

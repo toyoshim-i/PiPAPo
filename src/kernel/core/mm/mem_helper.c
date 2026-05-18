@@ -21,7 +21,7 @@ __attribute__((weak)) int mem_helper_init_pool(uint32_t *base_out) {
 
 __attribute__((weak)) int mem_helper_alloc(ppap_mem_class_t mem_class,
                                            uint32_t size, uint32_t flags,
-                                           proc_image_segment_t *out) {
+                                           region_t *out) {
   (void)mem_class;
   (void)size;
   (void)flags;
@@ -29,8 +29,11 @@ __attribute__((weak)) int mem_helper_alloc(ppap_mem_class_t mem_class,
   return -(int)ENOSYS;
 }
 
-__attribute__((weak)) int mem_helper_free(const proc_image_segment_t *seg) {
-  (void)seg;
+__attribute__((weak)) int mem_helper_free(ppap_mem_class_t mem_class,
+                                          uint32_t size, const region_t *r) {
+  (void)mem_class;
+  (void)size;
+  (void)r;
   return -(int)ENOSYS;
 }
 

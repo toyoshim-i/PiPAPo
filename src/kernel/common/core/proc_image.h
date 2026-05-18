@@ -14,6 +14,7 @@
 
 #include "kernel/common/core/mem_class.h"
 #include "kernel/common/core/page_types.h"
+#include "kernel/common/core/region_types.h"
 
 enum {
   PROC_IMAGE_SEG_EXECUTABLE = 1u << 0,
@@ -70,6 +71,18 @@ static inline proc_image_segment_t proc_image_segment_make_vaddr(
   proc_image_segment_t seg =
       proc_image_segment_make(base, size, mem_class, flags);
   seg.vaddr = vaddr;
+  return seg;
+}
+
+/* Build a process-image segment descriptor around a region_t result.
+ * Common shape after a mem_region_alloc / region_alloc call: caller
+ * supplies the proc-image-layer fields (mem_class, segment flags),
+ * the mm layer supplied (base, base_page) via the region_t. */
+static inline proc_image_segment_t proc_image_segment_from_region(
+    ppap_mem_class_t mem_class, uint32_t size, uint32_t flags, region_t r) {
+  proc_image_segment_t seg =
+      proc_image_segment_make(r.base, size, mem_class, flags);
+  seg.base_page = r.base_page;
   return seg;
 }
 

@@ -30,6 +30,7 @@
 #include "kernel/core/arch.h"
 #include "kernel/core/boot.h"
 #include "kernel/core/driver/timer_x68k.h"
+#include "kernel/core/exec/image_alloc.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
@@ -190,7 +191,7 @@ int target_mount_rootfs(void) {
     if (reserve_start < pool_base) reserve_start = pool_base;
     if (reserve_end > pool_end) reserve_end = pool_end;
     if (reserve_start < reserve_end &&
-        mem_region_alloc_at(&reserved_rootfs, PPAP_MEM_RAM_DATA,
+        image_segment_alloc_at(&reserved_rootfs, PPAP_MEM_RAM_DATA,
                             (void *)reserve_start,
                             reserve_end - reserve_start,
                             PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0)

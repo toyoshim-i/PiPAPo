@@ -6,6 +6,7 @@
  */
 
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/exec/image_alloc.h"
 #include "kernel/core/fatimg.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
@@ -42,7 +43,7 @@ void target_late_init(void) {
     proc_image_segment_t image_region;
     uint8_t *test_img = NULL;
 
-    if (mem_region_alloc(&image_region, PPAP_MEM_RAM_DATA, PAGE_SIZE,
+    if (image_segment_alloc(&image_region, PPAP_MEM_RAM_DATA, PAGE_SIZE,
                          PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0)
       test_img = (uint8_t *)image_region.base;
     if (test_img) {

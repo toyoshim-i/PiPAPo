@@ -6,40 +6,45 @@
 
 #include <stdlib.h>
 
+#include "common/errno.h"
 #include "kernel/core/mm/page.h"
 
-#include "common/errno.h"
+int mem_region_alloc(ppap_mem_class_t mem_class, uint32_t size, uint32_t flags,
+                     region_t *out) {
+  (void)mem_class;
+  (void)flags;
 
-int mem_region_alloc(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
-                     uint32_t size, uint32_t flags) {
-  void *base;
-
-  if (!seg) return -(int)EINVAL;
+  if (!out) return -(int)EINVAL;
   if (size == 0) {
-    *seg = (proc_image_segment_t){0};
+    out->base = NULL;
+    out->base_page = PAGE_ID_INVALID;
     return 0;
   }
 
-  base = calloc(1u, size);
+  void *base = calloc(1u, size);
   if (!base) return -(int)ENOMEM;
 
-  *seg = proc_image_segment_make(base, size, mem_class, flags);
+  out->base = base;
+  out->base_page = PAGE_ID_INVALID;
   return 0;
 }
 
-int mem_region_alloc_at(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
-                        void *base, uint32_t size, uint32_t flags) {
-  (void)seg;
+int mem_region_alloc_at(ppap_mem_class_t mem_class, void *base, uint32_t size,
+                        uint32_t flags, region_t *out) {
   (void)mem_class;
   (void)base;
   (void)size;
   (void)flags;
+  (void)out;
   return -(int)ENOSYS;
 }
 
-void mem_region_free(const proc_image_segment_t *seg) {
-  if (!seg || !seg->base) return;
-  free(seg->base);
+void mem_region_free(ppap_mem_class_t mem_class, uint32_t size,
+                     const region_t *r) {
+  (void)mem_class;
+  (void)size;
+  if (!r || !r->base) return;
+  free(r->base);
 }
 
 page_id_t page_alloc(void) { return PAGE_ID_INVALID; }
@@ -63,14 +68,18 @@ void *page_to_ptr(page_id_t id) {
   return NULL;
 }
 
-void page_read(page_id_t id, uint16_t off,
-                          void *buf, uint16_t len) {
-  (void)id; (void)off; (void)buf; (void)len;
+void page_read(page_id_t id, uint16_t off, void *buf, uint16_t len) {
+  (void)id;
+  (void)off;
+  (void)buf;
+  (void)len;
 }
 
-void page_write(page_id_t id, uint16_t off,
-                           const void *buf, uint16_t len) {
-  (void)id; (void)off; (void)buf; (void)len;
+void page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len) {
+  (void)id;
+  (void)off;
+  (void)buf;
+  (void)len;
 }
 
 uint32_t mem_region_total_bytes(ppap_mem_class_t mem_class) {

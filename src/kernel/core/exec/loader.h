@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "kernel/core/cpu/cpu.h"
+#include "kernel/core/exec/image_alloc.h"
 
 // Forward declaration of pcb_t and vnode_t
 typedef struct pcb pcb_t;

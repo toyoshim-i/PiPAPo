@@ -33,42 +33,39 @@ static uint32_t mem_region_page_pool_largest_free_bytes(void) {
 
 int mem_region_init(void) { return mem_helper_init_arenas(); }
 
-static int mem_region_alloc_page_backed(proc_image_segment_t *seg,
-                                        ppap_mem_class_t mem_class,
-                                        uint32_t size, uint32_t flags) {
+static int mem_region_alloc_page_backed(uint32_t size, region_t *out) {
   if (size == 0) {
-    *seg = (proc_image_segment_t){0};
+    out->base = NULL;
+    out->base_page = PAGE_ID_INVALID;
     return 0;
   }
 
-  /* Allocate by page_id so we can populate seg->base_page directly.
+  /* Allocate by page_id so we can populate out->base_page directly.
    * On i16 a void * cast of the linear address truncates to 16 bits,
-   * which loses any page above the first 64 KB.  page_linear() gives
-   * back the full 32-bit linear address for the seg->base pointer
-   * (still 16-bit on i16, but the kernel only dereferences seg->base
-   * through page_read / page_write which handle the segment registers
-   * internally). */
+   * which loses any page above the first 64 KB.  Callers reach the
+   * payload via page_read / page_write through base_page, not by
+   * dereferencing base. */
   uint32_t n_pages = mem_region_page_count(size);
   page_id_t pid = (n_pages == 1) ? page_alloc() : page_alloc_n(n_pages);
   if (pid == PAGE_ID_INVALID) return -(int)ENOMEM;
 
-  void *base = (void *)(uintptr_t)page_linear(pid);
-  *seg = proc_image_segment_make(base, size, mem_class, flags);
-  seg->base_page = pid;
+  out->base = (void *)(uintptr_t)page_linear(pid);
+  out->base_page = pid;
   return 0;
 }
 
-int mem_region_alloc(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
-                     uint32_t size, uint32_t flags) {
-  if (!seg) return -(int)EINVAL;
-  int rc = mem_helper_alloc(mem_class, size, flags, seg);
+int mem_region_alloc(ppap_mem_class_t mem_class, uint32_t size, uint32_t flags,
+                     region_t *out) {
+  if (!out) return -(int)EINVAL;
+  int rc = mem_helper_alloc(mem_class, size, flags, out);
   if (rc != -(int)ENOSYS) return rc;
-  return mem_region_alloc_page_backed(seg, mem_class, size, flags);
+  return mem_region_alloc_page_backed(size, out);
 }
 
-int mem_region_alloc_at(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
-                        void *base, uint32_t size, uint32_t flags) {
-  if (!seg || !base || size == 0) return -(int)EINVAL;
+int mem_region_alloc_at(ppap_mem_class_t mem_class, void *base, uint32_t size,
+                        uint32_t flags, region_t *out) {
+  (void)flags;
+  if (!out || !base || size == 0) return -(int)EINVAL;
 
   if (mem_class == PPAP_MEM_RAM_DATA || mem_class == PPAP_MEM_RAM_STACK ||
       mem_class == PPAP_MEM_RAM_RODATA || mem_class == PPAP_MEM_DEVICE_DMA) {
@@ -80,29 +77,30 @@ int mem_region_alloc_at(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
         return -(int)ENOMEM;
       }
     }
-    *seg = proc_image_segment_make(base, size, mem_class, flags);
-    seg->base_page = base_id;
+    out->base = base;
+    out->base_page = base_id;
     return 0;
   }
 
   return -(int)EINVAL;
 }
 
-static void mem_region_free_page_backed(const proc_image_segment_t *seg) {
-  uint32_t n_pages = mem_region_page_count(seg->size);
-  page_id_t base_id = seg->base_page;
-  if (base_id == PAGE_ID_INVALID) base_id = page_from_ptr(seg->base);
+static void mem_region_free_page_backed(uint32_t size, const region_t *r) {
+  uint32_t n_pages = mem_region_page_count(size);
+  page_id_t base_id = r->base_page;
+  if (base_id == PAGE_ID_INVALID) base_id = page_from_ptr(r->base);
   for (uint32_t i = 0; i < n_pages; i++) page_free(base_id + (page_id_t)i);
 }
 
-void mem_region_free(const proc_image_segment_t *seg) {
-  if (!seg || seg->size == 0) return;
+void mem_region_free(ppap_mem_class_t mem_class, uint32_t size,
+                     const region_t *r) {
+  if (!r || size == 0) return;
   /* Either a usable base pointer or a valid base_page is required.
-   * On i16, callers may set base_page only because seg->base would be
+   * On i16, callers may set base_page only because r->base would be
    * a truncated pointer that the page-backed paths below ignore. */
-  if (!seg->base && seg->base_page == PAGE_ID_INVALID) return;
-  if (mem_helper_free(seg) == 0) return;
-  mem_region_free_page_backed(seg);
+  if (!r->base && r->base_page == PAGE_ID_INVALID) return;
+  if (mem_helper_free(mem_class, size, r) == 0) return;
+  mem_region_free_page_backed(size, r);
 }
 
 /* ── Capacity queries ──────────────────────────────────────────────── */

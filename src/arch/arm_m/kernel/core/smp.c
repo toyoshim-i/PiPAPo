@@ -134,14 +134,13 @@ void core1_sched_entry(void) {
   /* 3. Allocate an idle PCB for Core 1.
    * arm_kernel_sched_switch requires current_core[1] to be valid. */
   pcb_t *idle = proc_alloc();
-  proc_image_segment_t idle_stack_region;
+  region_t idle_stack;
   if (!idle) {
     mod_vfs.klogf("SMP: Core 1 idle alloc FAILED\n");
     for (;;) arch_wfi();
   }
-  if (mem_region_alloc(&idle_stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                       PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0)
-    idle->stack_page_id = page_from_ptr(idle_stack_region.base);
+  if (mem_region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE, 0, &idle_stack) == 0)
+    idle->stack_page_id = idle_stack.base_page;
   else
     idle->stack_page_id = PAGE_ID_INVALID;
   if (idle->stack_page_id == PAGE_ID_INVALID) {
@@ -230,12 +229,11 @@ void core1_launch(void (*entry)(void)) {
 
   /* Allocate a 4 KB stack page for Core 1.
    * Stacks grow downward, so Core 1's initial SP = top of the page. */
-  proc_image_segment_t launch_stack_region;
+  region_t launch_stack;
   void *stack_page = NULL;
 
-  if (mem_region_alloc(&launch_stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                       PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0)
-    stack_page = launch_stack_region.base;
+  if (mem_region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE, 0, &launch_stack) == 0)
+    stack_page = launch_stack.base;
   if (!stack_page) {
     mod_vfs.klogf("SMP: Core 1 launch stack alloc FAILED\n");
     return;

@@ -68,8 +68,9 @@ static int m68k_emu_alloc_region(proc_image_segment_t *seg,
 
   uint32_t total_pages = preferred_pages;
   while (total_pages >= min_pages) {
-    if (mem_region_alloc(seg, PPAP_MEM_RAM_DATA, total_pages * PAGE_SIZE,
-                         PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) == 0) {
+    if (image_segment_alloc(seg, PPAP_MEM_RAM_DATA, total_pages * PAGE_SIZE,
+                            PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) ==
+        0) {
       return (int)total_pages;
     }
     if (total_pages == min_pages) break;
@@ -93,8 +94,8 @@ static int m68k_emu_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   /* ── 1. Stage the ELF in RAM.  Emulated m68k runs on ARM/RV/Xtensa
    *      only (all flat-pointer arches), so staging is safe. */
   proc_image_segment_t staging = {0};
-  if (mem_region_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
-                       PROC_IMAGE_SEG_WRITABLE) < 0)
+  if (image_segment_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
+                          PROC_IMAGE_SEG_WRITABLE) < 0)
     return -(int)ENOMEM;
   {
     uintptr_t addr = (uintptr_t)staging.base;
@@ -102,7 +103,7 @@ static int m68k_emu_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
     uint16_t page_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
     long n = mod_vfs.vnode_read(vn, page, page_off, file_size, 0);
     if (n < 0 || (uint32_t)n != file_size) {
-      mem_region_free(&staging);
+      image_segment_free(&staging);
       return (n < 0) ? (int)n : -(int)ENOEXEC;
     }
   }
@@ -119,7 +120,7 @@ static int m68k_emu_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   int total_pages = m68k_emu_alloc_region(
       &data_region, emu_mem_pages + state_pages, min_emu_pages + state_pages);
   if (total_pages < 0) {
-    mem_region_free(&staging);
+    image_segment_free(&staging);
     return total_pages;
   }
 
@@ -130,10 +131,10 @@ static int m68k_emu_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
       (ppap_m68k_exec_state_t *)(emu_mem + emu_mem_pages * PAGE_SIZE);
 
   /* ── 3. Allocate stack page ────────────────────────────────────────── */
-  if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
-    mem_region_free(&data_region);
-    mem_region_free(&staging);
+  if (image_segment_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                          PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
+    image_segment_free(&data_region);
+    image_segment_free(&staging);
     return -(int)ENOMEM;
   }
   p->stack_page_id = page_from_ptr(stack_region.base);
@@ -149,10 +150,10 @@ static int m68k_emu_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   uint32_t entry = 0;
   int rc = ppap_m68k_load_elf(&state->m68k, emu_mem, emu_mem_size, file_buf,
                               file_size, args, &entry);
-  mem_region_free(&staging);
+  image_segment_free(&staging);
   if (rc < 0) {
-    mem_region_free(&stack_region);
-    mem_region_free(&data_region);
+    image_segment_free(&stack_region);
+    image_segment_free(&data_region);
     return rc;
   }
 

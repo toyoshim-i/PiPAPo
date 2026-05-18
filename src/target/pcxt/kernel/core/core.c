@@ -8,7 +8,8 @@
  * Linked into ppap_pcxt_vfs (VFS binary).
  */
 
-#include "kernel/common/core/proc_image.h"  /* proc_image_segment_t, ppap_mem_class_t */
+#include "kernel/common/core/mem_class.h"
+#include "kernel/common/core/region_types.h"
 #include "kernel/common/mod/module.h"
 #include "kernel/core/mm/kmem.h"  /* kmem_pool_t */
 
@@ -18,9 +19,8 @@ void *kmem_alloc(kmem_pool_t *);
 void kmem_free(kmem_pool_t *, void *);
 uint32_t kmem_free_count(const kmem_pool_t *);
 void kmem_pool_init(kmem_pool_t *, void *, size_t, uint32_t);
-int mem_region_alloc(proc_image_segment_t *, ppap_mem_class_t,
-                     uint32_t, uint32_t);
-void mem_region_free(const proc_image_segment_t *);
+int mem_region_alloc(ppap_mem_class_t, uint32_t, uint32_t, region_t *);
+void mem_region_free(ppap_mem_class_t, uint32_t, const region_t *);
 uint32_t mem_region_free_bytes(ppap_mem_class_t);
 uint32_t mem_region_total_bytes(ppap_mem_class_t);
 void page_read(page_id_t, uint16_t, void *, uint16_t);

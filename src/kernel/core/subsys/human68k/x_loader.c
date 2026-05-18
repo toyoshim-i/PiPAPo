@@ -155,9 +155,13 @@ static int x68k_alloc_largest_image_region(proc_image_segment_t *seg,
 
   for (uint32_t total_pages = USER_PAGES_MAX; total_pages >= min_pages;
        total_pages--) {
-    if (mem_region_alloc(seg, PPAP_MEM_RAM_DATA, total_pages * PAGE_SIZE,
-                         PROC_IMAGE_SEG_WRITABLE) == 0)
+    uint32_t size = total_pages * PAGE_SIZE;
+    region_t r;
+    if (mem_region_alloc(PPAP_MEM_RAM_DATA, size, 0, &r) == 0) {
+      *seg = proc_image_segment_from_region(PPAP_MEM_RAM_DATA, size,
+                                            PROC_IMAGE_SEG_WRITABLE, r);
       return (int)total_pages;
+    }
     if (total_pages == min_pages) break;
   }
 
@@ -180,9 +184,13 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
    * relocation. */
   proc_image_segment_t staging = {0};
   int rc;
-  if (mem_region_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
-                       PROC_IMAGE_SEG_WRITABLE) < 0)
-    return -(int)ENOMEM;
+  {
+    region_t r;
+    if (mem_region_alloc(PPAP_MEM_RAM_DATA, file_size, 0, &r) < 0)
+      return -(int)ENOMEM;
+    staging = proc_image_segment_from_region(PPAP_MEM_RAM_DATA, file_size,
+                                             PROC_IMAGE_SEG_WRITABLE, r);
+  }
   {
     uintptr_t addr = (uintptr_t)staging.base;
     page_id_t page = (page_id_t)(addr / PAGE_SIZE);
@@ -213,13 +221,18 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   proc_image_segment_t image_region = {0};
 
 #if !defined(__m68k__)
-  if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
-    rc = -(int)ENOMEM;
-    goto out;
+  {
+    region_t r;
+    if (mem_region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE, 0, &r) < 0) {
+      rc = -(int)ENOMEM;
+      goto out;
+    }
+    stack_region = proc_image_segment_from_region(
+        PPAP_MEM_RAM_STACK, PAGE_SIZE,
+        PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED, r);
+    p->stack_page_id = r.base_page;
+    p->image.stack = stack_region;
   }
-  p->stack_page_id = page_from_ptr(stack_region.base);
-  p->image.stack = stack_region;
 #endif
 
 #if !defined(__m68k__) && defined(PPAP_ENABLE_ECPU_M68K)
@@ -228,7 +241,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   uint32_t min_pages =
       (X68K_PMB_SIZE + image_size + PAGE_SIZE - 1u) / PAGE_SIZE;
   if (min_pages > H68K_EMU_MEM_PAGES_MAX) {
-    mem_region_free(&stack_region);
+    image_segment_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
     rc = -(int)ENOMEM;
@@ -239,7 +252,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   int total_pages =
       x68k_alloc_largest_image_region(&image_region, min_total_pages);
   if (total_pages < 0) {
-    mem_region_free(&stack_region);
+    image_segment_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
     rc = total_pages;
@@ -248,8 +261,8 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
 
   if (proc_track_page_range(p, 0, page_from_ptr(image_region.base),
                             image_region.size / PAGE_SIZE) < 0) {
-    mem_region_free(&image_region);
-    mem_region_free(&stack_region);
+    image_segment_free(&image_region);
+    image_segment_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
     rc = -(int)ENOMEM;
@@ -301,7 +314,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
                             reloc_size, delta);
     if (err < 0) {
       proc_release_tracked_pages(p, 0, (uint32_t)total_pages);
-      mem_region_free(&stack_region);
+      image_segment_free(&stack_region);
       p->stack_page_id = PAGE_ID_INVALID;
       p->image.stack = (proc_image_segment_t){0};
       rc = err;
@@ -337,7 +350,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   uint32_t min_pages = (min_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
 
   if (min_pages > USER_PAGES_MAX) {
-    mem_region_free(&stack_region);
+    image_segment_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
     rc = -(int)ENOMEM;
@@ -345,7 +358,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   }
   int n_pages = x68k_alloc_largest_image_region(&image_region, min_pages);
   if (n_pages < 0) {
-    mem_region_free(&stack_region);
+    image_segment_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
     rc = n_pages;
@@ -354,8 +367,8 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
 
   if (proc_track_page_range(p, 0, page_from_ptr(image_region.base),
                             image_region.size / PAGE_SIZE) < 0) {
-    mem_region_free(&image_region);
-    mem_region_free(&stack_region);
+    image_segment_free(&image_region);
+    image_segment_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
     rc = -(int)ENOMEM;
@@ -377,7 +390,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   uint32_t env_addr = 0xFFFFFFFFu;
   if (human68k_build_env(args, &env_page, &env_addr) < 0) {
     proc_release_tracked_pages(p, 0, (uint32_t)n_pages);
-    mem_region_free(&stack_region);
+    image_segment_free(&stack_region);
     p->stack_page_id = PAGE_ID_INVALID;
     p->image.stack = (proc_image_segment_t){0};
     rc = -(int)ENOMEM;
@@ -410,7 +423,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
         x68k_apply_relocs(text_dst, image_size, reloc_data, reloc_size, delta);
     if (err < 0) {
       proc_release_tracked_pages(p, 0, (uint32_t)n_pages);
-      mem_region_free(&stack_region);
+      image_segment_free(&stack_region);
       p->stack_page_id = PAGE_ID_INVALID;
       p->image.stack = (proc_image_segment_t){0};
       rc = err;
@@ -446,7 +459,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
 #endif
 
 out:
-  mem_region_free(&staging);
+  image_segment_free(&staging);
   return rc;
 }
 

@@ -20,6 +20,7 @@
 #include "kernel/common/mem_region_kbuf.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/exec/exec.h"
+#include "kernel/core/exec/image_alloc.h"
 #include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
@@ -338,8 +339,8 @@ static int dos_malloc(uint32_t *regs, uint32_t usp) {
 
   /* Actual allocation — try exact requested size only. */
   uint32_t total = MMB_HEADER_SIZE + size;
-  if (mem_region_alloc(&alloc_region, PPAP_MEM_RAM_DATA, total,
-                       PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0) {
+  if (image_segment_alloc(&alloc_region, PPAP_MEM_RAM_DATA, total,
+                          PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0) {
     /* Report largest contiguous run so caller can retry. */
     uint32_t contig_bytes = mem_region_largest_free_bytes(PPAP_MEM_RAM_DATA);
     uint32_t avail = (contig_bytes > MMB_HEADER_SIZE)
@@ -364,7 +365,7 @@ static int dos_malloc(uint32_t *regs, uint32_t usp) {
   }
   if (slot < 0) {
     /* No free tracking slot — free the pages and fail */
-    mem_region_free(&alloc_region);
+    image_segment_free(&alloc_region);
     H68K_TRACE("_MALLOC: no tracking slot");
     regs[0] = 0x82000000u; /* Human68k: too many blocks */
     advance_pc(regs);
@@ -408,7 +409,7 @@ static int dos_mfree(uint32_t *regs, uint32_t usp) {
       if (user_ptr == block_addr) {
         H68K_TRACE("_MFREE: freeing slot %u (%x bytes)", (uint32_t)i,
                    h->mallocs[i].region.size);
-        mem_region_free(&h->mallocs[i].region);
+        image_segment_free(&h->mallocs[i].region);
         h->mallocs[i].region = (proc_image_segment_t){0};
         regs[0] = 0;
         advance_pc(regs);

@@ -574,10 +574,9 @@ static int ufs_mount(mount_entry_t *mnt, const void *dev_data) {
   /* Allocate a scratch page for large temporaries (indirect block
    * pointer arrays).  Lives outside the DS=0 segment on i16. */
   {
-    proc_image_segment_t scratch_seg;
-    if (mod_core.mem_region_alloc(&scratch_seg, PPAP_MEM_RAM_DATA, PAGE_SIZE,
-                                  0) == 0)
-      ufs_priv.scratch_page = scratch_seg.base_page;
+    region_t r;
+    if (mod_core.mem_region_alloc(PPAP_MEM_RAM_DATA, PAGE_SIZE, 0, &r) == 0)
+      ufs_priv.scratch_page = r.base_page;
     else
       ufs_priv.scratch_page = PAGE_ID_INVALID;
   }

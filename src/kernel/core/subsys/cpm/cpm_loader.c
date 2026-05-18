@@ -102,8 +102,8 @@ static int cpm_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   /* ── 0. Stage the .COM file in RAM so cpm_load_com can memcpy it into
    *      emulated Z80 memory.  cpm_loader runs on flat-pointer arches
    *      only (Z80 emu on m68k/RV/ARM), so staging is safe. */
-  if (mem_region_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
-                       PROC_IMAGE_SEG_WRITABLE) < 0) {
+  if (image_segment_alloc(&staging, PPAP_MEM_RAM_DATA, file_size,
+                          PROC_IMAGE_SEG_WRITABLE) < 0) {
     return -(int)ENOMEM;
   }
   {
@@ -112,24 +112,24 @@ static int cpm_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
     uint16_t pg_off = (uint16_t)(addr & (PAGE_SIZE - 1u));
     long n = mod_vfs.vnode_read(vn, pg, pg_off, file_size, 0);
     if (n < 0 || (uint32_t)n != file_size) {
-      mem_region_free(&staging);
+      image_segment_free(&staging);
       return (n < 0) ? (int)n : -(int)ENOEXEC;
     }
   }
   const uint8_t *file_buf = (const uint8_t *)staging.base;
 
   /* ── 1. Allocate Z80 memory (64KB contiguous) + state page ─────────── */
-  if (mem_region_alloc(&data_region, PPAP_MEM_RAM_DATA,
-                       (Z80_MEM_PAGES + 1u) * PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE) < 0) {
-    mem_region_free(&staging);
+  if (image_segment_alloc(&data_region, PPAP_MEM_RAM_DATA,
+                          (Z80_MEM_PAGES + 1u) * PAGE_SIZE,
+                          PROC_IMAGE_SEG_WRITABLE) < 0) {
+    image_segment_free(&staging);
     return -(int)ENOMEM;
   }
 
   if (proc_track_page_range(p, 0, page_from_ptr(data_region.base),
                             data_region.size / PAGE_SIZE) < 0) {
-    mem_region_free(&data_region);
-    mem_region_free(&staging);
+    image_segment_free(&data_region);
+    image_segment_free(&staging);
     return -(int)ENOMEM;
   }
 
@@ -138,10 +138,10 @@ static int cpm_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
       (cpm_exec_state_t *)(z80_mem + Z80_MEM_PAGES * PAGE_SIZE);
 
   /* ── 2. Allocate stack page ────────────────────────────────────────── */
-  if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                       PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
+  if (image_segment_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
+                          PROC_IMAGE_SEG_WRITABLE | PROC_IMAGE_SEG_OWNED) < 0) {
     proc_release_tracked_pages(p, 0, Z80_MEM_PAGES + 1u);
-    mem_region_free(&staging);
+    image_segment_free(&staging);
     return -(int)ENOMEM;
   }
   p->stack_page_id = page_from_ptr(stack_region.base);
@@ -177,7 +177,7 @@ static int cpm_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   char path[VFS_PATH_MAX];
   if (exec_args_path(args, path, sizeof(path)) < 0) path[0] = '\0';
   cpm_load_com(&state->z80, &state->cpm, file_buf, file_size, cmdline);
-  mem_region_free(&staging);
+  image_segment_free(&staging);
   cpm_set_drive_a_root(&state->cpm, path);
   p->image.text =
       proc_image_segment_make(z80_mem + CPM_TPA_BASE, file_size,

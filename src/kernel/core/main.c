@@ -95,10 +95,9 @@ void kmain(void) {
    * instead, so no extra page-backed allocation is needed there. */
 #if !defined(__ia16__) && !defined(__riscv)
   {
-    proc_image_segment_t stack_region;
-    if (mem_region_alloc(&stack_region, PPAP_MEM_RAM_STACK, PAGE_SIZE,
-                         PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) == 0)
-      proc_table[0].stack_page_id = page_from_ptr(stack_region.base);
+    region_t r;
+    if (mem_region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE, 0, &r) == 0)
+      proc_table[0].stack_page_id = r.base_page;
     else
       proc_table[0].stack_page_id = PAGE_ID_INVALID;
   }

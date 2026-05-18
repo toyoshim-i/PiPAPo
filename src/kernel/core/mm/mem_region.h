@@ -1,10 +1,19 @@
 /*
- * mem_region.h — Memory-region allocation helpers
+ * mem_region.h — Typed class-dispatched mm allocation
  *
- * Provides a small allocator boundary between loaders and target-
- * specific memory backends.  The default path is page-backed for
- * every memory class; arches that need additional arenas plug in
- * through the mem_helper hooks (see mem_helper.h).
+ * Class-aware allocator that dispatches to the page pool by default
+ * and to arch arenas (Xtensa ram_text, ext_text, ext_rodata) via the
+ * mem_helper hooks.  Returns a region_t — the minimal information
+ * the mm layer owns: a base pointer and the page id when page-backed.
+ *
+ * Callers that need a typed image-segment descriptor (vaddr, OWNED
+ * flags, mem_class for procfs reporting) build it locally via
+ * proc_image_segment_from_region() in proc_image.h.  Those fields are
+ * proc/exec-layer concerns; mm does not own them.
+ *
+ * After M-3b, the public names drop the `mem_region_` prefix in favour
+ * of `region_*`; until then the legacy names are kept for source
+ * compatibility.
  */
 
 #ifndef PPAP_KERNEL_CORE_MM_MEM_REGION_H
@@ -13,18 +22,19 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "kernel/common/core/proc_image.h"
-#include "kernel/core/mm/page.h"
+#include "kernel/common/core/mem_class.h"
+#include "kernel/common/core/region_types.h"
 
 int mem_region_init(void);
 
-int mem_region_alloc(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
-                     uint32_t size, uint32_t flags);
+int mem_region_alloc(ppap_mem_class_t mem_class, uint32_t size, uint32_t flags,
+                     region_t *out);
 
-int mem_region_alloc_at(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
-                        void *base, uint32_t size, uint32_t flags);
+int mem_region_alloc_at(ppap_mem_class_t mem_class, void *base, uint32_t size,
+                        uint32_t flags, region_t *out);
 
-void mem_region_free(const proc_image_segment_t *seg);
+void mem_region_free(ppap_mem_class_t mem_class, uint32_t size,
+                     const region_t *r);
 
 /* ── Capacity queries ──────────────────────────────────────────────── */
 

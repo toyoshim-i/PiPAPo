@@ -134,8 +134,7 @@ static int arena_init(arena_t *arena, uint32_t arena_size, uint32_t caps,
   return 0;
 }
 
-static int arena_alloc(arena_t *arena, proc_image_segment_t *seg, uint32_t size,
-                       ppap_mem_class_t mem_class, uint32_t flags) {
+static int arena_alloc(arena_t *arena, region_t *out, uint32_t size) {
   uint32_t need = align_up(size);
 
   if (!arena->ready) return -(int)ENOMEM;
@@ -153,17 +152,18 @@ static int arena_alloc(arena_t *arena, proc_image_segment_t *seg, uint32_t size,
       arena->free_count--;
     }
     spin_unlock_irqrestore(SPIN_MEM, saved);
-    *seg = proc_image_segment_make(base, size, mem_class, flags);
+    out->base = base;
+    out->base_page = PAGE_ID_INVALID;
     return 0;
   }
   spin_unlock_irqrestore(SPIN_MEM, saved);
   return -(int)ENOMEM;
 }
 
-static void arena_free(arena_t *arena, const proc_image_segment_t *seg,
+static void arena_free(arena_t *arena, const region_t *r, uint32_t alloc_size,
                        const char *name) {
-  uint8_t *base = (uint8_t *)seg->base;
-  uint32_t size = align_up(seg->size);
+  uint8_t *base = (uint8_t *)r->base;
+  uint32_t size = align_up(alloc_size);
   uint8_t *end = base + size;
 
   if (!arena->ready || !base || size == 0) return;
@@ -323,40 +323,42 @@ int mem_helper_init_pool(uint32_t *base_out) {
 }
 
 int mem_helper_alloc(ppap_mem_class_t mem_class, uint32_t size, uint32_t flags,
-                     proc_image_segment_t *out) {
+                     region_t *out) {
+  (void)flags;
   switch (mem_class) {
     case PPAP_MEM_RAM_TEXT:
       /* User text must be IRAM-accessible; the generic DRAM page pool
        * can't satisfy that.  Prefer ext_text (PSRAM, larger) when
        * available, fall back to ram_text. */
       if (ext_text_arena.ready) {
-        int rc = arena_alloc(&ext_text_arena, out, size, mem_class, flags);
+        int rc = arena_alloc(&ext_text_arena, out, size);
         if (rc == 0) return 0;
       }
-      return arena_alloc(&ram_text_arena, out, size, mem_class, flags);
+      return arena_alloc(&ram_text_arena, out, size);
     case PPAP_MEM_EXT_TEXT:
-      return arena_alloc(&ext_text_arena, out, size, mem_class, flags);
+      return arena_alloc(&ext_text_arena, out, size);
     case PPAP_MEM_EXT_RODATA:
-      return arena_alloc(&ext_rodata_arena, out, size, mem_class, flags);
+      return arena_alloc(&ext_rodata_arena, out, size);
     default:
       return -(int)ENOSYS;
   }
 }
 
-int mem_helper_free(const proc_image_segment_t *seg) {
-  switch (seg->mem_class) {
+int mem_helper_free(ppap_mem_class_t mem_class, uint32_t size,
+                    const region_t *r) {
+  switch (mem_class) {
     case PPAP_MEM_RAM_TEXT:
       /* May have come from either ext_text (PSRAM) or ram_text (IRAM). */
-      if (arena_contains(&ext_text_arena, seg->base))
-        arena_free(&ext_text_arena, seg, "ext_text(ram_text)");
+      if (arena_contains(&ext_text_arena, r->base))
+        arena_free(&ext_text_arena, r, size, "ext_text(ram_text)");
       else
-        arena_free(&ram_text_arena, seg, "ram_text");
+        arena_free(&ram_text_arena, r, size, "ram_text");
       return 0;
     case PPAP_MEM_EXT_TEXT:
-      arena_free(&ext_text_arena, seg, "ext_text");
+      arena_free(&ext_text_arena, r, size, "ext_text");
       return 0;
     case PPAP_MEM_EXT_RODATA:
-      arena_free(&ext_rodata_arena, seg, "ext_rodata");
+      arena_free(&ext_rodata_arena, r, size, "ext_rodata");
       return 0;
     default:
       return -(int)ENOSYS;

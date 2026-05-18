@@ -19,8 +19,9 @@
 
 #include <stdint.h>
 
+#include "kernel/common/core/mem_class.h"
 #include "kernel/common/core/page_types.h"
-#include "kernel/common/core/proc_image.h" /* proc_image_segment_t, ppap_mem_class_t */
+#include "kernel/common/core/region_types.h"
 #include "kernel/core/mm/mem_region.h"
 
 /* Reserve arch-specific text / rodata arenas.  Called from
@@ -44,12 +45,15 @@ int mem_helper_init_pool(uint32_t *base_out);
  * page-backed allocator, or -errno on real failure.  Default: -ENOSYS
  * for every class. */
 int mem_helper_alloc(ppap_mem_class_t mem_class, uint32_t size, uint32_t flags,
-                     proc_image_segment_t *out);
+                     region_t *out);
 
-/* mem_region_free dispatch hook, mirror of mem_helper_alloc.  Return
- * 0 if the segment came from an arch arena and was freed, -ENOSYS to
- * fall through to the generic page-pool free path.  Default: -ENOSYS. */
-int mem_helper_free(const proc_image_segment_t *seg);
+/* mem_region_free dispatch hook, mirror of mem_helper_alloc.  Class
+ * and size identify the original allocation; r names the live region.
+ * Return 0 if the region came from an arch arena and was freed,
+ * -ENOSYS to fall through to the generic page-pool free path.
+ * Default: -ENOSYS. */
+int mem_helper_free(ppap_mem_class_t mem_class, uint32_t size,
+                    const region_t *r);
 
 /* Per-class capacity queries.  Each returns a negative value if the
  * class isn't arch-managed (so the shared code falls through to its

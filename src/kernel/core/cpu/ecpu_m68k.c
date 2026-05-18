@@ -18,6 +18,7 @@
 #include <string.h> /* memset */
 
 #include "kernel/core/cpu/cpu.h"
+#include "kernel/core/exec/image_alloc.h"
 #include "kernel/core/mm/mem_region.h"
 
 /* ── Trap fire helper ───────────────────────────────────────────────────── */
@@ -1377,8 +1378,9 @@ static int ecpu_m68k_run(cpu_state_t *state) {
 static void *ecpu_m68k_create_state() {
   proc_image_segment_t state_region;
 
-  if (mem_region_alloc(&state_region, PPAP_MEM_RAM_DATA, sizeof(m68k_state_t),
-                       PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0)
+  if (image_segment_alloc(&state_region, PPAP_MEM_RAM_DATA,
+                          sizeof(m68k_state_t),
+                          PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0)
     return NULL;
   return state_region.base;
 }

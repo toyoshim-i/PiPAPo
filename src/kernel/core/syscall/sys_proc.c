@@ -61,7 +61,10 @@ _Static_assert(EXEC_SNAPSHOT_TOTAL_BYTES <= PAGE_SIZE,
  * full user segment while user_pages[] only tracks logical occupancy. */
 static void image_segment_release_owned(proc_image_segment_t *seg) {
   if (!seg || !seg->base) return;
-  if (seg->flags & PROC_IMAGE_SEG_OWNED) mem_region_free(seg);
+  if (seg->flags & PROC_IMAGE_SEG_OWNED) {
+    region_t r = {seg->base, seg->base_page};
+    mem_region_free(seg->mem_class, seg->size, &r);
+  }
   *seg = (proc_image_segment_t){0};
 }
 
@@ -205,12 +208,9 @@ static void exec_snapshot_release_private_tracked_pages(
 }
 
 static void proc_release_stack_page(void **page) {
-  proc_image_segment_t seg;
-
   if (!page || !*page) return;
-  seg = proc_image_segment_make(*page, PAGE_SIZE, PPAP_MEM_RAM_STACK,
-                                PROC_IMAGE_SEG_WRITABLE);
-  mem_region_free(&seg);
+  region_t r = {*page, page_from_ptr(*page)};
+  mem_region_free(PPAP_MEM_RAM_STACK, PAGE_SIZE, &r);
   *page = NULL;
 }
 

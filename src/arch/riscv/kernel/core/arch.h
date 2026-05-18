@@ -14,6 +14,7 @@
 #include "kernel/common/ioregs.h"
 #include "kernel/common/irq.h"
 #include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/page.h"
 
 #define ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE 0
 

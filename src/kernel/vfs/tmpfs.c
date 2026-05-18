@@ -77,11 +77,8 @@ static int inode_alloc(void) {
 
 static void inode_free(int ino) {
   if (inodes[ino].data_page != PAGE_ID_INVALID) {
-    proc_image_segment_t data_region =
-        proc_image_segment_make(NULL, PAGE_SIZE, PPAP_MEM_RAM_DATA,
-                                PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE);
-    data_region.base_page = inodes[ino].data_page;
-    mod_core.mem_region_free(&data_region);
+    region_t r = {NULL, inodes[ino].data_page};
+    mod_core.mem_region_free(PPAP_MEM_RAM_DATA, PAGE_SIZE, &r);
     data_pages_used--;
   }
   inodes[ino].active = 0;
@@ -210,18 +207,16 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
 
   /* Allocate data page on first write */
   if (ti->data_page == PAGE_ID_INVALID) {
-    proc_image_segment_t data_region;
+    region_t r;
 
     if (data_pages_used >= TMPFS_MAX_PAGES) return -(long)ENOSPC;
-    if (mod_core.mem_region_alloc(
-            &data_region, PPAP_MEM_RAM_DATA, PAGE_SIZE,
-            PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0)
+    if (mod_core.mem_region_alloc(PPAP_MEM_RAM_DATA, PAGE_SIZE, 0, &r) < 0)
       return -(long)ENOMEM;
-    ti->data_page = data_region.base_page;
+    ti->data_page = r.base_page;
 
     /* Zero the freshly allocated page via the page-indexed API.  Direct
-     * memset on data_region.base would write through a 16-bit-truncated
-     * pointer on i16 and corrupt arbitrary low memory. */
+     * memset on r.base would write through a 16-bit-truncated pointer on
+     * i16 and corrupt arbitrary low memory. */
     mod_core.page_zero(ti->data_page, 0, PAGE_SIZE);
     data_pages_used++;
   }
@@ -446,11 +441,8 @@ static int tmpfs_truncate(vnode_t *vn, uint32_t length) {
   if (ti->type == VNODE_DIR) return -EISDIR;
 
   if (length == 0 && ti->data_page != PAGE_ID_INVALID) {
-    proc_image_segment_t data_region =
-        proc_image_segment_make(NULL, PAGE_SIZE, PPAP_MEM_RAM_DATA,
-                                PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE);
-    data_region.base_page = ti->data_page;
-    mod_core.mem_region_free(&data_region);
+    region_t r = {NULL, ti->data_page};
+    mod_core.mem_region_free(PPAP_MEM_RAM_DATA, PAGE_SIZE, &r);
     ti->data_page = PAGE_ID_INVALID;
     data_pages_used--;
   }

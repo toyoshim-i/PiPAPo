@@ -10,12 +10,12 @@
  *
  * Usage:
  *   #include "kernel/common/mod/mod_core.h"
- *   mod_core.klogf("VFS: %s\n", msg);
  *   void *p = mod_core.kmem_alloc(&pool);
- *   mod_core.mem_region_alloc(&seg, PPAP_MEM_RAM_DATA, PAGE_SIZE, flags);
+ *   region_t r;
+ *   mod_core.mem_region_alloc(PPAP_MEM_RAM_DATA, PAGE_SIZE, flags, &r);
  *
- * Implementation: src/kernel/klog.c, src/kernel/mm/kmem.c,
- *                 src/kernel/mm/mem_region.c
+ * Implementation: src/kernel/core/mm/kmem.c,
+ *                 src/kernel/core/mm/mem_region.c
  */
 
 #ifndef PPAP_KERNEL_COMMON_MOD_MOD_CORE_H
@@ -29,9 +29,9 @@ struct kmem_pool;
 typedef struct kmem_pool kmem_pool_t;
 struct pcb;
 
-#include "kernel/common/core/proc_image.h" /* ppap_mem_class_t, proc_image_segment_t,
-                                  * page_id_t */
-
+#include "kernel/common/core/mem_class.h"
+#include "kernel/common/core/page_types.h"
+#include "kernel/common/core/region_types.h"
 #include "kernel/common/mod/module.h"
 
 MOD_DECLARE_BEGIN(core)
@@ -79,25 +79,31 @@ MOD_FUNC(core, void, kmem_pool_init, kmem_pool_t *, void *, size_t, uint32_t)
 /*
  * mem_region_alloc — Allocate a memory region by class.
  *
- *   seg        Output segment descriptor (base, size, base_page).
  *   mem_class  Memory type (RAM_TEXT, RAM_DATA, RAM_STACK, etc.).
  *   size       Requested size in bytes.
- *   flags      PROC_IMAGE_SEG_WRITABLE, PROC_IMAGE_SEG_OWNED, etc.
+ *   flags      Caller-defined; unused by mm, forwarded to the arch
+ *              hook for arches that need it (Xtensa ignores them).
+ *   out        Filled with the allocation result (base, base_page).
  *
  * Returns 0 on success, negative errno (EINVAL, ENOMEM) on failure.
  * On Xtensa, routes to ESP-IDF arena or page pool based on class.
+ * Callers that want a proc_image_segment_t descriptor wrap the
+ * result via proc_image_segment_from_region().
  */
-MOD_FUNC(core, int, mem_region_alloc, proc_image_segment_t *, ppap_mem_class_t,
-         uint32_t, uint32_t)
+MOD_FUNC(core, int, mem_region_alloc, ppap_mem_class_t, uint32_t, uint32_t,
+         region_t *)
 
 /*
  * mem_region_free — Free a previously allocated memory region.
  *
- *   seg  Segment to deallocate (no-op if NULL or zero-sized).
+ *   mem_class  Class the region was allocated under.
+ *   size       Original allocation size.
+ *   r          Region descriptor to release (no-op if NULL).
  *
  * Dispatches to class-specific free path (page pool or arena).
  */
-MOD_FUNC(core, void, mem_region_free, const proc_image_segment_t *)
+MOD_FUNC(core, void, mem_region_free, ppap_mem_class_t, uint32_t,
+         const region_t *)
 
 /*
  * mem_region_free_bytes — Query free memory in a memory class.
