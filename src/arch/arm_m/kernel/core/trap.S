@@ -55,7 +55,7 @@
 
 .equ PCB_SP_OFFSET,        32  @ offsetof(pcb_t, sp)
 .equ PCB_KERNEL_SP_OFFSET, 36  @ offsetof(pcb_t, kernel_sp)
-.equ PCB_STATE_OFFSET,     48  @ offsetof(pcb_t, state)
+.equ PCB_STATE_OFFSET,     88  @ offsetof(pcb_t, state) — see _Static_assert
 .equ PROC_RUNNABLE,         1
 
 .syntax unified
@@ -148,6 +148,10 @@ SVC_Handler:
     bl    signal_check
 
 .Lnormal_return:
+    @ Restore any saved vfork-parent slice before user-mode EXC_RETURN.
+    @ No-op unless current->vfork_frame_saved (set in sys_vfork for the
+    @ parent only); see docs/proposals/no_stack_copy_on_vfork.md.
+    bl    arm_vfork_restore_frame
 #if __ARM_ARCH >= 8
     @ Re-load potentially-modified EXC_RETURN (signal delivery may have
     @ forced a basic frame, sigreturn restores the original).

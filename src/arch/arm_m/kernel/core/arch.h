@@ -18,9 +18,12 @@
 #include "kernel/common/irq.h"
 #include "kernel/core/mm/mem_region.h"
 
-/* ARM-M vfork still manufactures the child frame on a copied process stack. */
-#define ARCH_VFORK_COPY_PROCESS_STACK 1
-#define ARCH_VFORK_CHILD_FRAME_POINTER 1
+/* ARM-M uses the no-copy vfork model: child shares the parent's user
+ * stack page; the kernel saves the 40-byte HW+stub region at vfork-trap
+ * into the parent's PCB and restores it on the parent's next user-mode
+ * bx EXC_RETURN.  See docs/proposals/no_stack_copy_on_vfork.md. */
+#define ARCH_VFORK_COPY_PROCESS_STACK 0
+#define ARCH_VFORK_CHILD_FRAME_POINTER 0
 #define ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE 0
 
 extern volatile uint32_t arm_exc_return[2];
@@ -28,6 +31,21 @@ extern volatile uint32_t arm_exc_return[2];
 /* User-side HW exception frame builder.  Pairs with arch_build_initial_frame
  * which writes the kernel-side SW frame on the kernel slot. */
 uint32_t *arm_build_user_hw_frame(uint32_t *sp, void (*entry)(void));
+
+/* ── vfork parent-resume hooks ─────────────────────────────────────────────
+ *
+ * No-copy vfork on arm: save the parent's 32-byte HW exception frame plus
+ * the vfork stub's 8-byte {r7, lr} push (40 B total) from the live user PSP
+ * into the parent's PCB.  After the save, overwrite live user_PSP+0 with 0
+ * so the child's HW frame pop yields r0 = 0.  arm_vfork_restore_frame()
+ * writes the saved 40 B back before the parent's next user-mode bx EXC_RETURN
+ * — Slot 0 of the saved frame already holds the patched r0 = child_pid
+ * (from Step 7's frame[0] = child->pid in sys_vfork).
+ * ────────────────────────────────────────────────────────────────────────── */
+
+struct pcb;
+void arm_vfork_save_parent_frame(struct pcb *parent, uint32_t *user_psp);
+void arm_vfork_restore_frame(void);
 
 /* ── Context switch trigger ─────────────────────────────────────────────────
  *

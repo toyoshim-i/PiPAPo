@@ -1804,17 +1804,18 @@ long sys_vfork(uint32_t *frame) {
   child->user_stack_page = current->user_stack_page;
 
 #elif defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
-  /* ARM Phase B: HW frame on child's copied user stack; 10-word SW
-   * frame on child's kernel slot.  child->sp points at the SW frame
-   * (linked to the HW frame via the saved-PSP slot at sw[9]). */
-  child_frame[0] = 0; /* r0 = 0 — child sees vfork() return 0 */
-
+  /* No-copy vfork: the child shares the parent's user_stack_page.  Build
+   * the child's 10-word SW frame on the child's kstack slot, pointing
+   * the saved-PSP slot at the parent's HW frame on the shared user stack.
+   * The save/patch happens AFTER Step 7 so the saved slot 0 captures
+   * r0 = child_pid — see arm_vfork_save_parent_frame below. */
   uint32_t *sw = (uint32_t *)(uintptr_t)child->kernel_sp;
   sw = arch_build_initial_frame(sw, NULL);
   /* sw layout: 0..7=r4..r11, 8=EXC_RETURN, 9=saved PSP. */
-  sw[5] = current->got_base;                /* r9 = GOT SRAM addr for PIC */
-  sw[9] = (uint32_t)(uintptr_t)child_frame; /* saved PSP */
+  sw[5] = current->got_base;          /* r9 = GOT SRAM addr for PIC */
+  sw[9] = (uint32_t)(uintptr_t)frame; /* saved PSP = parent's HW frame */
   child->sp = (uint32_t)(uintptr_t)sw;
+  child->user_stack_page = current->user_stack_page;
 
 #elif defined(__xtensa__)
   /* Xtensa: Build a new-process frame for the child.
@@ -1890,6 +1891,16 @@ long sys_vfork(uint32_t *frame) {
 
   /* 7. Set parent's return value (child PID) in stacked r0 */
   frame[0] = (uint32_t)child->pid;
+
+#if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
+  /* 7a. No-copy vfork on arm: the HW frame lives in shared user memory.
+   * Save the 40 B vulnerable region (now containing r0 = child_pid from
+   * Step 7) into the parent's PCB and overwrite live user_PSP+0 with 0
+   * so the child's HW frame pop yields r0 = 0.
+   * arm_vfork_restore_frame() writes the saved 40 B back before the
+   * parent's next user-mode bx EXC_RETURN. */
+  arm_vfork_save_parent_frame(current, frame);
+#endif
 
   /* 8. Block parent, make child runnable */
   current->state = PROC_BLOCKED;

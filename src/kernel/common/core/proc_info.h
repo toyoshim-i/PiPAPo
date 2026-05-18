@@ -113,6 +113,11 @@ typedef struct pcb {
    * arch_build_initial_frame uses it to compute where to write the
    * initial SW frame. */
   uint32_t kernel_sp; /* slot top (immutable)        (offset 36)     */
+  uint32_t vfork_saved_frame[10]; /* parent's 32B HW frame + 8B {r7,lr}
+                                     stub frame at vfork-trap; restored
+                                     before the parent's next user-mode
+                                     bx EXC_RETURN.  Slot 0 holds the
+                                     patched r0 = child_pid. */
 #elif defined(__m68k__)
   uint32_t d2, d3, d4, d5, d6, d7; /* callee-saved data regs  (offsets 0-23) */
   uint32_t a2, a3, a4, a5, a6; /* callee-saved addr regs  (offsets 24-43)  */

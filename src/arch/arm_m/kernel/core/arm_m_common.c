@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "common/signal.h"
+#include "kernel/common/ioregs.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/boot.h"
 #include "kernel/core/proc/proc.h"
@@ -243,6 +244,9 @@ __attribute__((naked)) void SysTick_Handler(void) {
       "str  r1, [r0]\n"
       "bl   arm_kernel_sched_switch\n"
       "1:\n"
+      /* Restore any saved vfork-parent slice on every user-mode exit
+       * path (Phase 0 invariant).  No-op unless flag is set. */
+      "bl   arm_vfork_restore_frame\n"
       "pop  {r4, pc}\n" /* pop EXC_RETURN into PC → exception return */
   );
 }
@@ -252,8 +256,6 @@ static void SysTick_Handler_c(uint32_t exc_return) {
 }
 
 /* ── Initial stack frame for new processes ──────────────────────────────── */
-
-#include "kernel/common/ioregs.h"
 
 /* Build the SW exception frame for a freshly-spawned process at the top
  * of the given kernel slot.  Matches the unified 10-word layout used by
@@ -280,6 +282,34 @@ uint32_t *arch_build_initial_frame(uint32_t *sp, void (*entry)(void)) {
   *--sp = 0u;                    /* [sp+4 ] r5                           */
   *--sp = 0u;                    /* [sp+0 ] r4                           */
   return sp;
+}
+
+/* ── vfork parent-resume hooks ─────────────────────────────────────────────
+ *
+ * arm_vfork_save_parent_frame: copy 40 B from the parent's live user PSP
+ * (32 B HW exception frame + 8 B vfork stub frame {r7, lr}) into the
+ * parent's PCB, then overwrite live user_PSP+0 with 0 so the child sees
+ * vfork() = 0 when its HW frame is popped on EXC_RETURN.  Called from
+ * sys_vfork AFTER the common Step 7 frame[0] = child->pid, so the saved
+ * slot 0 already contains the patched r0 = child_pid for the parent.
+ *
+ * arm_vfork_restore_frame: writes the saved 40 B back to the live user PSP
+ * before every user-mode bx EXC_RETURN that could resume the parent.
+ * No-op for any process whose vfork_frame_saved is 0. */
+
+void arm_vfork_save_parent_frame(struct pcb *parent, uint32_t *user_psp) {
+  for (int i = 0; i < 10; i++) parent->vfork_saved_frame[i] = user_psp[i];
+  parent->vfork_frame_saved = 1;
+  user_psp[0] = 0; /* child's r0 = 0 */
+}
+
+void arm_vfork_restore_frame(void) {
+  pcb_t *p = current;
+  if (!p || !p->vfork_frame_saved) return;
+  p->vfork_frame_saved = 0;
+  uint32_t *user_psp;
+  __asm__ volatile("mrs %0, psp" : "=r"(user_psp));
+  for (int i = 0; i < 10; i++) user_psp[i] = p->vfork_saved_frame[i];
 }
 
 /* Build the user-side HW exception frame at the top of the user stack.
