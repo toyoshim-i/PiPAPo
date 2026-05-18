@@ -10,9 +10,9 @@
 ## Summary
 
 The current xtensa_cc port intentionally stops short of full
-runtime-ownership handoff (Phase CC-3.5 was deferred — see
-[`docs/proposals/cardcomputer_port.md`](cardcomputer_port.md)).
-That is the right call for the first Xtensa target because it lets
+runtime-ownership handoff: ESP-IDF stays as the bootstrap *and*
+runtime HAL.  That is the right call for the first Xtensa target
+because it lets
 PPAP focus on architecture work (context switch, trap handling,
 ELF loading) without also reimplementing every ESP-IDF boot step.
 

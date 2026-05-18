@@ -159,9 +159,6 @@ adds a second transport on top.
 
 - Update `docs/targets/xtensa.md` §8 with the SD bring-up notes
   (HSPI host choice, no card-detect, mount-at-boot only).
-- Remove the Phase CC-6 section from
-  `docs/proposals/cardcomputer_port.md` (superseded by sub-goal B
-  here) and replace it with a one-line cross-reference.
 - Retire this proposal once A-3 and B-2 are green on hardware for
   one full release cycle.
 

@@ -587,8 +587,11 @@ CCOMPARE0 timer at level-1 interrupt priority:
 
 PPAP-side design choices for the [M5Stack
 CardComputer](../reference/cardcomputer.md) port that aren't visible
-from the code alone.  Forward-looking work (open phases, gaps) lives
-in [`docs/proposals/cardcomputer_port.md`](../proposals/cardcomputer_port.md).
+from the code alone.  Open work is split across
+[`xtensa_xip.md`](../proposals/xtensa_xip.md) (user-space XIP),
+[`sd_card.md`](../proposals/sd_card.md) (microSD), and
+[`xtensa_baremetal_port.md`](../proposals/xtensa_baremetal_port.md)
+(future bare-metal target).
 
 ### Console layout
 

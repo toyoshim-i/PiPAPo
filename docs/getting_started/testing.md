@@ -441,9 +441,9 @@ coverage is not exhaustive yet.
   The user-space loader is still RAM-only.  At boot `/proc/meminfo`
   reports ~72 KB free (≈18 pages); the experimental `user_xip.ld` /
   `.xip` / `.xipfix` build variants exist but the runtime loader
-  does not consume them yet.  Wiring those in remains a follow-up in
-  `docs/proposals/cardcomputer_port.md` — independent of the leak
-  fix, it would still cut per-`exec` page use significantly.
+  does not consume them yet.  Wiring those in is tracked in
+  `docs/proposals/xtensa_xip.md` — independent of the leak fix, it
+  would still cut per-`exec` page use significantly.
 
   **Hardware-flash troubleshooting note (host USB):** repeated
   docker-passthrough flashes of `xtensa_cc` occasionally leave the
@@ -462,8 +462,7 @@ coverage is not exhaustive yet.
   Anything else on that controller (keyboard, mouse, hubs) briefly
   disappears and re-enumerates during the 1-second window.  The
   longer-term mitigation is to move esptool out of docker entirely
-  so the host CDC-ACM handle never crosses a namespace boundary;
-  tracked in `docs/proposals/cardcomputer_port.md`.
+  so the host CDC-ACM handle never crosses a namespace boundary.
 
   Captured serial output is persisted to `$BUILD_DIR/test_output.log`
   during `--test xtensa_cc` runs, so partial output survives a

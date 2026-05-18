@@ -2,9 +2,14 @@
 
 This document summarizes the hardware specifications and development
 information for the M5Stack CardComputer (also written
-"M5Cardputer" — same device).  PPAP-side porting plans live in
-[`docs/proposals/cardcomputer_port.md`](../proposals/cardcomputer_port.md);
-this file holds only the device-facing facts.
+"M5Cardputer" — same device).  This file holds only the device-facing
+facts; PPAP-side design choices for the shipped port live in
+[`docs/targets/xtensa.md` §8](../targets/xtensa.md#8-cardcomputer-xtensa_cc-target-choices),
+and remaining open work is split across
+[`xtensa_xip.md`](../proposals/xtensa_xip.md) (user-space XIP),
+[`sd_card.md`](../proposals/sd_card.md) (microSD), and
+[`xtensa_baremetal_port.md`](../proposals/xtensa_baremetal_port.md)
+(future bare-metal target).
 
 ## Hardware Overview
 

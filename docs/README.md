@@ -44,7 +44,6 @@ This index is the entry point for project documentation.
 - Proposals
   - [`proposals/x68k_port.md`](proposals/x68k_port.md) — X68000 m68k port
   - [`proposals/pizero_port.md`](proposals/pizero_port.md) — Raspberry Pi Zero (future)
-  - [`proposals/cardcomputer_port.md`](proposals/cardcomputer_port.md) — M5Stack CardComputer (Xtensa)
   - [`proposals/msdos_subsystem.md`](proposals/msdos_subsystem.md) — MS-DOS personality subsystem
   - [`proposals/i8086_ecpu.md`](proposals/i8086_ecpu.md) — i8086 eCPU emulator
   - [`proposals/gdb_rsp_stub.md`](proposals/gdb_rsp_stub.md) — GDB Remote Serial Protocol stub

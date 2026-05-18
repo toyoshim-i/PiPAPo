@@ -158,8 +158,9 @@ the I-bus alias, the smoke binary from X-1 still runs.
 - Add a fallback knob (`XTENSA_USE_XIP=0`) for quick A/B comparison
   during bring-up.
 - Update `cmake/stage_romfs.cmake` to recognise the xtensa XIP
-  artifacts (or leave the shell-coded staging as-is and unify in a
-  later cleanup — see `docs/proposals/cardcomputer_port.md`).
+  artifacts.  (xtensa_cc already routes through `stage_romfs.cmake`
+  for the RAM-layout ELFs; XIP staging just needs the script to
+  pick up `.xip.elf` instead of, or in addition to, `.elf`.)
 
 **Exit criterion:** `runtests` boots into a romfs of `.xip.elf`
 binaries; every test that passes today still passes.
@@ -223,11 +224,6 @@ build available without a code revert.
   PSRAM instead of internal RAM), but CardComputer has no PSRAM.
   A future PSRAM-equipped xtensa target can layer on top of the
   flash-XIP work here — same loader hooks, different `EXEC_FLAG_*`.
-
-- **Romfs staging unification.**  `cardcomputer_port.md` calls out
-  the shell-coded xtensa romfs staging as a separate cleanup item.
-  This proposal can stay with the existing shell-coded path; the
-  unification is independent.
 
 - **Z80 emulator functional bugs.**  If `test_cpm` / `test_sos`
   still fail after X-4 unblocks the memory budget, those failures
