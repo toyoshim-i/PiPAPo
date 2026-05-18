@@ -232,37 +232,6 @@ void mm_init(void) {
 #endif
 }
 
-void *page_alloc(void) {
-  uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  page_id_t id = pool_take_n(1);
-  if (id == PAGE_ID_INVALID) oom_count++;
-  page_trace_tail("alloc1", (unsigned)id, 1);
-  spin_unlock_irqrestore(SPIN_PAGE, saved);
-  if (id == PAGE_ID_INVALID) {
-    mod_vfs.klogf("MM: OOM: page_alloc failed\n");
-    return NULL;
-  }
-  return (void *)page_id_linear(id);
-}
-
-void *page_alloc_at(void *addr) {
-  uintptr_t target = (uintptr_t)addr;
-
-  /* Validate: must be page-aligned and within the runtime pool */
-  uint32_t pb = page_pool_base();
-  if (target < pb || target >= pb + page_count * PAGE_SIZE) return NULL;
-  if (target & (PAGE_SIZE - 1u)) return NULL;
-
-  page_id_t target_id = linear_page_id(target);
-
-  uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  int rc = pool_take_at(target_id);
-  page_trace_tail(rc == 0 ? "alloc_at" : "alloc_at_FAIL", (unsigned)target_id,
-                  1);
-  spin_unlock_irqrestore(SPIN_PAGE, saved);
-  return (rc == 0) ? addr : NULL;
-}
-
 /* ── Stack backtrace (RISC-V) ─────────────────────────────────────────────
  *
  * Walk the s0 (frame pointer) chain.  Each frame stores:
@@ -292,18 +261,59 @@ static void stack_backtrace(void) {
 }
 #endif
 
-void page_free(void *page) {
-  uintptr_t addr = (uintptr_t)page;
-  uint32_t pb = page_pool_base();
-  if (addr < pb || addr >= pb + page_count * PAGE_SIZE)
-    return; /* ignore bogus pointer rather than corrupt the list */
+/* ── Allocation ─────────────────────────────────────────────────────────── */
 
-  page_id_t id = linear_page_id(addr);
+page_id_t page_alloc(void) {
+  uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
+  page_id_t id = pool_take_n(1);
+  if (id == PAGE_ID_INVALID) oom_count++;
+  page_trace_tail("alloc1", (unsigned)id, 1);
+  spin_unlock_irqrestore(SPIN_PAGE, saved);
+  if (id == PAGE_ID_INVALID) mod_vfs.klogf("MM: OOM: page_alloc failed\n");
+  return id;
+}
 
+page_id_t page_alloc_n(uint32_t n_pages) {
+  if (n_pages == 0 || n_pages > 0xFFFFu) return PAGE_ID_INVALID;
+  uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
+  page_id_t id = pool_take_n((uint16_t)n_pages);
+  page_trace_tail("alloc_contig", (unsigned)id, (unsigned)n_pages);
+  spin_unlock_irqrestore(SPIN_PAGE, saved);
+  return id;
+}
+
+page_id_t page_alloc_largest(uint32_t min_pages, uint32_t max_pages,
+                             uint32_t *got_pages) {
+  if (got_pages) *got_pages = 0;
+  if (min_pages == 0 || max_pages < min_pages || min_pages > 0xFFFFu)
+    return PAGE_ID_INVALID;
+  if (max_pages > 0xFFFFu) max_pages = 0xFFFFu;
+
+  uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
+  uint16_t got = 0;
+  page_id_t base =
+      pool_take_largest((uint16_t)min_pages, (uint16_t)max_pages, &got);
+  page_trace_tail("alloc_largest", (unsigned)base, (unsigned)got);
+  spin_unlock_irqrestore(SPIN_PAGE, saved);
+  if (got_pages) *got_pages = got;
+  return base;
+}
+
+int page_alloc_at(page_id_t id) {
+  if (id == PAGE_ID_INVALID) return -1;
+  uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
+  int rc = pool_take_at(id);
+  page_trace_tail(rc == 0 ? "alloc_at" : "alloc_at_FAIL", (unsigned)id, 1);
+  spin_unlock_irqrestore(SPIN_PAGE, saved);
+  return rc;
+}
+
+void page_free(page_id_t id) {
+  if (id == PAGE_ID_INVALID || !pool_page_id_to_index(id, NULL)) return;
   uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
   if (pool_is_free(id)) {
     spin_unlock_irqrestore(SPIN_PAGE, saved);
-    mod_vfs.klogf("MM: double-free @ %lx (ra=%lx)\n", (unsigned long)addr,
+    mod_vfs.klogf("MM: double-free page %u (ra=%lx)\n", (unsigned)id,
                   (unsigned long)(uintptr_t)__builtin_return_address(0));
     stack_backtrace();
     return;
@@ -312,10 +322,11 @@ void page_free(void *page) {
   page_trace_tail("free1", (unsigned)id, 1);
   spin_unlock_irqrestore(SPIN_PAGE, saved);
   if (rc < 0) {
-    mod_vfs.klogf("MM: PANIC: free-list full, page %lx leaked\n",
-                  (unsigned long)addr);
+    mod_vfs.klogf("MM: PANIC: free-list full, page %u leaked\n", (unsigned)id);
   }
 }
+
+/* ── Pool introspection ─────────────────────────────────────────────────── */
 
 uint32_t page_pool_base(void) { return (uint32_t)s_pool_base; }
 
@@ -333,73 +344,14 @@ uint32_t page_max_contiguous(void) {
   return best;
 }
 
-uint8_t *page_alloc_contiguous(uint32_t n_pages) {
-  page_id_t id = mm_page_alloc_contiguous(n_pages);
-  if (id == PAGE_ID_INVALID) return NULL;
-  return (uint8_t *)(uintptr_t)page_id_linear(id);
-}
+/* ── Page-payload access ────────────────────────────────────────────────── */
 
-page_id_t mm_page_alloc_contiguous(uint32_t n_pages) {
-  if (n_pages == 0 || n_pages > 0xFFFFu) return PAGE_ID_INVALID;
-  uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  page_id_t id = pool_take_n((uint16_t)n_pages);
-  page_trace_tail("alloc_contig", (unsigned)id, (unsigned)n_pages);
-  spin_unlock_irqrestore(SPIN_PAGE, saved);
-  return id;
-}
-
-page_id_t mm_page_alloc_largest_contiguous(uint32_t min_pages,
-                                           uint32_t max_pages,
-                                           uint32_t *got_pages) {
-  if (got_pages) *got_pages = 0;
-  if (min_pages == 0 || max_pages < min_pages || min_pages > 0xFFFFu)
-    return PAGE_ID_INVALID;
-  if (max_pages > 0xFFFFu) max_pages = 0xFFFFu;
-
-  uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  uint16_t got = 0;
-  page_id_t base =
-      pool_take_largest((uint16_t)min_pages, (uint16_t)max_pages, &got);
-  page_trace_tail("alloc_largest", (unsigned)base, (unsigned)got);
-  spin_unlock_irqrestore(SPIN_PAGE, saved);
-  if (got_pages) *got_pages = got;
-  return base;
-}
-
-/* ── Page-indexed API ────────────────────────────────────────────────────── */
-
-page_id_t mm_page_alloc(void) {
-  uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  page_id_t id = pool_take_n(1);
-  if (id == PAGE_ID_INVALID) oom_count++;
-  page_trace_tail("alloc1", (unsigned)id, 1);
-  spin_unlock_irqrestore(SPIN_PAGE, saved);
-  if (id == PAGE_ID_INVALID) mod_vfs.klogf("MM: OOM: page_alloc failed\n");
-  return id;
-}
-
-uint32_t mm_page_linear(page_id_t id) {
+uint32_t page_linear(page_id_t id) {
   if (id == PAGE_ID_INVALID) return 0;
   return (uint32_t)page_id_linear(id);
 }
 
-void mm_page_free(page_id_t id) {
-  if (id == PAGE_ID_INVALID || !pool_page_id_to_index(id, NULL)) return;
-  uint32_t saved = spin_lock_irqsave(SPIN_PAGE);
-  if (pool_is_free(id)) {
-    spin_unlock_irqrestore(SPIN_PAGE, saved);
-    mod_vfs.klogf("MM: double-free page %u\n", (unsigned)id);
-    return;
-  }
-  int rc = pool_release(id, 1);
-  page_trace_tail("free1", (unsigned)id, 1);
-  spin_unlock_irqrestore(SPIN_PAGE, saved);
-  if (rc < 0) {
-    mod_vfs.klogf("MM: PANIC: free-list full, page %u leaked\n", (unsigned)id);
-  }
-}
-
-void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len) {
+void page_read(page_id_t id, uint16_t off, void *buf, uint16_t len) {
   if (id == PAGE_ID_INVALID || len == 0) return;
 #if defined(__ia16__)
   /* Compute segment:offset from 20-bit linear address.
@@ -426,7 +378,7 @@ void mm_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len) {
 #endif
 }
 
-void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len) {
+void page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len) {
   if (id == PAGE_ID_INVALID || len == 0) return;
 #if defined(__ia16__)
   /* rep movsb copies DS:SI → ES:DI.  We want src=SS:buf, dst=far page. */
@@ -452,7 +404,7 @@ void mm_page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len) {
 #endif
 }
 
-void mm_page_zero(page_id_t id, uint16_t off, uint16_t len) {
+void page_zero(page_id_t id, uint16_t off, uint16_t len) {
   if (id == PAGE_ID_INVALID || len == 0) return;
 #if defined(__ia16__)
   /* rep stosb fills ES:DI with AL.  DI and CX are declared as
@@ -480,13 +432,13 @@ void mm_page_zero(page_id_t id, uint16_t off, uint16_t len) {
 }
 
 #if !defined(__ia16__)
-void *mm_page_to_ptr(page_id_t id) {
+void *page_to_ptr(page_id_t id) {
   if (id == PAGE_ID_INVALID) return NULL;
   return (void *)page_id_linear(id);
 }
 #endif
 
-page_id_t mm_ptr_to_page(void *ptr) {
+page_id_t page_from_ptr(void *ptr) {
   uintptr_t addr = (uintptr_t)ptr;
 
   if (addr == 0u) return PAGE_ID_INVALID;

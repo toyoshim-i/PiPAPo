@@ -87,7 +87,7 @@ static void *native_translate_ptr(void *state, uint32_t guest_addr,
 /*
  * i16 single-byte far-segment helpers: convert a 20-bit linear address
  * to seg:ofs and use lodsb / stosb with a DS or ES override.  Much
- * cheaper than the full mm_page_read/write path for one byte.
+ * cheaper than the full page_read/write path for one byte.
  */
 #if defined(__ia16__)
 static uint8_t i16_far_read8(uint32_t addr) {

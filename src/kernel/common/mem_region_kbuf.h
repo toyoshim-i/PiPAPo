@@ -21,7 +21,7 @@
  * validate that `kbuf` lies inside the page pool; the caller is
  * responsible for only passing kernel-owned buffer pointers.  On i16
  * the result page_id may live outside the page pool (DS=0 segment is
- * not part of the user page pool), and that is fine — mm_page_read/
+ * not part of the user page pool), and that is fine — page_read/
  * write round-trip the page_id back to the original linear address
  * via segment:offset math.
  */

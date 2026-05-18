@@ -535,9 +535,9 @@ static void brk_integration_test(void)
 
     /* Set up a fake data page for proc_table[0] so sys_brk works.
      * In real use, execve sets brk_base/brk_current. */
-    void *fake_page = page_alloc();
-    current->user_pages[0] = mem_region_ptr_to_page(fake_page);
-    uint32_t base = (uint32_t)(uintptr_t)fake_page + 256;  /* pretend 256B used */
+    page_id_t fake_page_id = page_alloc();
+    current->user_pages[0] = fake_page_id;
+    uint32_t base = page_linear(fake_page_id) + 256;  /* pretend 256B used */
     current->brk_base    = base;
     current->brk_current = base;
 
@@ -562,7 +562,7 @@ static void brk_integration_test(void)
     /* Clean up */
     current->brk_base = 0;
     current->brk_current = 0;
-    page_free(fake_page);
+    page_free(fake_page_id);
     current->user_pages[0] = PAGE_ID_INVALID;
 
     /* Summary */
@@ -1717,11 +1717,11 @@ static void oom_test(void)
     uint32_t baseline_oom  = oom_count;
 
     /* Exhaust the page pool */
-    void *pages[PAGE_COUNT_MAX];
+    page_id_t pages[PAGE_COUNT_MAX];
     uint32_t allocated = 0;
     for (uint32_t i = 0; i < PAGE_COUNT_MAX; i++) {
         pages[i] = page_alloc();
-        if (pages[i])
+        if (pages[i] != PAGE_ID_INVALID)
             allocated++;
         else
             break;
@@ -1729,9 +1729,10 @@ static void oom_test(void)
 
     test_report("exhausted page pool", allocated == baseline_free);
 
-    /* Next alloc should return NULL */
-    void *oom_page = page_alloc();
-    test_report("page_alloc returns NULL on OOM", oom_page == NULL);
+    /* Next alloc should return PAGE_ID_INVALID */
+    page_id_t oom_page = page_alloc();
+    test_report("page_alloc returns PAGE_ID_INVALID on OOM",
+                oom_page == PAGE_ID_INVALID);
 
     /* oom_count should have incremented */
     test_report("oom_count incremented", oom_count > baseline_oom);

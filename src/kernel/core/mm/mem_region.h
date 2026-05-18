@@ -29,7 +29,7 @@ void mem_region_free(const proc_image_segment_t *seg);
 /* Free a tracked user page by page_id_t. */
 void mem_region_free_tracked_page_id(page_id_t id);
 
-/* ── Page wrappers (public API for mm_page_* internals) ────────────── */
+/* ── Page wrappers (delegate to page.h until M-2 finishes) ──────────── */
 
 /* Allocate one page, return its page_id_t (or PAGE_ID_INVALID on OOM). */
 page_id_t mem_region_page_alloc(void);

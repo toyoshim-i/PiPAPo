@@ -266,7 +266,7 @@ void mpu_switch(pcb_t *next) {
   }
 
   /* Reprogram region 2 for the incoming process's 4 KB stack page */
-  uint32_t base = (uint32_t)(uintptr_t)mm_page_to_ptr(stack_page_id);
+  uint32_t base = (uint32_t)(uintptr_t)page_to_ptr(stack_page_id);
 #if __ARM_ARCH >= 8
   mpu_set_region(
       2u, base | RBAR_SH(SH_NONE) | RBAR_AP(AP8_RW_ALL) | RBAR_XN,

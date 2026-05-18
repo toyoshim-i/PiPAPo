@@ -41,19 +41,18 @@ static int mem_region_alloc_page_backed(proc_image_segment_t *seg,
     return 0;
   }
 
-  /* Allocate via the page-indexed API so we get the page_id directly.
-   * On i16 the void * returned by page_alloc() is the linear address
-   * truncated to 16 bits, which makes mm_ptr_to_page() round-trip back
-   * to the wrong page id for any page above the first 64 KB.  Going
-   * through mm_page_alloc + mm_page_linear keeps base_page correct on
-   * every architecture and lets i16 callers safely reach pages outside
-   * the 64 KB DS=0 window via mem_region_page_read/write. */
+  /* Allocate by page_id so we can populate seg->base_page directly.
+   * On i16 a void * cast of the linear address truncates to 16 bits,
+   * which loses any page above the first 64 KB.  page_linear() gives
+   * back the full 32-bit linear address for the seg->base pointer
+   * (still 16-bit on i16, but the kernel only dereferences seg->base
+   * through page_read / page_write which handle the segment registers
+   * internally). */
   uint32_t n_pages = mem_region_page_count(size);
-  page_id_t pid =
-      (n_pages == 1) ? mm_page_alloc() : mm_page_alloc_contiguous(n_pages);
+  page_id_t pid = (n_pages == 1) ? page_alloc() : page_alloc_n(n_pages);
   if (pid == PAGE_ID_INVALID) return -(int)ENOMEM;
 
-  void *base = (void *)(uintptr_t)mm_page_linear(pid);
+  void *base = (void *)(uintptr_t)page_linear(pid);
   *seg = proc_image_segment_make(base, size, mem_class, flags);
   seg->base_page = pid;
   return 0;
@@ -74,16 +73,15 @@ int mem_region_alloc_at(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
   if (mem_class == PPAP_MEM_RAM_DATA || mem_class == PPAP_MEM_RAM_STACK ||
       mem_class == PPAP_MEM_RAM_RODATA || mem_class == PPAP_MEM_DEVICE_DMA) {
     uint32_t n_pages = mem_region_page_count(size);
+    page_id_t base_id = page_from_ptr(base);
     for (uint32_t i = 0; i < n_pages; i++) {
-      void *addr = (uint8_t *)base + i * PAGE_SIZE;
-      if (!page_alloc_at(addr)) {
-        for (uint32_t j = 0; j < i; j++)
-          page_free((uint8_t *)base + j * PAGE_SIZE);
+      if (page_alloc_at(base_id + (page_id_t)i) < 0) {
+        for (uint32_t j = 0; j < i; j++) page_free(base_id + (page_id_t)j);
         return -(int)ENOMEM;
       }
     }
     *seg = proc_image_segment_make(base, size, mem_class, flags);
-    seg->base_page = mm_ptr_to_page(base);
+    seg->base_page = base_id;
     return 0;
   }
 
@@ -93,12 +91,8 @@ int mem_region_alloc_at(proc_image_segment_t *seg, ppap_mem_class_t mem_class,
 static void mem_region_free_page_backed(const proc_image_segment_t *seg) {
   uint32_t n_pages = mem_region_page_count(seg->size);
   page_id_t base_id = seg->base_page;
-  if (base_id != PAGE_ID_INVALID) {
-    for (uint32_t i = 0; i < n_pages; i++) mm_page_free(base_id + (page_id_t)i);
-  } else {
-    for (uint32_t i = 0; i < n_pages; i++)
-      page_free((uint8_t *)seg->base + i * PAGE_SIZE);
-  }
+  if (base_id == PAGE_ID_INVALID) base_id = page_from_ptr(seg->base);
+  for (uint32_t i = 0; i < n_pages; i++) page_free(base_id + (page_id_t)i);
 }
 
 void mem_region_free(const proc_image_segment_t *seg) {
@@ -111,46 +105,43 @@ void mem_region_free(const proc_image_segment_t *seg) {
   mem_region_free_page_backed(seg);
 }
 
-void mem_region_free_tracked_page_id(page_id_t id) {
-  if (id == PAGE_ID_INVALID) return;
-  mm_page_free(id);
-}
+void mem_region_free_tracked_page_id(page_id_t id) { page_free(id); }
 
 /* ── Page-index wrappers ────────────────────────────────────────────── */
 
-page_id_t mem_region_page_alloc(void) { return mm_page_alloc(); }
+page_id_t mem_region_page_alloc(void) { return page_alloc(); }
 
 page_id_t mem_region_page_alloc_contiguous(uint32_t n_pages) {
-  return mm_page_alloc_contiguous(n_pages);
+  return page_alloc_n(n_pages);
 }
 
 page_id_t mem_region_page_alloc_largest_contiguous(uint32_t min_pages,
                                                    uint32_t max_pages,
                                                    uint32_t *got_pages) {
-  return mm_page_alloc_largest_contiguous(min_pages, max_pages, got_pages);
+  return page_alloc_largest(min_pages, max_pages, got_pages);
 }
 
-void mem_region_page_free(page_id_t id) { mm_page_free(id); }
+void mem_region_page_free(page_id_t id) { page_free(id); }
 
-uint32_t mem_region_page_linear(page_id_t id) { return mm_page_linear(id); }
+uint32_t mem_region_page_linear(page_id_t id) { return page_linear(id); }
 
-page_id_t mem_region_ptr_to_page(void *ptr) { return mm_ptr_to_page(ptr); }
+page_id_t mem_region_ptr_to_page(void *ptr) { return page_from_ptr(ptr); }
 
 #if !defined(__ia16__)
-void *mem_region_page_to_ptr(page_id_t id) { return mm_page_to_ptr(id); }
+void *mem_region_page_to_ptr(page_id_t id) { return page_to_ptr(id); }
 #endif
 
 void mem_region_page_read(page_id_t id, uint16_t off, void *buf, uint16_t len) {
-  mm_page_read(id, off, buf, len);
+  page_read(id, off, buf, len);
 }
 
 void mem_region_page_write(page_id_t id, uint16_t off, const void *buf,
                            uint16_t len) {
-  mm_page_write(id, off, buf, len);
+  page_write(id, off, buf, len);
 }
 
 void mem_region_page_zero(page_id_t id, uint16_t off, uint16_t len) {
-  mm_page_zero(id, off, len);
+  page_zero(id, off, len);
 }
 
 /* ── Capacity queries ──────────────────────────────────────────────── */

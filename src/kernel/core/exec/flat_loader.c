@@ -68,13 +68,13 @@ static int flat_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
   if (file_size > FLAT_MAX_SIZE) return -ENOMEM;
 
   /* Allocate one page for code + data + stack */
-  page_id_t pid = mm_page_alloc();
+  page_id_t pid = page_alloc();
   if (pid == PAGE_ID_INVALID) return -ENOMEM;
 
   /* Stream the binary into the page; any tail is zeroed below. */
   long nread = mod_vfs.vnode_read(vn, pid, 0, file_size, 0);
   if (nread < 0 || (uint32_t)nread != file_size) {
-    mm_page_free(pid);
+    page_free(pid);
     return (nread < 0) ? (int)nread : -ENOEXEC;
   }
 
@@ -83,12 +83,12 @@ static int flat_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
     mem_region_page_zero(pid, (uint16_t)file_size, PAGE_SIZE - file_size);
 
   if (proc_track_page(p, 0, pid) < 0) {
-    mm_page_free(pid);
+    page_free(pid);
     return -ENOMEM;
   }
 
   /* Entry point: start of page. Stack: top of page. */
-  uint32_t base_linear = mm_page_linear(pid);
+  uint32_t base_linear = page_linear(pid);
   void *page = (void *)(uintptr_t)base_linear;
   void (*entry)(void) = (void (*)(void))page;
   uintptr_t user_sp = (uintptr_t)page + PAGE_SIZE;
