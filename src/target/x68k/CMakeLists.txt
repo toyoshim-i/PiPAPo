@@ -5,13 +5,12 @@
 #         -S src/target/x68k -B build/x68k
 #   cmake --build build/x68k
 #
-# NOTE (Phase X-3):
-#   Embedded romfs removed.  The kernel root filesystem is a UFS image
-#   (boot/rootfs.ufs) loaded into RAM by stage2 and exposed as "ram0"
-#   via flatblk.  ppap_generate_romfs() still stages userland so that
-#   mkx68kimg.sh can package it into rootfs.ufs.
+# Rootfs lives in a single 44bsd UFS on the floppy starting at sector 4.
+# Stage2 reads /boot/kernel from it, and the kernel mounts the same UFS
+# as the rootfs via iocs_blk ("fd0").  ppap_generate_romfs() stages the
+# userland so that mkx68kimg.sh can package it into the UFS.
 #
-# NOTE: There is no QEMU/emulator run target for x68k.  Use
+# There is no QEMU/emulator run target for x68k.  Use
 #   scripts/run.sh --build x68k  to produce ppap_x68k.xdf.
 
 cmake_minimum_required(VERSION 3.13)
@@ -32,7 +31,6 @@ add_executable(ppap_x68k
     ${ARCH_M68K_SOURCES}
     ${KERNEL_SHARED_SOURCES}
     ${KERNEL_BLKDEV_SOURCES}
-    ${PPAP_ROOT}/src/kernel/vfs/driver/flatblk.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_x68k.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/iocs_blk.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/uart_x68k.c

@@ -21,8 +21,8 @@
  * freed boot memory region (0x000400–0x005FFF = 22.75 KB).
  * No .stack section in the binary — the stack lives in free RAM.
  *
- * NOTE (Phase X-3): Embedded romfs removed.  The root filesystem is a UFS
- * image (boot/rootfs.ufs) loaded into RAM by stage2 and mounted via flatblk.
+ * Rootfs is the 44bsd UFS on the boot floppy, mounted live via iocs_blk
+ * ("fd0").  No embedded romfs and no in-RAM rootfs image.
  */
 
 MEMORY {
@@ -31,12 +31,12 @@ MEMORY {
 
 SECTIONS {
 
-    /* Discard build-id, notes, and embedded romfs (Phase X-3+: rootfs is
-     * a separate UFS image loaded into RAM by stage2, not linked in) */
+    /* Discard build-id, notes, and embedded romfs (rootfs lives on the
+     * boot floppy as a 44bsd UFS, not linked into the kernel binary). */
     /DISCARD/ : { *(.note*) *(.romfs) }
 
-    /* Phase X-3: romfs symbols kept for main.c compatibility; both zero so
-     * the __romfs_start != __romfs_end guard evaluates false. */
+    /* main.c gates embedded-romfs mount on __romfs_start != __romfs_end;
+     * both zero here so it falls through to target_mount_rootfs. */
     __romfs_start = 0;
     __romfs_end   = 0;
 

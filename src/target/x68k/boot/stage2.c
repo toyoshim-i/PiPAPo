@@ -1,143 +1,114 @@
 /*
- * stage2.c — PPAP X68000 Stage 2: UFS kernel + rootfs loader
+ * stage2.c — PPAP X68000 Stage 2: 44bsd UFS kernel loader
  *
- * Runs at 0x003000 after stage1.  Reads the UFS filesystem stored on the
- * floppy from sector 4 onward, loads:
- *   boot/kernel    → 0x006000      (kernel binary)
- *   boot/rootfs.ufs → ROOTFS_BASE  (inner rootfs UFS image)
+ * Runs at 0x003000 after stage1.  Reads the 44bsd UFS that starts at
+ * floppy byte 4096 (1024-byte sector 4) and loads /boot/kernel to
+ * 0x006000.  The same UFS is later mounted live as the rootfs via the
+ * kernel's iocs_blk driver, so no in-RAM rootfs image and no second
+ * (outer) UFS layer is needed.
  *
- * ROOTFS_BASE is passed by mkx68kimg.sh via -DROOTFS_BASE=0x...u.  It is set
- * to the kernel's __page_pool_start so rootfs lands above the kernel BSS
- * region (which Reset_Handler zeros at boot before the rootfs can be read).
+ * Floppy layout:
+ *   Sector 0       Stage1 (loaded by IPL ROM to 0x002000)
+ *   Sectors 1-3    Stage2 (loaded by Stage1 to 0x003000)
+ *   Sector 4+      44bsd UFS — contains /boot/kernel + userland
  *
- * On completion, writes a handoff record at 0x002FF4–0x002FFC:
- *   0x002FF4  RAMD magic (0x52414D44)
- *   0x002FF8  rootfs RAM address  (= ROOTFS_BASE)
- *   0x002FFC  rootfs size in bytes
+ * 44bsd UFS layout (within the UFS partition):
+ *   Bytes 0-8191       Boot block area (zeros)
+ *   Bytes 8192-9727    Superblock (1536 bytes; magic at +1372)
+ *   Bytes 16384-       Cylinder group descriptor (sector 32)
+ *   Fragment fs_iblkno Inode table (128 B per inode, 4 inodes/sector)
+ *   Fragment fs_dblkno Data area
  *
- * Then copies the kernel's vector table (1 KB at 0x006000) to 0x000000,
- * restores TRAP #15 from the saved value at 0x002FF0, and jumps to
- * Reset_Handler at 0x006400.
- *
- * UFS block layout (block size = 4096 bytes, floppy sector = 1024 bytes):
- *   UFS block N = floppy logical sectors 4 + N*4 … 4 + N*4 + 3
- *
- * UFS inode layout (64 bytes each, 64 per block):
- *   Inode N in inode table block: N / 64 + s_itable_block
- *   Offset in block:             (N % 64) * 64
+ * Endianness: mkufs is invoked with -B (big-endian) so on-disk fields
+ * read natively on m68k.  Inodes are accessed via a packed struct.
  */
 
 #include <stdint.h>
 
-/* ── Fixed addresses (must match stage1.S, target_x68k.c, and x68k.ld) ───── */
+/* ── Fixed addresses (must match stage1.S, target_x68k.c, x68k.ld) ───────── */
 
 #define STAGE2_IOCS_SAVE \
   ((volatile uint32_t *)0x002FF0u)                       /* stage1 saved IOCS */
 #define STAGE2_MAGIC ((volatile uint32_t *)0x002FF4u)    /* 'RAMD' */
-#define STAGE2_RFS_ADDR ((volatile uint32_t *)0x002FF8u) /* rootfs RAM addr */
-#define STAGE2_RFS_SIZE ((volatile uint32_t *)0x002FFCu) /* rootfs size */
 #define STAGE2_RAMD_MAGIC 0x52414D44u
 
 #define KERNEL_LOAD_ADDR 0x006000u
 #define KERNEL_RESET_HANDLER 0x006400u
 
-/* ROOTFS_BASE: address where stage2 loads boot/rootfs.ufs.
- * Must be >= __page_pool_start (kernel BSS end rounded to 4 KB) so that
- * Reset_Handler's BSS-zeroing loop does not overwrite the rootfs image.
- * mkx68kimg.sh reads __page_pool_start from the kernel ELF and defines this
- * macro via -DROOTFS_BASE=0x...u; the fallback below is for direct builds. */
-#ifndef ROOTFS_BASE
-#define ROOTFS_BASE 0x030000u /* conservative fallback: 192 KB */
-#endif
-
 /* Scratch buffer: one UFS block (4096 bytes) at the first free address
- * above stage2 code.
- *
- * X68000 system work area layout (ALL must be avoided):
- *   $000000-$0003FF  CPU exception vectors
- *   $000400-$0007FF  IOCS work area (cursor, screen config, font data …)
- *   $000800-$000FFF  OPM (YM2151) driver work area
- *   $001000-$001FFF  FDC / SCSI / DMA driver work area
- *
- * $000800 was wrong — it is INSIDE the OPM work area.  Writing 4 KB of
- * UFS data there overwrites both the OPM and FDC driver work areas; when
- * the OPM interrupt fires the corrupted handler executes garbage code that
- * can write to CRTC registers, causing the display to break.
- *
- * $003C00 is the first byte after the 3 KB stage2 code area
- * ($003000-$003BFF) and is well above all system work areas. */
+ * above stage2 code.  $003C00 is the first byte after stage2's 3 KB code
+ * area ($003000-$003BFF) and is above all system work areas (vectors,
+ * IOCS, OPM, FDC).  See arch/m68k/boot/stage2_head.S for the SSP choice. */
 #define BUF ((uint8_t *)0x003C00u)
 
-/* ── X68000 2HD floppy geometry ───────────────────────────────────────────────
- */
+/* ── X68000 2HD floppy geometry ──────────────────────────────────────────── */
 
-#define FDC_PDA 0x90u    /* 2HD FDD0 */
-#define FDC_MODE 0x70u   /* MFM | retry | seek */
-#define SEC_LEN_CODE 3u  /* sector length code 3 = 1024 bytes */
-#define FLOPPY_SEC 1024u /* bytes per floppy sector */
-#define SECS_PER_CYL 16u /* 2 heads × 8 sectors */
+#define FDC_PDA 0x90u           /* 2HD FDD0 */
+#define FDC_MODE 0x70u          /* MFM | retry | seek */
+#define SEC_LEN_CODE 3u         /* sector length code 3 = 1024 bytes */
+#define FLOPPY_SEC 1024u        /* bytes per floppy sector */
+#define SECS_PER_CYL 16u        /* 2 heads × 8 sectors */
 #define SECS_PER_HEAD 8u
 
-/* UFS occupies floppy sectors 4..end (sectors 0=stage1, 1-3=stage2) */
+/* The 44bsd UFS starts at floppy sector 4 (sectors 0=stage1, 1-3=stage2). */
 #define UFS_FLOPPY_BASE 4u
 #define UFS_BLOCK_SIZE 4096u
 #define UFS_FLOPPY_SECS \
-  (UFS_BLOCK_SIZE / FLOPPY_SEC) /* 4 sectors per UFS block */
+  (UFS_BLOCK_SIZE / FLOPPY_SEC) /* 4 floppy sectors per UFS block */
 
-/* ── UFS constants ──────────────────────────────────────────────────────────
- */
+/* ── 44bsd UFS constants (must match src/kernel/vfs/ufs_format.h) ────────── */
 
-#define UFS_MAGIC 0x55465331u
-#define UFS_INODE_SIZE 64u
-#define UFS_INODES_PER_BLOCK (UFS_BLOCK_SIZE / UFS_INODE_SIZE) /* 64 */
-#define UFS_DIRENT_SIZE 32u
-#define UFS_DIRENTS_PER_BLOCK (UFS_BLOCK_SIZE / UFS_DIRENT_SIZE) /* 128 */
-#define UFS_NAME_MAX 27u
-#define UFS_ROOT_INO 1u
-#define UFS_DIRECT_BLOCKS 10u
+#define UFS_MAGIC          0x00011954u
+#define UFS_FRAG_SIZE      512u
+#define UFS_FRAGS_PER_BLK  8u
+#define UFS_INODE_SIZE     128u
+#define UFS_DIRECT_BLOCKS  12u
+#define UFS_ROOT_INO       2u
 
-/* ── Data structures (must match mkufs.c and ufs_format.h) ──────────────── */
+#define UFS_FS_IBLKNO_OFF  16u    /* offset within SB: inode-table start frag */
+#define UFS_FS_MAGIC_OFF   1372u  /* offset within SB: magic */
+#define UFS_SB_FRAG        16u    /* SB at fragment 16 (= byte 8192) */
 
-typedef struct {
-  uint32_t s_magic;
-  uint32_t s_block_size;
-  uint32_t s_block_count;
-  uint32_t s_inode_count;
-  uint32_t s_free_blocks;
-  uint32_t s_free_inodes;
-  uint32_t s_bmap_block;
-  uint32_t s_imap_block;
-  uint32_t s_itable_block;
-  uint32_t s_data_block;
-  uint32_t s_inode_blocks;
-  uint8_t s_pad[84];
-} ufs_super_t; /* 128 bytes */
+/* ── On-disk 44bsd inode (128 bytes, native big-endian on m68k) ─────────── */
 
 typedef struct {
   uint16_t i_mode;
   uint16_t i_nlink;
-  uint16_t i_uid;
-  uint16_t i_gid;
-  uint32_t i_size;
-  uint32_t i_mtime;
-  uint32_t i_ctime;
+  uint16_t i_uid16, i_gid16;
+  uint32_t i_size_hi;
+  uint32_t i_size_lo;
+  uint32_t i_atime, i_atimensec;
+  uint32_t i_mtime, i_mtimensec;
+  uint32_t i_ctime, i_ctimensec;
   uint32_t i_direct[UFS_DIRECT_BLOCKS];
-  uint32_t i_indirect;
-} ufs_inode_t; /* 64 bytes */
+  uint32_t i_ib[3];
+  uint32_t i_flags;
+  uint32_t i_blocks;
+  uint32_t i_gen;
+  uint32_t i_uid, i_gid;
+  uint32_t i_spare[2];
+} ufs_inode_t;
+
+_Static_assert(sizeof(ufs_inode_t) == UFS_INODE_SIZE,
+               "ufs_inode_t must be 128 bytes");
+
+/* ── 44bsd variable-length directory entry header ───────────────────────── */
 
 typedef struct {
   uint32_t d_ino;
-  char d_name[UFS_NAME_MAX + 1]; /* 28 bytes */
-} ufs_dirent_t;                  /* 32 bytes */
+  uint16_t d_reclen;
+  uint8_t  d_type;
+  uint8_t  d_namlen;
+  /* char d_name[]; — NUL-terminated, padded to 4-byte boundary */
+} ufs_dirent_t;
 
-/* ── IOCS _B_READ wrapper ───────────────────────────────────────────────────
- */
+/* ── IOCS _B_READ wrapper ───────────────────────────────────────────────── */
 
 static void read_floppy_sector(uint32_t lsec, void *dest) {
-  uint32_t cyl = lsec / SECS_PER_CYL;
+  uint32_t cyl  = lsec / SECS_PER_CYL;
   uint32_t wcyl = lsec % SECS_PER_CYL;
   uint32_t head = wcyl >> 3;
-  uint32_t sec = (wcyl & 7u) + 1u; /* 1-based */
+  uint32_t sec  = (wcyl & 7u) + 1u; /* 1-based */
 
   uint32_t d2 = (SEC_LEN_CODE << 24) | (cyl << 16) | (head << 8) | sec;
 
@@ -150,15 +121,16 @@ static void read_floppy_sector(uint32_t lsec, void *dest) {
                : "+r"(d0)
                : "r"(d1), "r"(_d2), "r"(d3), "r"(a1)
                : "a0", "memory");
-  /* Ignore FDC status for simplicity; stage1 already verified the boot */
-  (void)d0;
+  (void)d0; /* stage1 already verified the boot — ignore FDC status */
 }
 
-/* ── UFS block read ─────────────────────────────────────────────────────────
- */
-
-static void read_ufs_block(uint32_t block_no, void *dest) {
-  uint32_t lsec = UFS_FLOPPY_BASE + block_no * UFS_FLOPPY_SECS;
+/* Read one 4 KB UFS block, addressed by its starting fragment number.
+ * `frag` must be a multiple of UFS_FRAGS_PER_BLK (i.e. block-aligned). */
+static void read_ufs_block(uint32_t frag, void *dest) {
+  /* fragment N starts at byte UFS_FLOPPY_BASE*1024 + N*512 in floppy.
+   * In 1024-byte sectors: lsec = UFS_FLOPPY_BASE + N/2.  Fragment is
+   * block-aligned, so N is a multiple of 8 → N/2 is a multiple of 4. */
+  uint32_t lsec = UFS_FLOPPY_BASE + (frag >> 1);
   uint8_t *p = (uint8_t *)dest;
   for (uint32_t i = 0; i < UFS_FLOPPY_SECS; i++) {
     read_floppy_sector(lsec + i, p);
@@ -166,50 +138,74 @@ static void read_ufs_block(uint32_t block_no, void *dest) {
   }
 }
 
-/* ── Name lookup in a directory block ────────────────────────────────────── */
+/* ── Inode I/O ──────────────────────────────────────────────────────────── */
 
-static uint32_t find_in_dir(const uint8_t *dirblock, const char *name) {
-  const ufs_dirent_t *d = (const ufs_dirent_t *)dirblock;
-  for (uint32_t i = 0; i < UFS_DIRENTS_PER_BLOCK; i++, d++) {
-    if (d->d_ino == 0u) continue;
-    uint32_t j = 0;
-    while (j < UFS_NAME_MAX && d->d_name[j] == name[j] && name[j]) j++;
-    if (d->d_name[j] == name[j]) /* both '\0' */
-      return d->d_ino;
-  }
-  return 0u;
-}
+static uint32_t g_iblkno_frag; /* fs_iblkno from SB — first frag of inode table */
 
-/* ── Read inode from a loaded inode-table block ─────────────────────────────
- */
-
-static void copy_inode(const uint8_t *itable_block, uint32_t ino,
-                       ufs_inode_t *out) {
-  uint32_t idx =
-      ino % UFS_INODES_PER_BLOCK; /* mkufs: blk=3+ino/64, off=(ino%64)*64 */
-  const uint8_t *src = itable_block + idx * UFS_INODE_SIZE;
+/* Read inode `ino` into `out`.  Clobbers BUF. */
+static void read_inode(uint32_t ino, ufs_inode_t *out) {
+  /* Inode N byte offset within UFS: iblkno_frag*512 + N*128.
+   * Find the enclosing 4 KB block and read it. */
+  uint32_t byte_in_ufs   = g_iblkno_frag * UFS_FRAG_SIZE + ino * UFS_INODE_SIZE;
+  uint32_t block_byte    = byte_in_ufs & ~(UFS_BLOCK_SIZE - 1u);
+  uint32_t off_in_block  = byte_in_ufs - block_byte;
+  uint32_t block_frag    = block_byte / UFS_FRAG_SIZE;
+  read_ufs_block(block_frag, BUF);
+  const uint8_t *src = BUF + off_in_block;
   uint8_t *dst = (uint8_t *)out;
   for (uint32_t i = 0; i < UFS_INODE_SIZE; i++) dst[i] = src[i];
 }
 
-/* ── Load a file's data blocks to dest, return bytes loaded ──────────────── */
+/* ── Directory lookup ───────────────────────────────────────────────────── */
 
-static uint32_t load_file(const ufs_inode_t *inode, uint8_t *dest) {
-  /* Save all inode fields locally BEFORE any floppy reads.
-   * The IOCS _B_READ handler uses the supervisor stack heavily (FDC wait
-   * loop + interrupt handling) and can corrupt the caller's inode struct
-   * if it lives on the same stack.  Copying the fields we need into locals
-   * avoids the re-read-from-corrupted-memory problem. */
-  uint32_t file_size = inode->i_size;
-  uint32_t remaining = file_size;
-  uint32_t indirect = inode->i_indirect;
-  uint32_t direct[UFS_DIRECT_BLOCKS];
-  for (uint32_t j = 0; j < UFS_DIRECT_BLOCKS; j++)
-    direct[j] = inode->i_direct[j];
+/* Look up `name` in directory inode `dir`.  Returns the entry's inode
+ * number, or 0 if not found.  Only direct[0] is consulted — adequate
+ * for the small /boot directory used by our boot path.  Clobbers BUF. */
+static uint32_t find_in_dir(const ufs_inode_t *dir, const char *name) {
+  uint32_t frag = dir->i_direct[0];
+  uint32_t size = dir->i_size_lo;
+  if (frag == 0u || size == 0u) return 0u;
+  if (size > UFS_BLOCK_SIZE) size = UFS_BLOCK_SIZE;
+
+  read_ufs_block(frag, BUF);
+
+  uint32_t namelen = 0;
+  while (name[namelen]) namelen++;
 
   uint32_t off = 0u;
+  while (off + 8u <= size) {
+    const ufs_dirent_t *d = (const ufs_dirent_t *)(BUF + off);
+    uint16_t reclen = d->d_reclen;
+    if (reclen < 8u || reclen > size - off) break;
+    if (d->d_ino != 0u && d->d_namlen == namelen) {
+      const char *dname = (const char *)(BUF + off + sizeof(ufs_dirent_t));
+      uint32_t j = 0;
+      while (j < namelen && dname[j] == name[j]) j++;
+      if (j == namelen) return d->d_ino;
+    }
+    off += reclen;
+  }
+  return 0u;
+}
 
-  /* Direct blocks */
+/* ── File load ──────────────────────────────────────────────────────────── */
+
+/* Load file's data blocks to `dest`.  Returns bytes loaded.  Handles
+ * up to one level of indirection — enough for the ~120 KB kernel
+ * (12 direct × 4 KB = 48 KB + 1024 indirect × 4 KB = 4 MB). */
+static uint32_t load_file(const ufs_inode_t *inode, uint8_t *dest) {
+  /* Copy fields to locals before any further floppy I/O: the IOCS
+   * _B_READ handler uses the supervisor stack heavily and can clobber
+   * the caller's inode struct if it shares the stack. */
+  uint32_t size     = inode->i_size_lo;
+  uint32_t indirect = inode->i_ib[0];
+  uint32_t direct[UFS_DIRECT_BLOCKS];
+  for (uint32_t i = 0; i < UFS_DIRECT_BLOCKS; i++)
+    direct[i] = inode->i_direct[i];
+
+  uint32_t remaining = size;
+  uint32_t off       = 0u;
+
   for (uint32_t i = 0; i < UFS_DIRECT_BLOCKS && remaining > 0u; i++) {
     if (direct[i] == 0u) break;
     read_ufs_block(direct[i], dest + off);
@@ -218,10 +214,7 @@ static uint32_t load_file(const ufs_inode_t *inode, uint8_t *dest) {
     remaining -= chunk;
   }
 
-  /* Single indirect block (needed for files > 40 KB) */
   if (remaining > 0u && indirect != 0u) {
-    /* Read indirect block pointer list into BUF (reuse it — we are
-     * done with directory/superblock data at this point) */
     read_ufs_block(indirect, BUF);
     const uint32_t *ptrs = (const uint32_t *)BUF;
     uint32_t nptrs = UFS_BLOCK_SIZE / sizeof(uint32_t);
@@ -234,61 +227,45 @@ static uint32_t load_file(const ufs_inode_t *inode, uint8_t *dest) {
     }
   }
 
-  return file_size;
+  return size;
 }
 
-/* ── Vector copy and kernel launch ───────────────────────────────────────── */
+/* ── Vector copy and kernel launch ──────────────────────────────────────── */
 
 static void __attribute__((noreturn)) stage2_final(void) {
   /* Mask all interrupts before overwriting the vector table */
   asm volatile("or.w #0x0700, %%sr" ::: "memory");
 
-  /* Copy 1024 bytes (256 longwords) from 0x006000 to 0x000000 */
-  /* Suppress null-pointer warning: intentional hardware vector table write */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
   volatile uint32_t *src = (volatile uint32_t *)KERNEL_LOAD_ADDR;
   volatile uint32_t *dst = (volatile uint32_t *)0x0u;
 
-  /* Save IPL ROM handlers BEFORE the copy overwrites them.
-   * IOCS functions depend on many hardware interrupt handlers in the
-   * IPL ROM — autovectors for VSYNC/SCC, MFP vectored interrupts for
-   * keyboard/timers/serial, and the TRAP #15 dispatch.  We save all
-   * vectors that IOCS may use and restore them after the kernel vector
-   * copy. */
+  /* Save IPL ROM handlers BEFORE the copy overwrites them.  IOCS depends
+   * on autovectors (24-31), MFP vectored interrupts (64-79), the DMAC
+   * channel NIV/EIV window (80-127), and TRAP #15 (47) — preserve all
+   * of those so floppy / keyboard / timers keep working in the kernel. */
   uint32_t iocs_handler = *STAGE2_IOCS_SAVE;
-  uint32_t saved_auto[8]; /* autovectors 24-31 (spurious + levels 1-7) */
-  uint32_t saved_mfp[16]; /* MFP vectored interrupts 64-79 */
-  /* HD63450 DMAC channels program their own NIV/EIV vectors into the
-   * 0x60..0x6F window (vectors 96..111) — DMA completion IRQs from
-   * IOCS _B_READ etc. dispatch there.  Preserve a slightly wider
-   * 80..127 range so peripherals that route through it (DMAC, SCSI)
-   * keep their IPL ROM handlers and the kernel does not have to
-   * implement DMAC ack logic. */
-  uint32_t saved_ext[48]; /* vectors 80..127 */
-  for (uint32_t i = 0; i < 8u; i++) saved_auto[i] = dst[24u + i];
-  for (uint32_t i = 0; i < 16u; i++) saved_mfp[i] = dst[64u + i];
-  for (uint32_t i = 0; i < 48u; i++) saved_ext[i] = dst[80u + i];
+  uint32_t saved_auto[8];
+  uint32_t saved_mfp[16];
+  uint32_t saved_ext[48];
+  for (uint32_t i = 0; i < 8u; i++)  saved_auto[i] = dst[24u + i];
+  for (uint32_t i = 0; i < 16u; i++) saved_mfp[i]  = dst[64u + i];
+  for (uint32_t i = 0; i < 48u; i++) saved_ext[i]  = dst[80u + i];
 
   for (uint32_t i = 0u; i < 256u; i++) dst[i] = src[i];
 
-  /* Restore IPL ROM handlers for IOCS:
-   *   - TRAP #15: IOCS dispatch
-   *   - Autovectors 24-31: VSYNC (28), SCC (29), etc.
-   *   - MFP vectors 64-79: keyboard (74), timers, serial, etc.
-   *   - Extended vectors 80-127: DMAC channels (FDC/SCSI/etc.) */
   dst[47] = iocs_handler;
-  for (uint32_t i = 0; i < 8u; i++) dst[24u + i] = saved_auto[i];
+  for (uint32_t i = 0; i < 8u; i++)  dst[24u + i] = saved_auto[i];
   for (uint32_t i = 0; i < 16u; i++) dst[64u + i] = saved_mfp[i];
   for (uint32_t i = 0; i < 48u; i++) dst[80u + i] = saved_ext[i];
 #pragma GCC diagnostic pop
 
-  /* Jump to kernel Reset_Handler */
   asm volatile("jmp 0x006400" ::: "memory");
   __builtin_unreachable();
 }
 
-/* ── Diagnostic helper: IOCS _B_PUTC via TRAP #15 ────────────────────────── */
+/* ── Diagnostic helper: IOCS _B_PUTC via TRAP #15 ───────────────────────── */
 
 static inline void iocs_putc(char c) {
   register uint32_t d0 asm("d0") = 0x20u;
@@ -296,82 +273,46 @@ static inline void iocs_putc(char c) {
   asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "a0", "a1", "memory");
 }
 
-/* ── Stage 2 main ───────────────────────────────────────────────────────────
- */
+/* ── Stage 2 main ───────────────────────────────────────────────────────── */
 
 void stage2_main(void) {
-  uint32_t itable_block;
   ufs_inode_t inode;
-  uint32_t boot_ino, kernel_ino, rootfs_ino;
 
-  /* ── Read UFS superblock (block 0) — NO iocs_putc before first _B_READ ── */
-  read_ufs_block(0u, BUF);
-  /* Diagnostic: "PA" printed AFTER the first floppy read so that iocs_putc
-   * does not corrupt the IOCS work area ($400-$7FF) before _B_READ runs.
-   * Together with stage1's "Pi" and the kernel's "Po" + " booting..." this
-   * spells out the full "PiPAPo booting..." banner across the boot chain. */
+  /* Read the UFS block containing the superblock.  Magic at byte 1372
+   * within the SB; SB itself starts at byte 8192 of the UFS = the
+   * second 4 KB block (fragment 16).  NO iocs_putc before the first
+   * _B_READ — putc into the IOCS work area can confuse the FDC handler. */
+  read_ufs_block(UFS_SB_FRAG, BUF);
   iocs_putc('P');
   iocs_putc('A');
 
-  const ufs_super_t *sb = (const ufs_super_t *)BUF;
-  if (sb->s_magic != UFS_MAGIC) goto halt;
-  itable_block = sb->s_itable_block;
+  uint32_t magic;
+  {
+    const uint32_t *p = (const uint32_t *)(BUF + UFS_FS_MAGIC_OFF);
+    magic = *p;
+  }
+  if (magic != UFS_MAGIC) goto halt;
+  {
+    const uint32_t *p = (const uint32_t *)(BUF + UFS_FS_IBLKNO_OFF);
+    g_iblkno_frag = *p;
+  }
 
-  /* ── Read inode table block (contains root inode at index 0) ─────────── */
-  read_ufs_block(itable_block, BUF);
-  copy_inode(BUF, UFS_ROOT_INO, &inode);
-
-  /* ── Walk root directory to find "boot" ──────────────────────────────── */
-  if (inode.i_direct[0] == 0u) goto halt;
-  read_ufs_block(inode.i_direct[0], BUF);
-  boot_ino = find_in_dir(BUF, "boot");
+  /* Walk / → boot → kernel */
+  read_inode(UFS_ROOT_INO, &inode);
+  uint32_t boot_ino = find_in_dir(&inode, "boot");
   if (boot_ino == 0u) goto halt;
 
-  /* ── Load boot directory inode ───────────────────────────────────────── */
-  {
-    uint32_t blk = itable_block + boot_ino / UFS_INODES_PER_BLOCK;
-    read_ufs_block(blk, BUF);
-    copy_inode(BUF, boot_ino, &inode);
-  }
+  read_inode(boot_ino, &inode);
+  uint32_t kernel_ino = find_in_dir(&inode, "kernel");
+  if (kernel_ino == 0u) goto halt;
 
-  /* ── Walk boot/ directory to find "kernel" and "rootfs.ufs" ─────────── */
-  if (inode.i_direct[0] == 0u) goto halt;
-  read_ufs_block(inode.i_direct[0], BUF);
-  kernel_ino = find_in_dir(BUF, "kernel");
-  rootfs_ino = find_in_dir(BUF, "rootfs.ufs");
-  if (kernel_ino == 0u || rootfs_ino == 0u) goto halt;
+  read_inode(kernel_ino, &inode);
+  load_file(&inode, (uint8_t *)KERNEL_LOAD_ADDR);
 
-  /* ── Load kernel to 0x006000 ─────────────────────────────────────────── */
-  {
-    uint32_t blk = itable_block + kernel_ino / UFS_INODES_PER_BLOCK;
-    read_ufs_block(blk, BUF);
-    copy_inode(BUF, kernel_ino, &inode);
-  }
-  uint32_t kernel_size = load_file(&inode, (uint8_t *)KERNEL_LOAD_ADDR);
-  (void)kernel_size;
-
-  /* Load rootfs at the kernel page pool base (passed via -DROOTFS_BASE by
-   * mkx68kimg.sh from __page_pool_start in the kernel ELF).  This ensures
-   * rootfs lands above the kernel BSS region, which Reset_Handler zeros
-   * before the kernel can read the rootfs. */
-  uint32_t rootfs_addr = ROOTFS_BASE;
-
-  /* ── Load rootfs.ufs after kernel ────────────────────────────────────── */
-  {
-    uint32_t blk = itable_block + rootfs_ino / UFS_INODES_PER_BLOCK;
-    read_ufs_block(blk, BUF);
-    copy_inode(BUF, rootfs_ino, &inode);
-  }
-
-  load_file(&inode, (uint8_t *)rootfs_addr);
-
-  /* Write handoff record (informational — the kernel derives rootfs
-   * address and size from the UFS superblock at __page_pool_start). */
+  /* Handoff: stage2 ran to completion.  No rootfs address/size — kernel
+   * mounts the same floppy UFS live via iocs_blk. */
   *STAGE2_MAGIC = STAGE2_RAMD_MAGIC;
-  *STAGE2_RFS_ADDR = rootfs_addr;
-  *STAGE2_RFS_SIZE = inode.i_size;
 
-  /* ── Patch vectors and jump to kernel ────────────────────────────────── */
   stage2_final();
 
 halt:

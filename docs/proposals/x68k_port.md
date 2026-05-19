@@ -19,10 +19,9 @@ Produce a bootable PPAP system on the Sharp X68000 that:
 - Boots from a 5.25" floppy disk (1.2 MB) with a two-stage bootstrap.
 - Provides a console on the built-in TVRAM display via IOCS calls,
   mirrored to the RS-232C serial port.
-- Mounts a UFS root filesystem from the floppy.  The current
-  implementation pre-loads `boot/rootfs.ufs` into RAM and serves it via
-  `flatblk`; Phase X-5 replaces this with a live IOCS-backed block device
-  (see §9, Phase X-5).
+- Mounts a 44bsd UFS root filesystem live from the floppy via the
+  `iocs_blk` driver ("fd0").  Stage2 reads `/boot/kernel` from the same
+  UFS; no second UFS layer, no in-RAM rootfs image.
 - Runs the PPAP userland test suite (`runtests`) and passes it.
 - Executes Human68k `.x` and `.r` binaries natively (no CPU emulation).
 - Runs an interactive BusyBox shell on XEiJ emulator.
@@ -734,91 +733,27 @@ default environment to suppress any such probe.
 - XEiJ serial-over-TCP for automated test capture (`scripts/run_xeij_tcp.sh`)
 - Remaining: automated `runtests` on XEiJ
 
-### Phase X-5: Live IOCS Block Device -- PLANNED
+### Phase X-5: Live IOCS Block Device -- COMPLETE
 
-Replace the in-RAM rootfs image with a live block device backed by IOCS
-`_B_READ` / `_B_WRITE`, mirroring the pcxt port's `bios_blk` driver.
+The in-RAM rootfs image was replaced with a live block device backed by
+IOCS `_B_READ`, mirroring pcxt's `bios_blk` model.  Floppy now holds a
+single 44bsd UFS at sector 4 — stage2 reads `/boot/kernel` from it, and
+the kernel mounts the same UFS as `/` via `iocs_blk` ("fd0").
 
-#### Motivation
+Outcomes:
 
-The current Phase X-3 layout pre-loads `boot/rootfs.ufs` (~1067 KB) to
-`__page_pool_start` and mounts it through `flatblk("ram0", ...)`.  On a
-base 1 MB X68000 this consumes more than half of main RAM, and the
-rootfs is read-only as a side effect of being a flat RAM image.  The
-floppy also has to carry two stacked UFS images: an outer UFS holding
-`boot/kernel` + `boot/rootfs.ufs`, and the inner UFS that becomes `/`.
-
-The pcxt port avoids this entirely.  `src/target/pcxt/kernel/vfs/driver/
-bios_blk.c` wraps INT 13h as a `blkdev_t`, and `target_mount_rootfs()`
-calls `mount_ufs("/", 0, dev)` against the live device.  No RAM copy,
-no two-level image, writes go straight to disk.
-
-#### Driver: iocs_blk
-
-A new `src/target/x68k/kernel/vfs/driver/iocs_blk.c` provides:
-
-- `iocs_blk_read(dev, page, off, buf, len)` -- wraps `_B_READ` (IOCS 0x46)
-- `iocs_blk_write(dev, page, off, buf, len)` -- wraps `_B_WRITE` (IOCS 0x47)
-- IPL7 save/restore around each IOCS call (same pattern as `uart_x68k.c`)
-- LBA-to-CHS conversion for the 2HD 77x2x8x1024 geometry
-- Partial-sector buffering if the UFS block size does not match the
-  1024-byte floppy sector size
-
-Registered from the VFS module init hook, parallel to how `bios_blk` is
-wired in `pcxt_vfs_init.c`.
-
-#### Stage2 simplification
-
-Stage2 no longer needs UFS parsing or the rootfs load step.  Its only
-remaining job is to load the kernel and jump:
-
-```
-Stage2 (post-migration) flow:
-  1. Read kernel sectors from floppy -> KERNEL_LOAD_ADDR via _B_READ
-  2. Write handoff record (boot device geometry only, if needed)
-  3. Vector-table swap + jmp KERNEL_LOAD_ADDR
-```
-
-The `ROOTFS_BASE` / `__page_pool_start` handoff between `mkx68kimg.sh`,
-stage2, and the kernel is removed.
-
-#### Floppy layout (post-migration)
-
-Single-level UFS, same shape as the pcxt floppy:
-
-```
-Offset    Size   Contents
-0 KB      1 KB   Stage1 (IPL ROM loads to 0x002000)
-1 KB      3 KB   Stage2 (loaded by Stage1 to 0x003000)
-4 KB      ...    UFS root filesystem (contains /boot/kernel, /bin/*, ...)
-```
-
-The kernel image lives at a known path inside the same UFS that will
-later be mounted as `/`.  Stage2 walks just enough of that UFS to find
-and load `/boot/kernel`.
-
-#### Tradeoffs
-
-- I/O cost: every file read now goes through IOCS instead of a memcpy.
-  Floppy throughput on real hardware is ~25 KB/s; XEiJ is much faster.
-  VFS-layer caching already exists, so steady-state hit rate matters
-  more than raw bandwidth.
-- IOCS reentrancy becomes a hot-path concern, not just a boot concern.
-  The IPL7 wrapper pattern in `uart_x68k.c` already proves it works.
-- Media-change handling becomes meaningful (a RAM image was immune to
-  floppy ejection).
+- Saves ~1 MB of RAM on the base 1 MB X68000 (no in-RAM rootfs copy).
+- Rootfs is writable (writes go straight to floppy).
+- Two-level UFS image gone; `ROOTFS_BASE` / `__page_pool_start` handoff
+  between `mkx68kimg.sh`, stage2, and the kernel is gone.
 - Phase X-7 (SCSI HDD) becomes a drop-in: a parallel `scsi_blk` driver
-  registers under the same blkdev API, and rootfs follows the boot
-  device recorded by stage2.
+  registers under the same `blkdev` API the kernel already mounts
+  against.
 
-#### Migration sequencing
-
-1. Add `iocs_blk.c` and register it; keep the flatblk RAM path live.
-2. Switch `target_mount_rootfs()` to mount against `iocs_dev`.
-3. Verify reads work against the existing two-level image.
-4. Switch `mkx68kimg.sh` to emit a single-level UFS; stage2 loads the
-   kernel from `/boot/kernel` in that UFS.
-5. Remove flatblk RAM reservation and `ROOTFS_BASE` plumbing.
+Key files: `src/target/x68k/kernel/vfs/driver/iocs_blk.{c,h}`,
+`src/target/x68k/boot/stage2.c` (44bsd parser),
+`src/target/x68k/kernel/core/target_x68k.c`,
+`scripts/mkx68kimg.sh` (single-UFS image build).
 
 ### Phase X-6: Real Hardware Bring-up -- PLANNED
 

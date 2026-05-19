@@ -1,50 +1,27 @@
 /*
  * target_x68k.c — Target implementation for X68000
  *
- * Implements the target hook API (target.h) for the Sharp X68000 personal
- * computer.  Console I/O is provided by the IPL IOCS via TRAP #15.
+ * Console: TVRAM via IOCS (TRAP #15).
+ * Timer:   MFP (MC68901) Timer-C, 100 Hz.
+ * Storage: 5-inch floppy, mounted live via iocs_blk ("fd0").
  *
- * X68000 hardware:
- *   CPU:     Motorola 68000 @ 10 MHz
- *   RAM:     1 MB standard, up to 12 MB expanded
- *   Console: TVRAM text screen via IOCS _B_PUTC / _B_GETC / _B_KEYSNS
- *   Timer:   MFP (MC68901) Timer-C at 100 Hz (Phase X-2)
- *   Storage: 5-inch floppy (Phase X-3 UFS boot floppy)
- *
- * Boot flow:
- *   Stage1 (sector 0) → Stage2 (sectors 1–3) → kernel at 0x006000
- *   Stage2 copies .vectors to 0x000000, restores TRAP #15 to IPL IOCS,
- *   then jumps to Reset_Handler at 0x006400.
- *
- * NOTE (Phase X-3):
- *   - Preemptive scheduling via MFP Timer-C at 100 Hz
- *   - Rootfs is a UFS image (boot/rootfs.ufs) loaded into RAM by stage2
- *   - Kernel mounts it via flatblk ("ram0") as the initial root filesystem
+ * Boot chain: stage1 (sector 0) → stage2 (sectors 1-3) → kernel at
+ * 0x006000.  Stage2 reads the on-floppy 44bsd UFS, loads /boot/kernel,
+ * copies .vectors to 0x000000 (restoring the IPL ROM handlers for
+ * TRAP #15, autovectors 24-31, MFP 64-79 and DMAC 80-127) and jumps
+ * to Reset_Handler at 0x006400.
  */
 
-#include <stddef.h>
 #include <stdint.h>
 
-#include "common/errno.h"
-#include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/core/arch.h"
 #include "kernel/core/boot.h"
 #include "kernel/core/driver/timer_x68k.h"
-#include "kernel/core/exec/image_alloc.h"
-#include "kernel/core/mm/page.h"
-#include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/signal/signal_check.h"
 #include "kernel/core/syscall/syscall.h"
 #ifdef PPAP_HAS_BLKDEV
-// TODO: core-side code including VFS driver headers directly bypasses
-// the module bridge.  Non-ia16 target, so no link-time concern today;
-// switch to a mod_vfs.* path if one becomes available without having
-// to promote flatblk_init / blkdev_find into the mod_vfs vtable.
-#include "kernel/vfs/driver/blkdev.h"
-#include "kernel/vfs/driver/flatblk.h"
 #include "kernel/vfs/driver/iocs_blk.h"
 #endif
 #include "target/target.h"
@@ -160,50 +137,10 @@ void target_late_init(void) {
 
 int target_mount_rootfs(void) {
 #ifdef PPAP_HAS_BLKDEV
-  /* Rootfs address is always __page_pool_start (stage2 loads it there
-   * via ROOTFS_BASE, matching the kernel's linker symbol).  Size comes
-   * from the stage2 handoff record at 0x002FF4-0x002FFC, which stage2
-   * fills with 'RAMD' + addr + size before the vector swap.  Nothing
-   * calls IOCS _B_READ between stage2 and here, so the low-RAM scratch
-   * area the IPL ROM uses for floppy I/O hasn't been touched. */
-  volatile uint32_t *handoff_magic = (volatile uint32_t *)0x002FF4u;
-  volatile uint32_t *handoff_size  = (volatile uint32_t *)0x002FFCu;
-  if (*handoff_magic != 0x52414D44u) { /* 'RAMD' */
-    mod_vfs.klogf("x68k: stage2 handoff missing (got %lx)\n",
-                  (unsigned long)*handoff_magic);
-    return -1;
-  }
-  uint32_t addr = (uint32_t)(uintptr_t)__page_pool_start;
-  uint32_t size = *handoff_size;
-  mod_vfs.klogf("x68k: ramdisk at %lx, %lu bytes\n",
-                (unsigned long)addr, (unsigned long)size);
-
-  /* Reserve the page-pool portion of the rootfs image so the allocator
-   * never hands it out and overwrites the live UFS data. */
-  {
-    uintptr_t pool_base = page_pool_base();
-    uintptr_t pool_end = pool_base + page_count * PAGE_SIZE;
-    uintptr_t reserve_start = (uintptr_t)addr & ~(uintptr_t)(PAGE_SIZE - 1u);
-    uintptr_t reserve_end =
-        ((uintptr_t)addr + size + PAGE_SIZE - 1u) &
-        ~(uintptr_t)(PAGE_SIZE - 1u);
-    proc_image_segment_t reserved_rootfs;
-
-    if (reserve_start < pool_base) reserve_start = pool_base;
-    if (reserve_end > pool_end) reserve_end = pool_end;
-    if (reserve_start < reserve_end &&
-        image_segment_alloc_at(&reserved_rootfs, PPAP_MEM_RAM_DATA,
-                            (void *)reserve_start,
-                            reserve_end - reserve_start,
-                            PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0)
-      mod_vfs.klogf("x68k: rootfs reservation FAILED\n");
-  }
-
-  flatblk_init("ram0", (const void *)(uintptr_t)addr, size);
-  /* mount_ufs takes the device NAME as dev_data (ufs_mount internally
-   * calls blkdev_find on it).  Passing the blkdev_t pointer would
-   * silently fail the name match. */
-  return mod_vfs.mount_ufs("/", 0, "ram0");
+  /* iocs_blk registered "fd0" against the IOCS-backed floppy in
+   * target_late_init.  Mount it as the rootfs — same 44bsd UFS that
+   * stage2 loaded /boot/kernel from. */
+  return mod_vfs.mount_ufs("/", 0, "fd0");
 #else
   return -1;
 #endif
