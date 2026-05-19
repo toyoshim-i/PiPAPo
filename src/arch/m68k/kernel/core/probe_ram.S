@@ -17,6 +17,12 @@
 | emulators (where unmapped reads may silently return 0).  A temporary bus
 | error handler is installed to catch faults on hardware that asserts BERR.
 |
+| Each step tests the LAST longword of the chunk (chunk_start + STEP - 4),
+| not the first.  Testing the first longword would falsely accept the whole
+| chunk based on validity at its base; on XEiJ where physical RAM ends
+| mid-chunk, that produced a page pool extending past real memory and a
+| runtime bus error from page_write to the bogus last page.
+|
 | Must be called early at boot (supervisor mode, interrupts disabled).
 | =============================================================================
 
@@ -54,12 +60,16 @@ m68k_probe_ram:
 .Lcoarse_loop:
     cmp.l   %d2,%d0
     bge.s   .Ldone                   | checked all max_size → done
-    | Save original value, write pattern, verify, restore
-    move.l  (%a3),%d5               | d5 = save original (may bus error)
-    move.l  %d4,(%a3)               | write pattern
-    cmp.l   (%a3),%d4               | read back and compare
+    | Probe the last longword of the chunk so the chunk's claim of
+    | validity actually covers its full range.  68000 lea.l displacement
+    | is 16-bit, so use add.l for the 1 MB offset.
+    move.l  %a3,%a0
+    add.l   #COARSE_STEP-4,%a0
+    move.l  (%a0),%d5               | d5 = save original (may bus error)
+    move.l  %d4,(%a0)               | write pattern
+    cmp.l   (%a0),%d4               | read back and compare
     bne.s   .Lcoarse_restore_fail   | mismatch → not real RAM
-    move.l  %d5,(%a3)               | restore original value
+    move.l  %d5,(%a0)               | restore original value
     | Read succeeded and matched — this MB is accessible
     add.l   #COARSE_STEP,%d0
     add.l   #COARSE_STEP,%a3
@@ -89,12 +99,13 @@ m68k_probe_ram:
 .Lfine_loop:
     cmp.l   %d2,%d0
     bge.s   .Ldone                   | checked all max_size → done
-    | Save original, write pattern, verify, restore
-    move.l  (%a3),%d5               | d5 = save original (may bus error)
-    move.l  %d4,(%a3)               | write pattern
-    cmp.l   (%a3),%d4               | read back and compare
+    | Probe last longword of this 4 KB page (see coarse_loop comment).
+    lea.l   FINE_STEP-4(%a3),%a0
+    move.l  (%a0),%d5               | d5 = save original (may bus error)
+    move.l  %d4,(%a0)               | write pattern
+    cmp.l   (%a0),%d4               | read back and compare
     bne.s   .Ldone                  | mismatch → end of RAM
-    move.l  %d5,(%a3)               | restore original value
+    move.l  %d5,(%a0)               | restore original value
     | Page is accessible
     add.l   #FINE_STEP,%d0
     add.l   #FINE_STEP,%a3
