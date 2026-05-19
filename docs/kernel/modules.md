@@ -23,7 +23,7 @@ surfaces, like Linux kernel modules but simpler.
 ```
   ┌─────────────────────────────────────────────────┐
   │              mod_core (core module)              │
-  │  klog, kmem, mem_region, sched, uart, blkdev    │
+  │  klog, kmem, region, sched, uart, blkdev        │
   │  exec, loaders                                   │
   │                                                  │
   │  mod_vfs.*  ──►                                  │
@@ -100,8 +100,8 @@ for function names and indices:
 
 ```
 src/kernel/common/mod/
-  mod_core.inc    ← 15 functions
-  mod_vfs.inc     ← 39 functions
+  mod_core.inc    ← 16 functions
+  mod_vfs.inc     ← 47 functions
 ```
 
 Both C headers (`_Static_assert`) and assembly stubs (`#include`)
@@ -124,24 +124,23 @@ Common services that all other modules depend on.
 | Group | Functions |
 |-------|-----------|
 | Slab allocator | `kmem_alloc`, `kmem_free`, `kmem_free_count`, `kmem_pool_init` |
-| Region allocator | `mem_region_alloc`, `mem_region_free`, `mem_region_free_bytes`, `mem_region_total_bytes` |
+| Region allocator | `region_alloc`, `region_free`, `region_free_bytes`, `region_total_bytes` |
 | Page payload access | `page_read`, `page_write`, `page_zero` |
 | Scheduler | `sched_get_ticks`, `sched_switch`, `sched_wakeup` |
 | Subsystem | `subsys_read_proc` |
 | Time | `time_now_sec` |
 
-**kmem vs mem_region:** `kmem` is a sub-page slab allocator for
-fixed-size kernel objects (vnodes, files).  `mem_region` is a
+**kmem vs region:** `kmem` is a sub-page slab allocator for
+fixed-size kernel objects (vnodes, files).  `region_alloc` is a
 page-granularity allocator for process images.  Both are needed —
-`mem_region` for a 138-byte vnode wastes 97% of a 4 KB page.
+the page allocator for a 138-byte vnode wastes 97% of a 4 KB page.
 
-**page vs mem_region:** `page_alloc / page_free` (in `page.h`) returns
+**page vs region:** `page_alloc / page_free` (in `page.h`) returns
 a `page_id_t` (index, not pointer) for i16 segment safety.
 `page_read / write / zero` internally set up segment:offset pairs for
 cross-segment access; on 32-bit they collapse to `memcpy / memset`.
-`mem_region_alloc` adds the `mem_class_t` arena dispatch on top of
+`region_alloc` adds the `mem_class_t` arena dispatch on top of
 the page allocator.
-On 32-bit, these are thin wrappers around memcpy.
 
 #### mod_vfs (39 functions)
 

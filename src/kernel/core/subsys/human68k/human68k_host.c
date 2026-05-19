@@ -15,7 +15,7 @@
 #include "common/errno.h"
 #include "kernel/core/endian.h"
 #include "kernel/core/exec/exec_args.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/region.h"
 
 /* ── Env block ─────────────────────────────────────────────────────────── */
 

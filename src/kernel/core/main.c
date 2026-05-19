@@ -14,8 +14,8 @@
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/cpu/smp.h"
 #include "kernel/core/exec/exec.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/panic.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
@@ -36,14 +36,14 @@ void kmain(void) {
   /* Target-specific early init: UART console, clock PLL, SPI bus */
   target_early_init();
 
-  /* Init ordering: mem_region_init runs first so it can reserve any
+  /* Init ordering: region_init runs first so it can reserve any
    * architecture-specific text/rodata arenas; mm_init's page-pool
    * grab can then cross-check its range against those arenas where
-   * the arch demands it.  On targets where mem_region_init is a
+   * the arch demands it.  On targets where region_init is a
    * no-op (most arches), the ordering is irrelevant. */
   {
-    int err = mem_region_init();
-    if (err < 0) panic("mem_region_init failed (%d)\n", err);
+    int err = region_init();
+    if (err < 0) panic("region_init failed (%d)\n", err);
   }
 
   /* Memory manager + boot-time memory map */
@@ -96,7 +96,7 @@ void kmain(void) {
 #if !defined(__ia16__) && !defined(__riscv)
   {
     region_t r;
-    if (mem_region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE, 0, &r) == 0)
+    if (region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE, 0, &r) == 0)
       proc_table[0].stack_page_id = r.base_page;
     else
       proc_table[0].stack_page_id = PAGE_ID_INVALID;

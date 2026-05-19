@@ -575,7 +575,7 @@ static int ufs_mount(mount_entry_t *mnt, const void *dev_data) {
    * pointer arrays).  Lives outside the DS=0 segment on i16. */
   {
     region_t r;
-    if (mod_core.mem_region_alloc(PPAP_MEM_RAM_DATA, PAGE_SIZE, 0, &r) == 0)
+    if (mod_core.region_alloc(PPAP_MEM_RAM_DATA, PAGE_SIZE, 0, &r) == 0)
       ufs_priv.scratch_page = r.base_page;
     else
       ufs_priv.scratch_page = PAGE_ID_INVALID;

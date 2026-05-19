@@ -9,7 +9,7 @@
 #include "kernel/core/exec/exec_args.h"
 
 #include "common/errno.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/region.h"
 
 /* ── Internal helpers ─────────────────────────────────────────────────── */
 

@@ -17,8 +17,8 @@
 #include "kernel/core/exec/exec.h"
 #include "kernel/core/exec/exec_args.h"
 #include "kernel/core/exec/loader.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/subsys/subsys.h"
 #if !defined(__m68k__)
 #include "kernel/core/subsys/human68k/m68k_emu.h"

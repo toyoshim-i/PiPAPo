@@ -32,9 +32,9 @@
 #include "kernel/common/ioregs.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/arch.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/mpu.h" /* mpu_init */
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"  /* pcb_t, proc_alloc, current_core */
 #include "kernel/core/proc/sched.h" /* SYSTICK_RELOAD */
 
@@ -139,7 +139,7 @@ void core1_sched_entry(void) {
     mod_vfs.klogf("SMP: Core 1 idle alloc FAILED\n");
     for (;;) arch_wfi();
   }
-  if (mem_region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE, 0, &idle_stack) == 0)
+  if (region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE, 0, &idle_stack) == 0)
     idle->stack_page_id = idle_stack.base_page;
   else
     idle->stack_page_id = PAGE_ID_INVALID;
@@ -232,7 +232,7 @@ void core1_launch(void (*entry)(void)) {
   region_t launch_stack;
   void *stack_page = NULL;
 
-  if (mem_region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE, 0, &launch_stack) == 0)
+  if (region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE, 0, &launch_stack) == 0)
     stack_page = launch_stack.base;
   if (!stack_page) {
     mod_vfs.klogf("SMP: Core 1 launch stack alloc FAILED\n");

@@ -128,8 +128,8 @@ typedef struct {
  */
 
 static int gen_meminfo(char *buf, int bufsiz) {
-  uint32_t total_bytes = mod_core.mem_region_total_bytes(PPAP_MEM_RAM_STACK);
-  uint32_t free_bytes = mod_core.mem_region_free_bytes(PPAP_MEM_RAM_STACK);
+  uint32_t total_bytes = mod_core.region_total_bytes(PPAP_MEM_RAM_STACK);
+  uint32_t free_bytes = mod_core.region_free_bytes(PPAP_MEM_RAM_STACK);
   uint32_t total_kb = total_bytes / 1024u;
   uint32_t free_kb = free_bytes / 1024u;
 

@@ -2,7 +2,7 @@
  * tmpfs.c — RAM-backed temporary filesystem
  *
  * Provides a volatile filesystem at /tmp.  File data is stored in pages
- * obtained from mod_core.mem_region_alloc(); metadata lives in a static inode
+ * obtained from mod_core.region_alloc(); metadata lives in a static inode
  * table.
  *
  * Design:
@@ -78,7 +78,7 @@ static int inode_alloc(void) {
 static void inode_free(int ino) {
   if (inodes[ino].data_page != PAGE_ID_INVALID) {
     region_t r = {NULL, inodes[ino].data_page};
-    mod_core.mem_region_free(PPAP_MEM_RAM_DATA, PAGE_SIZE, &r);
+    mod_core.region_free(PPAP_MEM_RAM_DATA, PAGE_SIZE, &r);
     data_pages_used--;
   }
   inodes[ino].active = 0;
@@ -164,7 +164,7 @@ static long tmpfs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
   if (ti->data_page != PAGE_ID_INVALID) {
     /* Page-to-page copy via a small kernel scratch buffer.  Going through
      * a kernel buffer keeps this i16-safe — the data page may live above
-     * the 64 KB DS=0 window and is only reachable via mem_region_page_*. */
+     * the 64 KB DS=0 window and is only reachable via page_*. */
     uint8_t buf[64];
     uint16_t copied = 0;
     while (copied < (uint16_t)n) {
@@ -210,7 +210,7 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
     region_t r;
 
     if (data_pages_used >= TMPFS_MAX_PAGES) return -(long)ENOSPC;
-    if (mod_core.mem_region_alloc(PPAP_MEM_RAM_DATA, PAGE_SIZE, 0, &r) < 0)
+    if (mod_core.region_alloc(PPAP_MEM_RAM_DATA, PAGE_SIZE, 0, &r) < 0)
       return -(long)ENOMEM;
     ti->data_page = r.base_page;
 
@@ -442,7 +442,7 @@ static int tmpfs_truncate(vnode_t *vn, uint32_t length) {
 
   if (length == 0 && ti->data_page != PAGE_ID_INVALID) {
     region_t r = {NULL, ti->data_page};
-    mod_core.mem_region_free(PPAP_MEM_RAM_DATA, PAGE_SIZE, &r);
+    mod_core.region_free(PPAP_MEM_RAM_DATA, PAGE_SIZE, &r);
     ti->data_page = PAGE_ID_INVALID;
     data_pages_used--;
   }

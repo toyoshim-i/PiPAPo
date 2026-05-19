@@ -13,7 +13,7 @@
  * outside src/kernel/core/mm/ allocates and frees pool pages through
  * these names.  Callers that need a typed segment descriptor
  * (proc_image_segment_t, mem_class_t arena dispatch) still go through
- * mem_region_alloc — see mem_region.h.
+ * region_alloc — see region.h.
  */
 
 #ifndef PPAP_KERNEL_CORE_MM_PAGE_H
@@ -50,7 +50,7 @@ page_id_t page_alloc_largest(uint32_t min_pages, uint32_t max_pages,
 
 /* Allocate the specific page identified by `id`.  Returns 0 on success,
  * -1 if the page is not currently free (or not in any pool block).
- * Used by mem_region_alloc_at() to place segments at link-time addresses. */
+ * Used by region_alloc_at() to place segments at link-time addresses. */
 int page_alloc_at(page_id_t id);
 
 /* Free one pool page by page_id_t. */

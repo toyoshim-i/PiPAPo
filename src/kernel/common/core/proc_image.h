@@ -75,7 +75,7 @@ static inline proc_image_segment_t proc_image_segment_make_vaddr(
 }
 
 /* Build a process-image segment descriptor around a region_t result.
- * Common shape after a mem_region_alloc / region_alloc call: caller
+ * Common shape after a region_alloc / region_alloc call: caller
  * supplies the proc-image-layer fields (mem_class, segment flags),
  * the mm layer supplied (base, base_page) via the region_t. */
 static inline proc_image_segment_t proc_image_segment_from_region(

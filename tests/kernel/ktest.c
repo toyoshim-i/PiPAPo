@@ -12,7 +12,7 @@
 #include "ktest.h"
 #include "kernel/common/mem_region_kbuf.h"
 #include "kernel/core/mm/mem_helper.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/vfs/klog.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/proc/proc.h"
@@ -1812,7 +1812,7 @@ static void pool_arch_text_alias_test(void)
     test_fail = 0;
 
     uintptr_t pool_lo = (uintptr_t)page_pool_base();
-    uint32_t  pool_bytes = mem_region_total_bytes(PPAP_MEM_RAM_STACK);
+    uint32_t  pool_bytes = region_total_bytes(PPAP_MEM_RAM_STACK);
     uintptr_t pool_hi = pool_lo + pool_bytes;
     test_report("page pool base reported", pool_lo != 0u);
     test_report("page pool does not alias arch text arena",

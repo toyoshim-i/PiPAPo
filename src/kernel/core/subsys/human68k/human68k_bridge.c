@@ -21,8 +21,8 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/exec/exec.h"
 #include "kernel/core/exec/image_alloc.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/signal/signal.h"
@@ -328,7 +328,7 @@ static int dos_malloc(uint32_t *regs, uint32_t usp) {
   if (size >= 0x01000000u) {
     /* Query: size >= 16MB (24-bit address space) or $FFFFFFFF.
      * Return largest contiguous block size (minus MMB header). */
-    uint32_t contig_bytes = mem_region_largest_free_bytes(PPAP_MEM_RAM_DATA);
+    uint32_t contig_bytes = region_largest_free_bytes(PPAP_MEM_RAM_DATA);
     uint32_t avail =
         (contig_bytes > MMB_HEADER_SIZE) ? contig_bytes - MMB_HEADER_SIZE : 0;
     H68K_TRACE("_MALLOC: query => %x", avail);
@@ -342,7 +342,7 @@ static int dos_malloc(uint32_t *regs, uint32_t usp) {
   if (image_segment_alloc(&alloc_region, PPAP_MEM_RAM_DATA, total,
                           PROC_IMAGE_SEG_OWNED | PROC_IMAGE_SEG_WRITABLE) < 0) {
     /* Report largest contiguous run so caller can retry. */
-    uint32_t contig_bytes = mem_region_largest_free_bytes(PPAP_MEM_RAM_DATA);
+    uint32_t contig_bytes = region_largest_free_bytes(PPAP_MEM_RAM_DATA);
     uint32_t avail = (contig_bytes > MMB_HEADER_SIZE)
                          ? (contig_bytes - MMB_HEADER_SIZE) & 0x00FFFFFFu
                          : 0;
@@ -1297,8 +1297,8 @@ static int dos_settime(uint32_t *regs, uint32_t usp) {
 static int dos_dskfre(uint32_t *regs, uint32_t usp) {
   H68K_TRACE("_DSKFRE(%u)", (uint32_t)ustack_u16(usp, 0));
 
-  uint32_t free_pages = mem_region_free_bytes(PPAP_MEM_RAM_STACK) / PAGE_SIZE;
-  uint32_t total_pages = mem_region_total_bytes(PPAP_MEM_RAM_STACK) / PAGE_SIZE;
+  uint32_t free_pages = region_free_bytes(PPAP_MEM_RAM_STACK) / PAGE_SIZE;
+  uint32_t total_pages = region_total_bytes(PPAP_MEM_RAM_STACK) / PAGE_SIZE;
   uint32_t page_sz = PAGE_SIZE;
 
   /* Model as: 1 sector = PAGE_SIZE bytes, 1 cluster = 1 sector */

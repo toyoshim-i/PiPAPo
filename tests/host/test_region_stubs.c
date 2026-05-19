@@ -2,14 +2,14 @@
  * test_mem_region_stubs.c — Minimal mem_region stubs for host-only tests
  */
 
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/region.h"
 
 #include <stdlib.h>
 
 #include "common/errno.h"
 #include "kernel/core/mm/page.h"
 
-int mem_region_alloc(ppap_mem_class_t mem_class, uint32_t size, uint32_t flags,
+int region_alloc(ppap_mem_class_t mem_class, uint32_t size, uint32_t flags,
                      region_t *out) {
   (void)mem_class;
   (void)flags;
@@ -29,7 +29,7 @@ int mem_region_alloc(ppap_mem_class_t mem_class, uint32_t size, uint32_t flags,
   return 0;
 }
 
-int mem_region_alloc_at(ppap_mem_class_t mem_class, void *base, uint32_t size,
+int region_alloc_at(ppap_mem_class_t mem_class, void *base, uint32_t size,
                         uint32_t flags, region_t *out) {
   (void)mem_class;
   (void)base;
@@ -39,7 +39,7 @@ int mem_region_alloc_at(ppap_mem_class_t mem_class, void *base, uint32_t size,
   return -(int)ENOSYS;
 }
 
-void mem_region_free(ppap_mem_class_t mem_class, uint32_t size,
+void region_free(ppap_mem_class_t mem_class, uint32_t size,
                      const region_t *r) {
   (void)mem_class;
   (void)size;
@@ -82,17 +82,17 @@ void page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len) {
   (void)len;
 }
 
-uint32_t mem_region_total_bytes(ppap_mem_class_t mem_class) {
+uint32_t region_total_bytes(ppap_mem_class_t mem_class) {
   (void)mem_class;
   return 0u;
 }
 
-uint32_t mem_region_free_bytes(ppap_mem_class_t mem_class) {
+uint32_t region_free_bytes(ppap_mem_class_t mem_class) {
   (void)mem_class;
   return 0u;
 }
 
-uint32_t mem_region_largest_free_bytes(ppap_mem_class_t mem_class) {
+uint32_t region_largest_free_bytes(ppap_mem_class_t mem_class) {
   (void)mem_class;
   return 0u;
 }

@@ -17,7 +17,7 @@
 
 #include "kernel/common/spinlock.h"
 #include "kernel/core/arch.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/signal/signal.h"
 #include "kernel/core/syscall/syscall.h"

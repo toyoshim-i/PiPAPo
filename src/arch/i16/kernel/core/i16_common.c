@@ -76,7 +76,7 @@ uint32_t *arch_build_initial_frame(uint32_t *sp_arg, void (*entry)(void)) {
  *            24B saved frame]).
  * Returns the same kstack_sp (frame stays on kstack for pop). */
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/syscall/syscall.h"
 

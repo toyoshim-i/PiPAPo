@@ -23,8 +23,8 @@
 #include "kernel/core/cpu/ecpu_z80.h"
 #include "kernel/core/exec/exec.h"
 #include "kernel/core/exec/exec_args.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/signal/signal.h"
@@ -63,7 +63,7 @@ static void image_segment_release_owned(proc_image_segment_t *seg) {
   if (!seg || !seg->base) return;
   if (seg->flags & PROC_IMAGE_SEG_OWNED) {
     region_t r = {seg->base, seg->base_page};
-    mem_region_free(seg->mem_class, seg->size, &r);
+    region_free(seg->mem_class, seg->size, &r);
   }
   *seg = (proc_image_segment_t){0};
 }
@@ -210,7 +210,7 @@ static void exec_snapshot_release_private_tracked_pages(
 static void proc_release_stack_page(void **page) {
   if (!page || !*page) return;
   region_t r = {*page, page_from_ptr(*page)};
-  mem_region_free(PPAP_MEM_RAM_STACK, PAGE_SIZE, &r);
+  region_free(PPAP_MEM_RAM_STACK, PAGE_SIZE, &r);
   *page = NULL;
 }
 

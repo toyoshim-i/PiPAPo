@@ -1,5 +1,5 @@
 /*
- * mem_region.c — Memory-region allocation helpers
+ * region.c — Typed class-dispatched mm allocation
  *
  * Generic implementation.  All target-specific behaviour (extra
  * arenas, dual-mapping checks, alternative allocators) lives behind
@@ -7,7 +7,7 @@
  * so this file has zero architecture conditionals.
  */
 
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/region.h"
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
@@ -15,25 +15,25 @@
 #include "kernel/core/mm/mem_helper.h"
 #include "kernel/core/mm/page.h"
 
-static uint32_t mem_region_page_count(uint32_t size) {
+static uint32_t region_page_count(uint32_t size) {
   return (size + PAGE_SIZE - 1u) / PAGE_SIZE;
 }
 
-static uint32_t mem_region_page_pool_total_bytes(void) {
+static uint32_t region_page_pool_total_bytes(void) {
   return page_count * PAGE_SIZE;
 }
 
-static uint32_t mem_region_page_pool_free_bytes(void) {
+static uint32_t region_page_pool_free_bytes(void) {
   return page_free_count() * PAGE_SIZE;
 }
 
-static uint32_t mem_region_page_pool_largest_free_bytes(void) {
+static uint32_t region_page_pool_largest_free_bytes(void) {
   return page_max_contiguous() * PAGE_SIZE;
 }
 
-int mem_region_init(void) { return mem_helper_init_arenas(); }
+int region_init(void) { return mem_helper_init_arenas(); }
 
-static int mem_region_alloc_page_backed(uint32_t size, region_t *out) {
+static int region_alloc_page_backed(uint32_t size, region_t *out) {
   if (size == 0) {
     out->base = NULL;
     out->base_page = PAGE_ID_INVALID;
@@ -45,7 +45,7 @@ static int mem_region_alloc_page_backed(uint32_t size, region_t *out) {
    * which loses any page above the first 64 KB.  Callers reach the
    * payload via page_read / page_write through base_page, not by
    * dereferencing base. */
-  uint32_t n_pages = mem_region_page_count(size);
+  uint32_t n_pages = region_page_count(size);
   page_id_t pid = (n_pages == 1) ? page_alloc() : page_alloc_n(n_pages);
   if (pid == PAGE_ID_INVALID) return -(int)ENOMEM;
 
@@ -54,22 +54,22 @@ static int mem_region_alloc_page_backed(uint32_t size, region_t *out) {
   return 0;
 }
 
-int mem_region_alloc(ppap_mem_class_t mem_class, uint32_t size, uint32_t flags,
-                     region_t *out) {
+int region_alloc(ppap_mem_class_t mem_class, uint32_t size, uint32_t flags,
+                 region_t *out) {
   if (!out) return -(int)EINVAL;
   int rc = mem_helper_alloc(mem_class, size, flags, out);
   if (rc != -(int)ENOSYS) return rc;
-  return mem_region_alloc_page_backed(size, out);
+  return region_alloc_page_backed(size, out);
 }
 
-int mem_region_alloc_at(ppap_mem_class_t mem_class, void *base, uint32_t size,
-                        uint32_t flags, region_t *out) {
+int region_alloc_at(ppap_mem_class_t mem_class, void *base, uint32_t size,
+                    uint32_t flags, region_t *out) {
   (void)flags;
   if (!out || !base || size == 0) return -(int)EINVAL;
 
   if (mem_class == PPAP_MEM_RAM_DATA || mem_class == PPAP_MEM_RAM_STACK ||
       mem_class == PPAP_MEM_RAM_RODATA || mem_class == PPAP_MEM_DEVICE_DMA) {
-    uint32_t n_pages = mem_region_page_count(size);
+    uint32_t n_pages = region_page_count(size);
     page_id_t base_id = page_from_ptr(base);
     for (uint32_t i = 0; i < n_pages; i++) {
       if (page_alloc_at(base_id + (page_id_t)i) < 0) {
@@ -85,22 +85,21 @@ int mem_region_alloc_at(ppap_mem_class_t mem_class, void *base, uint32_t size,
   return -(int)EINVAL;
 }
 
-static void mem_region_free_page_backed(uint32_t size, const region_t *r) {
-  uint32_t n_pages = mem_region_page_count(size);
+static void region_free_page_backed(uint32_t size, const region_t *r) {
+  uint32_t n_pages = region_page_count(size);
   page_id_t base_id = r->base_page;
   if (base_id == PAGE_ID_INVALID) base_id = page_from_ptr(r->base);
   for (uint32_t i = 0; i < n_pages; i++) page_free(base_id + (page_id_t)i);
 }
 
-void mem_region_free(ppap_mem_class_t mem_class, uint32_t size,
-                     const region_t *r) {
+void region_free(ppap_mem_class_t mem_class, uint32_t size, const region_t *r) {
   if (!r || size == 0) return;
   /* Either a usable base pointer or a valid base_page is required.
    * On i16, callers may set base_page only because r->base would be
    * a truncated pointer that the page-backed paths below ignore. */
   if (!r->base && r->base_page == PAGE_ID_INVALID) return;
   if (mem_helper_free(mem_class, size, r) == 0) return;
-  mem_region_free_page_backed(size, r);
+  region_free_page_backed(size, r);
 }
 
 /* ── Capacity queries ──────────────────────────────────────────────── */
@@ -109,17 +108,17 @@ void mem_region_free(ppap_mem_class_t mem_class, uint32_t size,
  * the class isn't arch-managed and the answer is the page-pool
  * counter — callers that ask about an unallocatable class get the
  * pool's counter, which is meaningless but harmless. */
-uint32_t mem_region_total_bytes(ppap_mem_class_t mem_class) {
+uint32_t region_total_bytes(ppap_mem_class_t mem_class) {
   int32_t v = mem_helper_total_bytes(mem_class);
-  return v >= 0 ? (uint32_t)v : mem_region_page_pool_total_bytes();
+  return v >= 0 ? (uint32_t)v : region_page_pool_total_bytes();
 }
 
-uint32_t mem_region_free_bytes(ppap_mem_class_t mem_class) {
+uint32_t region_free_bytes(ppap_mem_class_t mem_class) {
   int32_t v = mem_helper_free_bytes(mem_class);
-  return v >= 0 ? (uint32_t)v : mem_region_page_pool_free_bytes();
+  return v >= 0 ? (uint32_t)v : region_page_pool_free_bytes();
 }
 
-uint32_t mem_region_largest_free_bytes(ppap_mem_class_t mem_class) {
+uint32_t region_largest_free_bytes(ppap_mem_class_t mem_class) {
   int32_t v = mem_helper_largest_free(mem_class);
-  return v >= 0 ? (uint32_t)v : mem_region_page_pool_largest_free_bytes();
+  return v >= 0 ? (uint32_t)v : region_page_pool_largest_free_bytes();
 }

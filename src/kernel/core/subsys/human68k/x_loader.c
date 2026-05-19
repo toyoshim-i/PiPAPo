@@ -17,8 +17,8 @@
 #include "kernel/core/exec/exec.h"
 #include "kernel/core/exec/exec_args.h"
 #include "kernel/core/exec/loader.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/subsys/subsys.h"
 #if !defined(__m68k__)
 #include "kernel/core/subsys/human68k/m68k_emu.h"
@@ -157,7 +157,7 @@ static int x68k_alloc_largest_image_region(proc_image_segment_t *seg,
        total_pages--) {
     uint32_t size = total_pages * PAGE_SIZE;
     region_t r;
-    if (mem_region_alloc(PPAP_MEM_RAM_DATA, size, 0, &r) == 0) {
+    if (region_alloc(PPAP_MEM_RAM_DATA, size, 0, &r) == 0) {
       *seg = proc_image_segment_from_region(PPAP_MEM_RAM_DATA, size,
                                             PROC_IMAGE_SEG_WRITABLE, r);
       return (int)total_pages;
@@ -186,7 +186,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
   int rc;
   {
     region_t r;
-    if (mem_region_alloc(PPAP_MEM_RAM_DATA, file_size, 0, &r) < 0)
+    if (region_alloc(PPAP_MEM_RAM_DATA, file_size, 0, &r) < 0)
       return -(int)ENOMEM;
     staging = proc_image_segment_from_region(PPAP_MEM_RAM_DATA, file_size,
                                              PROC_IMAGE_SEG_WRITABLE, r);
@@ -223,7 +223,7 @@ static int x_load(pcb_t *p, vnode_t *vn, uint32_t file_size,
 #if !defined(__m68k__)
   {
     region_t r;
-    if (mem_region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE, 0, &r) < 0) {
+    if (region_alloc(PPAP_MEM_RAM_STACK, PAGE_SIZE, 0, &r) < 0) {
       rc = -(int)ENOMEM;
       goto out;
     }

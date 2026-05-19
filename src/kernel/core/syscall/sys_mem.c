@@ -6,14 +6,14 @@
  * The heap starts at brk_base (end of .data+.bss) and grows upward
  * within tracked page-backed user memory slots. The initial
  * image pages are recorded by the loader; later heap expansion pages are
- * appended on demand via mem_region_alloc_at() to ensure contiguity.
+ * appended on demand via region_alloc_at() to ensure contiguity.
  */
 
 #include <string.h>
 
 #include "common/errno.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/syscall/syscall.h"
 
@@ -138,8 +138,8 @@ long sys_brk(long addr) {
   for (uint32_t i = old_pages; i < new_pages; i++) {
     region_t r = {0};
     uintptr_t target = page0_base + i * PAGE_SIZE;
-    if (mem_region_alloc_at(PPAP_MEM_RAM_DATA, (void *)(uintptr_t)target,
-                            PAGE_SIZE, 0, &r) < 0) {
+    if (region_alloc_at(PPAP_MEM_RAM_DATA, (void *)(uintptr_t)target, PAGE_SIZE,
+                        0, &r) < 0) {
       /* Roll back any pages we just allocated */
       proc_release_tracked_pages(current, old_pages, i);
       return (long)(current->brk_current); /* unchanged = failure */
@@ -159,7 +159,7 @@ long sys_brk(long addr) {
 /* ── sys_mmap2 ────────────────────────────────────────────────────────────────
  */
 /*
- * Anonymous-only mmap.  Allocates page-backed RAM data via mem_region and
+ * Anonymous-only mmap.  Allocates page-backed RAM data via region_alloc and
  * tracks pages in user_pages[] (high slots, searched top-down).
  * File-backed mmap is not supported.
  *
@@ -256,7 +256,7 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
   if ((flags & MAP_FIXED) && addr != 0) {
     region_t r = {0};
     void *base = (void *)addr;
-    if (mem_region_alloc_at(PPAP_MEM_RAM_DATA, base, size, 0, &r) < 0) {
+    if (region_alloc_at(PPAP_MEM_RAM_DATA, base, size, 0, &r) < 0) {
       return -(long)ENOMEM;
     }
     memset(r.base, 0, size);
@@ -267,7 +267,7 @@ long sys_mmap2(uintptr_t addr, size_t len, uint32_t prot, uint32_t flags,
 
   {
     region_t r = {0};
-    if (mem_region_alloc(PPAP_MEM_RAM_DATA, size, 0, &r) < 0) {
+    if (region_alloc(PPAP_MEM_RAM_DATA, size, 0, &r) < 0) {
       return -(long)ENOMEM;
     }
     memset(r.base, 0, size);
@@ -324,7 +324,7 @@ long sys_munmap(uintptr_t addr, size_t len) {
    * User-space may mmap then munmap pages we didn't track (edge case). */
   region_t r = {(void *)(uintptr_t)addr,
                 page_from_ptr((void *)(uintptr_t)addr)};
-  mem_region_free(PPAP_MEM_RAM_DATA, num_pages * PAGE_SIZE, &r);
+  region_free(PPAP_MEM_RAM_DATA, num_pages * PAGE_SIZE, &r);
   return 0;
 #endif
 }

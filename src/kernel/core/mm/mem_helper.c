@@ -3,7 +3,7 @@
  *
  * Every hook here is a weak symbol that arch-specific code
  * (src/arch/<arch>/kernel/core/mem_helper.c) can override.  Defaults
- * are chosen so callers in page.c / mem_region.c naturally fall
+ * are chosen so callers in page.c / region.c naturally fall
  * through to the shared page-backed allocator on targets that don't
  * need any special handling (ARM, RISC-V, m68k, ia16).
  */

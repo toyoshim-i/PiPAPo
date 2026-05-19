@@ -18,7 +18,7 @@
 #include "common/seek.h"
 #include "kernel/common/mem_region_kbuf.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/signal/signal.h"
 

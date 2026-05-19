@@ -17,7 +17,7 @@
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/exec/exec_args.h"
 #include "kernel/core/exec/loader.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/subsys/msdos/dos_bridge.h"
 #include "kernel/core/subsys/msdos/dos_host.h"
@@ -117,7 +117,7 @@ static int com_load_vn(pcb_t *p, vnode_t *vn, uint32_t file_size,
    * extra pages above the first segment are not visible to mmap/brk and
    * are reached via image.data.{base_page,size} (see dos_bridge.c
    * dos_rw_common bound check).  All allocated pages are still freed on
-   * exit because mem_region_free derives n_pages from image.data.size. */
+   * exit because region_free derives n_pages from image.data.size. */
   uint16_t track_pages = (got_pages < DOS_SEG_PAGES) ? (uint16_t)got_pages
                                                      : (uint16_t)DOS_SEG_PAGES;
   for (uint16_t i = 0; i < track_pages; i++) proc_track_page(p, i, base_id + i);

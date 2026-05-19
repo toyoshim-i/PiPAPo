@@ -12,10 +12,10 @@
  *   #include "kernel/common/mod/mod_core.h"
  *   void *p = mod_core.kmem_alloc(&pool);
  *   region_t r;
- *   mod_core.mem_region_alloc(PPAP_MEM_RAM_DATA, PAGE_SIZE, flags, &r);
+ *   mod_core.region_alloc(PPAP_MEM_RAM_DATA, PAGE_SIZE, flags, &r);
  *
  * Implementation: src/kernel/core/mm/kmem.c,
- *                 src/kernel/core/mm/mem_region.c
+ *                 src/kernel/core/mm/region.c
  */
 
 #ifndef PPAP_KERNEL_COMMON_MOD_MOD_CORE_H
@@ -77,53 +77,6 @@ MOD_FUNC(core, uint32_t, kmem_free_count, const kmem_pool_t *)
 MOD_FUNC(core, void, kmem_pool_init, kmem_pool_t *, void *, size_t, uint32_t)
 
 /*
- * mem_region_alloc — Allocate a memory region by class.
- *
- *   mem_class  Memory type (RAM_TEXT, RAM_DATA, RAM_STACK, etc.).
- *   size       Requested size in bytes.
- *   flags      Caller-defined; unused by mm, forwarded to the arch
- *              hook for arches that need it (Xtensa ignores them).
- *   out        Filled with the allocation result (base, base_page).
- *
- * Returns 0 on success, negative errno (EINVAL, ENOMEM) on failure.
- * On Xtensa, routes to ESP-IDF arena or page pool based on class.
- * Callers that want a proc_image_segment_t descriptor wrap the
- * result via proc_image_segment_from_region().
- */
-MOD_FUNC(core, int, mem_region_alloc, ppap_mem_class_t, uint32_t, uint32_t,
-         region_t *)
-
-/*
- * mem_region_free — Free a previously allocated memory region.
- *
- *   mem_class  Class the region was allocated under.
- *   size       Original allocation size.
- *   r          Region descriptor to release (no-op if NULL).
- *
- * Dispatches to class-specific free path (page pool or arena).
- */
-MOD_FUNC(core, void, mem_region_free, ppap_mem_class_t, uint32_t,
-         const region_t *)
-
-/*
- * mem_region_free_bytes — Query free memory in a memory class.
- *
- *   mem_class  Memory type to query.
- *
- * Returns bytes available for allocation.
- */
-MOD_FUNC(core, uint32_t, mem_region_free_bytes, ppap_mem_class_t)
-
-/*
- * mem_region_total_bytes — Query total capacity of a memory class.
- *
- *   mem_class  Memory type to query.
- *
- * Returns total bytes (pool or arena size).
- */
-MOD_FUNC(core, uint32_t, mem_region_total_bytes, ppap_mem_class_t)
-
-/*
  * page_read — Read bytes from a page at an offset.
  *
  *   id   Page index.
@@ -159,6 +112,52 @@ MOD_FUNC(core, void, page_write, page_id_t, uint16_t, const void *, uint16_t)
  * Safe on all architectures including i16.
  */
 MOD_FUNC(core, void, page_zero, page_id_t, uint16_t, uint16_t)
+
+/*
+ * region_alloc — Allocate a memory region by class.
+ *
+ *   mem_class  Memory type (RAM_TEXT, RAM_DATA, RAM_STACK, etc.).
+ *   size       Requested size in bytes.
+ *   flags      Caller-defined; unused by mm, forwarded to the arch
+ *              hook for arches that need it (Xtensa ignores them).
+ *   out        Filled with the allocation result (base, base_page).
+ *
+ * Returns 0 on success, negative errno (EINVAL, ENOMEM) on failure.
+ * On Xtensa, routes to ESP-IDF arena or page pool based on class.
+ * Callers that want a proc_image_segment_t descriptor wrap the
+ * result via proc_image_segment_from_region().
+ */
+MOD_FUNC(core, int, region_alloc, ppap_mem_class_t, uint32_t, uint32_t,
+         region_t *)
+
+/*
+ * region_free — Free a previously allocated memory region.
+ *
+ *   mem_class  Class the region was allocated under.
+ *   size       Original allocation size.
+ *   r          Region descriptor to release (no-op if NULL).
+ *
+ * Dispatches to class-specific free path (page pool or arena).
+ */
+MOD_FUNC(core, void, region_free, ppap_mem_class_t, uint32_t, const region_t *)
+
+/*
+ * region_free_bytes — Query free memory in a memory class.
+ *
+ *   mem_class  Memory type to query.
+ *
+ * Returns bytes available for allocation.
+ */
+MOD_FUNC(core, uint32_t, region_free_bytes, ppap_mem_class_t)
+
+/*
+ * region_total_bytes — Query total capacity of a memory class.
+ *
+ *   mem_class  Memory type to query.
+ *
+ * Returns total bytes (pool or arena size).
+ */
+MOD_FUNC(core, uint32_t, region_total_bytes, ppap_mem_class_t)
 
 /*
  * sched_get_ticks — Get monotonic tick count since boot.

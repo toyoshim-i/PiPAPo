@@ -19,7 +19,7 @@
 
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/exec/image_alloc.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/region.h"
 
 /* ── Trap fire helper ───────────────────────────────────────────────────── */
 

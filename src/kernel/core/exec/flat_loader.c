@@ -21,8 +21,8 @@
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/exec/exec_args.h"
 #include "kernel/core/exec/loader.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 
 #define FLAT_MAX_SIZE (PAGE_SIZE - 256) /* leave room for stack */

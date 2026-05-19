@@ -1,7 +1,7 @@
 /*
  * mem_helper.h — Arch-overridable hooks for the memory subsystem
  *
- * The shared page.c / mem_region.c implementation handles the common
+ * The shared page.c / region.c implementation handles the common
  * case: a statically-located page pool plus a page-backed allocator
  * for every memory class.  Targets that need a different layout
  * (extra arenas, runtime-allocated pool, physical-aliasing checks)
@@ -22,10 +22,10 @@
 #include "kernel/common/core/mem_class.h"
 #include "kernel/common/core/page_types.h"
 #include "kernel/common/core/region_types.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/region.h"
 
 /* Reserve arch-specific text / rodata arenas.  Called from
- * mem_region_init() before mm_init's page-pool setup so the page-pool
+ * region_init() before mm_init's page-pool setup so the page-pool
  * sizing loop can cross-check arena placement.  Returns 0 on success
  * or -errno.  Default: no-op, returns 0. */
 int mem_helper_init_arenas(void);
@@ -40,14 +40,14 @@ int mem_helper_init_arenas(void);
  * linear pool base can sit above 64 KB. */
 int mem_helper_init_pool(uint32_t *base_out);
 
-/* mem_region_alloc dispatch hook.  Return 0 if the request was
+/* region_alloc dispatch hook.  Return 0 if the request was
  * handled and *out filled, -ENOSYS to fall through to the generic
  * page-backed allocator, or -errno on real failure.  Default: -ENOSYS
  * for every class. */
 int mem_helper_alloc(ppap_mem_class_t mem_class, uint32_t size, uint32_t flags,
                      region_t *out);
 
-/* mem_region_free dispatch hook, mirror of mem_helper_alloc.  Class
+/* region_free dispatch hook, mirror of mem_helper_alloc.  Class
  * and size identify the original allocation; r names the live region.
  * Return 0 if the region came from an arch arena and was freed,
  * -ENOSYS to fall through to the generic page-pool free path.

@@ -27,8 +27,8 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/spinlock.h"
 #include "kernel/core/mm/mem_helper.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page_pool.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/panic.h"
 
 /* ── Linker-provided symbols ────────────────────────────────────────────────

@@ -12,8 +12,8 @@
 #include "kernel/core/exec/elf.h"
 #include "kernel/core/exec/exec.h"
 #include "kernel/core/exec/exec_args.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 
 static int elf_detect(const uint8_t *header, uint32_t header_len,

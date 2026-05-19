@@ -8,8 +8,8 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/exec/image_alloc.h"
 #include "kernel/core/fatimg.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/region.h"
 // TODO: core-side code including VFS driver headers directly bypasses
 // the module bridge.  Non-ia16 target, so no link-time concern today.
 // BLKDEV_SECTOR_SIZE already lives in kernel/common/config.h and could

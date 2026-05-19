@@ -41,7 +41,7 @@ kernel/
     spinlock.h       SMP spinlock / core_id()
   core/              Core module
     main.c           Kernel entry point
-    mm/              Memory management (page, kmem, mem_region, mpu, xip)
+    mm/              Memory management (page_pool, page, region, kmem, mpu, xip)
     proc/            Process management and scheduler
     signal/          Signal delivery
     exec/            Binary loaders (ELF, flat, ELF16, COM, X/R/SOS/H68K)

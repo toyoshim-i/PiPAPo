@@ -115,7 +115,7 @@ Three layers, three prefixes, each with one job:
 |---|---|---|---|
 | `pool_*` | `mm/page_pool.{c,h}` | Pure address-sorted free-block list.  No locking, no logging.  Host-testable via `tests/host/test_page_pool.c`. | mm-internal |
 | `page_*` | `mm/page.{c,h}` | Locked, logged wrapper.  `page_alloc/_n/_largest`, `page_free`, `page_linear/_to_ptr/_from_ptr`, `page_read/_write/_zero`.  This is the surface kernel code allocates through. | Public |
-| `mem_region_*` | `mm/mem_region.{c,h}` | Typed class-dispatched allocation.  `mem_region_alloc(seg, class, size, flags)` and its arch-hook plumbing for non-page-backed arenas (Xtensa).  Returns `proc_image_segment_t` descriptors used by loaders / procfs. | Public |
+|  `region_*` | `mm/region.{c,h}` | Typed class-dispatched allocation.  `region_alloc(seg, class, size, flags)` and its arch-hook plumbing for non-page-backed arenas (Xtensa).  Returns `proc_image_segment_t` descriptors used by loaders / procfs. | Public |
 
 ### 3.1 Public API: `page_*`
 
@@ -145,7 +145,7 @@ conversion is **not** a general-purpose utility — only `user_to_page`
 (at the syscall dispatcher) and `kbuf_to_page` (for kernel metadata
 buffers) exist.
 
-### 3.2 Public API: `mem_region_*`
+### 3.2 Public API: `region_*`
 
 For typed, class-dispatched allocation that produces a
 `proc_image_segment_t` descriptor.  Used by loaders building process
@@ -153,14 +153,14 @@ images, and by `sys_brk` / `sys_mmap2` for placed allocations.
 
 | API | Returns | Used by |
 |-----|---------|---------|
-| `mem_region_alloc()` | `proc_image_segment_t` (with `base_page`) | All loaders, syscalls |
-| `mem_region_alloc_at()` | `proc_image_segment_t` | `sys_brk`, `sys_mmap2` (MAP_FIXED) |
-| `mem_region_free()` | — | OWNED segment cleanup |
-| `mem_region_*_bytes()` | `uint32_t` | Capacity queries per `mem_class_t` |
+| `region_alloc()` | `proc_image_segment_t` (with `base_page`) | All loaders, syscalls |
+| `region_alloc_at()` | `proc_image_segment_t` | `sys_brk`, `sys_mmap2` (MAP_FIXED) |
+| `region_free()` | — | OWNED segment cleanup |
+| `region_*_bytes()` | `uint32_t` | Capacity queries per `mem_class_t` |
 
 On Xtensa, some memory classes (RAM_TEXT, RAM_DATA, EXT_TEXT,
 EXT_RODATA) use ESP-IDF `heap_caps_malloc` arenas instead of the
-page pool — `mem_region_alloc` dispatches through the `mem_helper`
+page pool — `region_alloc` dispatches through the `mem_helper`
 hook to pick the right backend.  These classes are never used on
 i16.
 
@@ -170,16 +170,16 @@ The `mod_core` vtable exposes the cross-module subset of the above:
 
 | vtable field | Implementation |
 |---|---|
-| `mem_region_alloc` | `mem_region_alloc()` (typed allocation) |
-| `mem_region_free` | `mem_region_free()` |
-| `mem_region_free_bytes` | `mem_region_free_bytes()` |
-| `mem_region_total_bytes` | `mem_region_total_bytes()` |
+| `region_alloc` | `region_alloc()` (typed allocation) |
+| `region_free` | `region_free()` |
+| `region_free_bytes` | `region_free_bytes()` |
+| `region_total_bytes` | `region_total_bytes()` |
 | `page_read` | `page_read()` (payload access — i16 cross-segment safe) |
 | `page_write` | `page_write()` |
 | `page_zero` | `page_zero()` |
 
 `page_alloc` / `page_free` are not in `mod_core` today — VFS code that
-needs a raw page goes through `mem_region_alloc(..., size = PAGE_SIZE)`
+needs a raw page goes through `region_alloc(..., size = PAGE_SIZE)`
 or owns its own page via tmpfs / pipe metadata.  Kernel-side callers
 in `core/` reach `page_alloc` directly through `page.h`.
 
@@ -300,7 +300,7 @@ When `execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
    storage and build kernel frames on fixed kstack slots instead of allocating
    `stack_page_id` for continuations.
 
-2. **Allocate contiguous data pages** — `mem_region_alloc()` scans the page
+2. **Allocate contiguous data pages** — `region_alloc()` scans the page
    pool from the bottom and allocates N adjacent pages for the data segment
    (`.data` + `.bss` + GOT).  Contiguity is required so that `brk()` can
    later extend the heap by adding the next adjacent page.
@@ -336,12 +336,12 @@ When `execve()` loads an ELF binary (`src/kernel/exec/exec.c`):
 
 - **Query**: `brk(0)` returns the current break address without changes.
 - **Expand**: When `brk(addr)` requests a higher address, the kernel calculates
-  how many new pages are needed and allocates them via `mem_region_alloc_at()`
+  how many new pages are needed and allocates them via `region_alloc_at()`
   at the exact addresses following the existing data/heap pages.  Each new page
   is zeroed and tracked in `user_pages[]`.
 - **Shrink**: When `brk(addr)` requests a lower address (but not below
   `brk_base`), excess pages are freed via `proc_release_tracked_pages()`.
-- **Failure**: If `mem_region_alloc_at()` fails (the target page is already in
+- **Failure**: If `region_alloc_at()` fails (the target page is already in
   use or the pool is exhausted), or if the request exceeds `USER_PAGES_MAX`
   pages, the break is left unchanged.  The return value is always the
   current break (never a negative errno), matching Linux semantics.
@@ -437,7 +437,7 @@ work rather than part of the context-switch migration.
 ### Reverse lookup
 
 `page_from_ptr(ptr)` converts a `void *` from
-`mem_region_alloc()` to a page index.  Returns `PAGE_ID_INVALID`
+`region_alloc()` to a page index.  Returns `PAGE_ID_INVALID`
 if the pointer is not in the page pool.
 
 ### Single-page I/O contract
@@ -471,7 +471,7 @@ drivers handle at most one page's worth of data per call.
 
 - Some memory classes use ESP-IDF heap arenas, not the page pool.
 - Arena-backed segments have `base_page = PAGE_ID_INVALID` and are
-  freed via `mem_region_free()` based on `mem_class`.
+  freed via `region_free()` based on `mem_class`.
 - `PROC_IMAGE_SEG_OWNED` on text/staged segments triggers arena-aware
   freeing through `image_release_owned_segments()`.
 
@@ -595,7 +595,7 @@ fixed kstack.
 ## 12. Related Documentation
 
 - [Kernel Module System](modules.md) -- module boundary
-  and `mem_region` as the public allocation API
+  and `region` as the public allocation API
 - [Intel 8086 Target](../targets/ia16.md) -- i16-specific memory
   model (S5)
 - [Design Specification](../spec_v07.md) -- overall memory management

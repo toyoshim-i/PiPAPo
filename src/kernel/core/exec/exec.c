@@ -16,8 +16,8 @@
 #include "kernel/core/arch.h"
 #include "kernel/core/exec/exec_args.h"
 #include "kernel/core/exec/loader.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/signal/signal.h"
 
 /* Read `len` bytes from the start of `vn` into `buf`.  Converts `buf` to a

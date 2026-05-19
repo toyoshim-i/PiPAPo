@@ -15,7 +15,7 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/cpu/cpu.h"
 #include "kernel/core/exec/exec_args.h"
-#include "kernel/core/mm/mem_region.h"
+#include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/subsys/msdos/dos_host.h"

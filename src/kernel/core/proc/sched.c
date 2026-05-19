@@ -22,8 +22,8 @@
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/spinlock.h" /* SPIN_PROC */
 #include "kernel/core/arch.h"
-#include "kernel/core/mm/mem_region.h"
 #include "kernel/core/mm/page.h" /* PAGE_SIZE */
+#include "kernel/core/mm/region.h"
 #include "kernel/core/signal/signal.h"
 #include "target/target.h"
 
