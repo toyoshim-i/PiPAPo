@@ -80,4 +80,9 @@ void mem_helper_log_state(void);
  * Default: no-op. */
 void mem_helper_post_init(void);
 
+/* Called from mm_init right after the "pages" line, to let arches with
+ * additional reserved RAM regions (RP2040-style io_buf / DMA areas) log
+ * them into the boot memory map.  Default: no-op. */
+void mem_helper_log_reserved(void);
+
 #endif /* PPAP_KERNEL_CORE_MM_MEM_HELPER_H */

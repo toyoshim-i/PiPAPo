@@ -62,3 +62,5 @@ __attribute__((weak)) int mem_helper_pool_aliases_text(uintptr_t lo,
 __attribute__((weak)) void mem_helper_log_state(void) {}
 
 __attribute__((weak)) void mem_helper_post_init(void) {}
+
+__attribute__((weak)) void mem_helper_log_reserved(void) {}

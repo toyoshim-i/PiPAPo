@@ -177,15 +177,7 @@ void mm_init(void) {
                 (unsigned long)(pool_base + page_count * PAGE_SIZE - 1u),
                 (unsigned long)(free_total * PAGE_SIZE / 1024u),
                 (unsigned)free_total);
-#if !defined(__m68k__) && !defined(__xtensa__) && !defined(__ia16__)
-  mod_vfs.klogf("MM:   io_buf  %lx-%lx  %lu KB\n",
-                (unsigned long)SRAM_IOBUF_BASE,
-                (unsigned long)(SRAM_IOBUF_BASE + SRAM_IOBUF_SIZE - 1u),
-                (unsigned long)(SRAM_IOBUF_SIZE / 1024u));
-  mod_vfs.klogf("MM:   dma     %lx-%lx  %lu KB\n", (unsigned long)SRAM_DMA_BASE,
-                (unsigned long)(SRAM_DMA_BASE + SRAM_DMA_SIZE - 1u),
-                (unsigned long)(SRAM_DMA_SIZE / 1024u));
-#endif
+  mem_helper_log_reserved();
 
   mem_helper_post_init();
 }

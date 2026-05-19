@@ -46,6 +46,7 @@ set(ARCH_RISCV_SOURCES
     ${_KS_ROOT}/src/arch/riscv/kernel/core/backtrace.c
     ${_KS_ROOT}/src/arch/riscv/kernel/core/trap.S
     ${_KS_ROOT}/src/arch/riscv/kernel/core/riscv_common.c
+    ${_KS_ROOT}/src/arch/riscv/kernel/core/mem_helper.c
     ${_KS_ROOT}/src/arch/riscv/kernel/core/signal/signal_check.c
     ${_KS_ROOT}/src/arch/riscv/kernel/core/smp.c
 )
