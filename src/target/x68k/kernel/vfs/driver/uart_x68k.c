@@ -19,12 +19,12 @@
  *
  * IOCS functions used:
  *   _B_PUTC    (d0=0x20, d1.w=char)  Output one character to TVRAM console
- *   _B_GETC    (d0=0x21)             Input one character (blocking)
- *   _B_KEYSNS  (d0=0x1C)             Keyboard sense (non-blocking)
- *   _B_LOCATE  (d0=0x17, d1.w=x, d2.w=y)  Set cursor position
- *   _B_CLR_ST  (d0=0x22)             Clear entire screen
- *   _B_CLR_ED  (d0=0x23)             Clear from cursor to end of screen
- *   _B_CLR_AL  (d0=0x19)             Clear current line from cursor
+ *   _B_KEYINP  (d0=0x00)             Input one character (blocking)
+ *   _B_KEYSNS  (d0=0x04)             Keyboard sense (non-blocking)
+ *   _B_LOCATE  (d0=0x23, d1.w=x, d2.w=y)  Set cursor position
+ *   _B_CLRST   (d0=0x2A, d1.w=2)     Clear entire screen
+ *   _B_CLRST   (d0=0x2A, d1.w=0)     Clear from cursor to end of screen
+ *   _B_ERA_AL  (d0=0x2B)             Clear from cursor to end of line
  *   _OUT232C   (d0=0x35, d1.b=char)  Output one character to RS-232C serial
  */
 
@@ -56,17 +56,19 @@ static inline void ipl7_restore(uint16_t sr) {
 /* ── IOCS call wrappers ────────────────────────────────────────────────── */
 
 static inline void iocs_b_clr_st(void) {
-  register int32_t d0 asm("d0") = 0x22;
-  asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
+  register int32_t d0 asm("d0") = 0x2A;
+  register int32_t d1 asm("d1") = 2; /* mode 2 = clear entire screen */
+  asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "d2", "a0", "a1", "memory");
 }
 
 static inline void iocs_b_clr_ed(void) {
-  register int32_t d0 asm("d0") = 0x23;
-  asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
+  register int32_t d0 asm("d0") = 0x2A;
+  register int32_t d1 asm("d1") = 0; /* mode 0 = clear cursor to end of screen */
+  asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "d2", "a0", "a1", "memory");
 }
 
 static inline void iocs_b_clr_al(void) {
-  register int32_t d0 asm("d0") = 0x19;
+  register int32_t d0 asm("d0") = 0x2B; /* _B_ERA_AL — clear cursor to EOL */
   asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
 }
 
@@ -77,7 +79,7 @@ static inline void iocs_b_putc(char c) {
 }
 
 static inline void iocs_b_locate(int x, int y) {
-  register int32_t d0 asm("d0") = 0x17;
+  register int32_t d0 asm("d0") = 0x23;
   register int32_t d1 asm("d1") = x;
   register int32_t d2 asm("d2") = y;
   asm volatile("trap #15" : "+r"(d0) : "r"(d1), "r"(d2) : "a0", "a1", "memory");
@@ -90,13 +92,13 @@ static inline void iocs_out232c(char c) {
 }
 
 static inline int iocs_b_getc(void) {
-  register int32_t d0 asm("d0") = 0x21;
+  register int32_t d0 asm("d0") = 0x00; /* _B_KEYINP — blocking key read */
   asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
   return d0 & 0xFF;
 }
 
 static inline int iocs_b_keysns(void) {
-  register int32_t d0 asm("d0") = 0x1C;
+  register int32_t d0 asm("d0") = 0x04; /* _B_KEYSNS — non-blocking poll */
   asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
   return d0;
 }
