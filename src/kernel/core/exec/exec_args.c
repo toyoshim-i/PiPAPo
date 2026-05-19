@@ -9,6 +9,7 @@
 #include "kernel/core/exec/exec_args.h"
 
 #include "common/errno.h"
+#include "kernel/core/mm/page_io.h"
 #include "kernel/core/mm/region.h"
 
 /* ── Internal helpers ─────────────────────────────────────────────────── */

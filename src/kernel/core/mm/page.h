@@ -4,15 +4,12 @@
  * Wraps page_pool.c with SPIN_PAGE, OOM / double-free klogf messages,
  * and the boot-time memory-map print.  All allocations return a
  * page_id_t (linear page number = address / PAGE_SIZE) instead of
- * void *.  Data on pages is accessed via page_read / page_write /
- * page_zero, which handle segment register setup on i16 internally;
- * on 32-bit those collapse to memcpy / memset against the linear
- * address described by the (page_id, offset) pair.
+ * void *.
  *
- * Boundary: this header is the mm-layer's public surface.  Code
- * outside src/kernel/core/mm/ allocates and frees pool pages through
- * these names.  Callers that need a typed segment descriptor
- * (proc_image_segment_t, mem_class_t arena dispatch) still go through
+ * Boundary: this header is the mm-layer's public surface for page
+ * allocation.  Callers that need to copy bytes in or out of a page
+ * include mm/page_io.h; callers that need a typed segment descriptor
+ * (proc_image_segment_t, mem_class_t arena dispatch) go through
  * region_alloc — see region.h.
  */
 
@@ -56,14 +53,14 @@ int page_alloc_at(page_id_t id);
 /* Free one pool page by page_id_t. */
 void page_free(page_id_t id);
 
-/* ── Page-payload access ────────────────────────────────────────────────── */
+/* ── Page-id / address conversions ──────────────────────────────────────── */
 
 /* Return the 32-bit linear address of a page_id_t.
  * Returns 0 for PAGE_ID_INVALID. */
 uint32_t page_linear(page_id_t id);
 
 /* Return the linear base pointer of a page_id_t (32-bit only).
- * On i16 this is NOT available — use page_read / page_write instead. */
+ * On i16 this is NOT available — use the helpers in mm/page_io.h. */
 #if !defined(__ia16__)
 void *page_to_ptr(page_id_t id);
 #endif
@@ -71,15 +68,6 @@ void *page_to_ptr(page_id_t id);
 /* Return the page_id_t for an existing pointer (linear address / PAGE_SIZE).
  * Returns PAGE_ID_INVALID only for NULL. */
 page_id_t page_from_ptr(void *ptr);
-
-/* Read `len` bytes from page `id` at byte offset `off` into `buf`. */
-void page_read(page_id_t id, uint16_t off, void *buf, uint16_t len);
-
-/* Write `len` bytes from `buf` to page `id` at byte offset `off`. */
-void page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len);
-
-/* Write `len` zero bytes to page `id` starting at byte offset `off`. */
-void page_zero(page_id_t id, uint16_t off, uint16_t len);
 
 /* ── Pool introspection ─────────────────────────────────────────────────── */
 

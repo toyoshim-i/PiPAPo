@@ -280,85 +280,8 @@ uint32_t page_linear(page_id_t id) {
   return (uint32_t)page_id_linear(id);
 }
 
-void page_read(page_id_t id, uint16_t off, void *buf, uint16_t len) {
-  if (id == PAGE_ID_INVALID || len == 0) return;
-#if defined(__ia16__)
-  /* Compute segment:offset from 20-bit linear address.
-   * rep movsb copies DS:SI → ES:DI.  We want src=far page, dst=SS:buf. */
-  uint32_t linear = (uint32_t)page_id_linear(id) + off;
-  uint16_t seg = (uint16_t)(linear >> 4);
-  uint16_t ofs = (uint16_t)(linear & 0x000Fu);
-  uint16_t dst = (uint16_t)(uintptr_t)buf;
-  __asm__ volatile(
-      "push %%ds\n\t"
-      "push %%es\n\t"
-      "mov  %%ss, %%ax\n\t"
-      "mov  %%ax, %%es\n\t" /* ES = SS (destination) */
-      "mov  %0, %%ds\n\t"   /* DS = source segment */
-      "cld\n\t"
-      "rep movsb\n\t"
-      "pop  %%es\n\t"
-      "pop  %%ds"
-      :
-      : "r"(seg), "S"(ofs), "D"(dst), "c"(len)
-      : "ax", "memory", "cc");
-#else
-  __builtin_memcpy(buf, (const uint8_t *)page_id_linear(id) + off, len);
-#endif
-}
-
-void page_write(page_id_t id, uint16_t off, const void *buf, uint16_t len) {
-  if (id == PAGE_ID_INVALID || len == 0) return;
-#if defined(__ia16__)
-  /* rep movsb copies DS:SI → ES:DI.  We want src=SS:buf, dst=far page. */
-  uint32_t linear = (uint32_t)page_id_linear(id) + off;
-  uint16_t seg = (uint16_t)(linear >> 4);
-  uint16_t ofs = (uint16_t)(linear & 0x000Fu);
-  uint16_t src = (uint16_t)(uintptr_t)buf;
-  __asm__ volatile(
-      "push %%ds\n\t"
-      "push %%es\n\t"
-      "mov  %%ss, %%ax\n\t"
-      "mov  %%ax, %%ds\n\t" /* DS = SS (source: kernel data) */
-      "mov  %0, %%es\n\t"   /* ES = destination segment */
-      "cld\n\t"
-      "rep movsb\n\t"
-      "pop  %%es\n\t"
-      "pop  %%ds"
-      :
-      : "r"(seg), "S"(src), "D"(ofs), "c"(len)
-      : "ax", "memory", "cc");
-#else
-  __builtin_memcpy((uint8_t *)page_id_linear(id) + off, buf, len);
-#endif
-}
-
-void page_zero(page_id_t id, uint16_t off, uint16_t len) {
-  if (id == PAGE_ID_INVALID || len == 0) return;
-#if defined(__ia16__)
-  /* rep stosb fills ES:DI with AL.  DI and CX are declared as
-   * input+output so GCC re-reads them from memory after the asm — the
-   * instruction advances DI by `len` and decrements CX to zero, which
-   * would desync any C-level variable GCC had mirrored to those
-   * registers. */
-  uint32_t linear = (uint32_t)page_id_linear(id) + off;
-  uint16_t seg = (uint16_t)(linear >> 4);
-  uint16_t ofs = (uint16_t)(linear & 0x000Fu);
-  uint16_t cx = len;
-  __asm__ volatile(
-      "push %%es\n\t"
-      "mov  %2, %%es\n\t"
-      "xor  %%al, %%al\n\t"
-      "cld\n\t"
-      "rep stosb\n\t"
-      "pop  %%es"
-      : "+D"(ofs), "+c"(cx)
-      : "r"(seg)
-      : "ax", "memory", "cc");
-#else
-  __builtin_memset((uint8_t *)page_id_linear(id) + off, 0, len);
-#endif
-}
+/* page_read / page_write / page_zero live in mm/page_io.c (flat-pointer
+ * default) with a strong override in arch/i16/.../page_io.c. */
 
 #if !defined(__ia16__)
 void *page_to_ptr(page_id_t id) {

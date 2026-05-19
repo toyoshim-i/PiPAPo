@@ -13,6 +13,7 @@
 
 #include "common/errno.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/page_io.h"
 #include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/syscall/syscall.h"

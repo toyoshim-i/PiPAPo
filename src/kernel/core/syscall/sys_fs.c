@@ -15,6 +15,7 @@
 #include "common/errno.h"
 #include "kernel/common/config.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/core/mm/page_io.h"
 #include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/syscall/syscall.h"

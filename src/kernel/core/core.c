@@ -10,6 +10,7 @@
 
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/core/mm/kmem.h"
+#include "kernel/core/mm/page_io.h"
 #include "kernel/core/mm/region.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/subsys/subsys.h"

@@ -19,6 +19,7 @@
 #include "common/errno.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/exec/exec_args.h"
+#include "kernel/core/mm/page_io.h"
 #include "kernel/core/mm/region.h"
 
 /* ── Page-splitting run-byte helpers ──────────────────────────────────── */
