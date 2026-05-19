@@ -19,8 +19,8 @@
  *
  * IOCS functions used:
  *   _B_PUTC    (d0=0x20, d1.w=char)  Output one character to TVRAM console
- *   _B_KEYINP  (d0=0x00)             Input one character (blocking)
- *   _B_KEYSNS  (d0=0x04)             Keyboard sense (non-blocking)
+ *   _B_GETC    (d0=0x21)             Input one character (blocking)
+ *   _B_KEYSNS  (d0=0x1C)             Keyboard sense (non-blocking)
  *   _B_LOCATE  (d0=0x23, d1.w=x, d2.w=y)  Set cursor position
  *   _B_CLRST   (d0=0x2A, d1.w=2)     Clear entire screen
  *   _B_CLRST   (d0=0x2A, d1.w=0)     Clear from cursor to end of screen
@@ -35,23 +35,7 @@
 #include <stdint.h>
 
 #include "kernel/vfs/driver/uart.h"
-
-/* ── IRQ guard: raise IPL to 7 around every IOCS call ──────────────────── */
-
-static inline uint16_t ipl7_save(void) {
-  uint16_t sr;
-  asm volatile(
-      "move.w %%sr,%0\n\t"
-      "ori.w #0x0700,%%sr"
-      : "=d"(sr)
-      :
-      : "memory");
-  return sr;
-}
-
-static inline void ipl7_restore(uint16_t sr) {
-  asm volatile("move.w %0,%%sr" : : "d"(sr) : "memory");
-}
+#include "kernel/vfs/driver/x68k_iocs.h"
 
 /* ── IOCS call wrappers ────────────────────────────────────────────────── */
 
@@ -282,8 +266,9 @@ static int vt_feed(char c) {
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
 void uart_init(void) {
-  iocs_b_clr_st();
-  cur_x = cur_y = 0;
+  /* No-op on X68000: IOCS handles the UART, and clearing the screen here
+   * would wipe stage1/2's "PiPA" + the kernel's "Po" banner.  cur_x/cur_y
+   * stay 0; the first VT100 sequence corrects them. */
 }
 
 int uart_putc(char c, void (*notify)(void)) {

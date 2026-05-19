@@ -26,6 +26,7 @@
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/boot.h"
@@ -44,6 +45,7 @@
 // to promote flatblk_init / blkdev_find into the mod_vfs vtable.
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/driver/flatblk.h"
+#include "kernel/vfs/driver/iocs_blk.h"
 #endif
 #include "target/target.h"
 
@@ -137,9 +139,13 @@ void target_early_init(void) {
     d1 = (uint32_t)'o';
     asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "a0", "a1", "memory");
   }
+
+  /* Register the klog logger now so the klogf calls below produce output;
+   * vfs_init() will call klog_init_logger() again later, idempotently. */
+  mod_vfs.notify(VFS_EVENT_MODULE_READY);
+
   mod_vfs.klogf(" booting... [x68k]\n");
   mod_vfs.klogf("Console: X68000 IOCS (TVRAM)\n");
-  mod_vfs.klogf("Phase X-2: preemptive scheduling (MFP Timer-C), embedded romfs\n");
 }
 
 void target_late_init(void) {
@@ -147,38 +153,30 @@ void target_late_init(void) {
   timer_init();
   /* TTY backends, input polls, secondary logger — all VFS side */
   mod_vfs.notify(VFS_EVENT_LATE_INIT);
+#ifdef PPAP_HAS_BLKDEV
+  iocs_blk_init();
+#endif
 }
 
 int target_mount_rootfs(void) {
 #ifdef PPAP_HAS_BLKDEV
-  /* Derive rootfs address and size directly instead of relying on the
-   * stage2 handoff at 0x002FF4-0x002FFC.  The IPL IOCS _B_READ handler
-   * corrupts the 0x002000-0x003FFF region during floppy I/O, making the
-   * handoff record unreliable.
-   *
-   * The rootfs address is always __page_pool_start (stage2 loads it there
-   * via ROOTFS_BASE, matching the kernel's linker-provided symbol).
-   * The rootfs size is derived from its own UFS superblock (block_count
-   * × block_size), which stage2 loaded correctly to RAM. */
-  uint32_t addr = (uint32_t)(uintptr_t)__page_pool_start;
-
-  /* Validate rootfs: check UFS magic at the rootfs address */
-  const uint32_t *sb = (const uint32_t *)(uintptr_t)addr;
-  if (sb[0] != 0x55465331u) { /* UFS_MAGIC */
-    mod_vfs.klogf("x68k: no UFS magic at 0x%lx (got 0x%lx)\n", (unsigned long)addr,
-          (unsigned long)sb[0]);
+  /* Rootfs address is always __page_pool_start (stage2 loads it there
+   * via ROOTFS_BASE, matching the kernel's linker symbol).  Size comes
+   * from the stage2 handoff record at 0x002FF4-0x002FFC, which stage2
+   * fills with 'RAMD' + addr + size before the vector swap.  Nothing
+   * calls IOCS _B_READ between stage2 and here, so the low-RAM scratch
+   * area the IPL ROM uses for floppy I/O hasn't been touched. */
+  volatile uint32_t *handoff_magic = (volatile uint32_t *)0x002FF4u;
+  volatile uint32_t *handoff_size  = (volatile uint32_t *)0x002FFCu;
+  if (*handoff_magic != 0x52414D44u) { /* 'RAMD' */
+    mod_vfs.klogf("x68k: stage2 handoff missing (got %lx)\n",
+                  (unsigned long)*handoff_magic);
     return -1;
   }
-  uint32_t block_size = sb[1];  /* s_block_size */
-  uint32_t block_count = sb[2]; /* s_block_count */
-  /* Compute size via shift: block_size is always a power of 2 for UFS.
-   * Avoids potential 16-bit truncation in 68000 multiply codegen. */
-  uint32_t bs_shift = 0;
-  for (uint32_t bs = block_size; bs > 1u; bs >>= 1) bs_shift++;
-  uint32_t size = block_count << bs_shift;
-  mod_vfs.klogf("x68k: ramdisk at %lx, %lu bytes (%lu blocks x %lu)\n",
-        (unsigned long)addr, (unsigned long)size,
-        (unsigned long)block_count, (unsigned long)block_size);
+  uint32_t addr = (uint32_t)(uintptr_t)__page_pool_start;
+  uint32_t size = *handoff_size;
+  mod_vfs.klogf("x68k: ramdisk at %lx, %lu bytes\n",
+                (unsigned long)addr, (unsigned long)size);
 
   /* Reserve the page-pool portion of the rootfs image so the allocator
    * never hands it out and overwrites the live UFS data. */
@@ -202,9 +200,10 @@ int target_mount_rootfs(void) {
   }
 
   flatblk_init("ram0", (const void *)(uintptr_t)addr, size);
-  blkdev_t *bd = blkdev_find("ram0");
-  if (!bd) return -1;
-  return mod_vfs.mount_ufs("/", 0, bd);
+  /* mount_ufs takes the device NAME as dev_data (ufs_mount internally
+   * calls blkdev_find on it).  Passing the blkdev_t pointer would
+   * silently fail the name match. */
+  return mod_vfs.mount_ufs("/", 0, "ram0");
 #else
   return -1;
 #endif
