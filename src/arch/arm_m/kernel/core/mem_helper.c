@@ -10,7 +10,7 @@
 #include "kernel/core/mm/mem_helper.h"
 
 #if defined(PPAP_TESTS)
-#include "kernel/core/mm/xip.h"
+#include "kernel/core/xip.h"
 #endif
 
 void mem_helper_post_init(void) {

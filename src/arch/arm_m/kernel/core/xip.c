@@ -1,7 +1,7 @@
 /*
- * xip.c — XIP (Execute-In-Place) verification and SysTick benchmark
+ * xip.c — RP-style XIP verification and SysTick benchmark (arm_m only)
  *
- * xip_verify() is called from mm_init() and:
+ * xip_verify() is called from arm_m mem_helper_post_init under PPAP_TESTS:
  *   1. Prints the runtime address of xip_add — on real hardware this should
  *      be in the XIP flash window (0x10001xxx).
  *   2. Runs xip_add(3,4) and checks the result is 7.
@@ -24,7 +24,7 @@
  * At 133 MHz, 0xFFFFFF ticks ≈ 126 ms — more than enough for short benchmarks.
  */
 
-#include "kernel/core/mm/xip.h"
+#include "kernel/core/xip.h"
 
 #include <stdint.h>
 
@@ -94,7 +94,7 @@ sram_bench(uint32_t n) {
 }
 
 /* ==========================================================================
- * xip_verify — called from mm_init()
+ * xip_verify — called from arm_m mem_helper_post_init under PPAP_TESTS
  * ========================================================================== */
 
 void xip_verify(void) {

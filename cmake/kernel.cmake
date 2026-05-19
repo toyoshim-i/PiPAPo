@@ -25,6 +25,7 @@ set(ARCH_ARM_M_SOURCES
     ${_KS_ROOT}/src/arch/arm_m/kernel/core/mem_helper.c
     ${_KS_ROOT}/src/arch/arm_m/kernel/core/signal/signal_check.c
     ${_KS_ROOT}/src/arch/arm_m/kernel/core/smp.c
+    ${_KS_ROOT}/src/arch/arm_m/kernel/core/xip.c
 )
 
 set(ARCH_M68K_SOURCES
@@ -176,10 +177,9 @@ if(PPAP_ENABLE_ECPU_M68K)
     list(APPEND KERNEL_SHARED_SOURCES ${KERNEL_ECPU_M68K_SOURCES})
 endif()
 
-# ── ARM-only kernel modules (XIP flash, MPU) ────────────────────────────────
+# ── ARM-only kernel modules (MPU) ───────────────────────────────────────────
 
 set(KERNEL_ARM_ONLY_SOURCES
-    ${_KS_ROOT}/src/kernel/core/mm/xip.c
     ${_KS_ROOT}/src/kernel/core/mm/mpu.c
 )
 
