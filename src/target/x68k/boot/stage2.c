@@ -259,18 +259,28 @@ static void __attribute__((noreturn)) stage2_final(void) {
   uint32_t iocs_handler = *STAGE2_IOCS_SAVE;
   uint32_t saved_auto[8]; /* autovectors 24-31 (spurious + levels 1-7) */
   uint32_t saved_mfp[16]; /* MFP vectored interrupts 64-79 */
+  /* HD63450 DMAC channels program their own NIV/EIV vectors into the
+   * 0x60..0x6F window (vectors 96..111) — DMA completion IRQs from
+   * IOCS _B_READ etc. dispatch there.  Preserve a slightly wider
+   * 80..127 range so peripherals that route through it (DMAC, SCSI)
+   * keep their IPL ROM handlers and the kernel does not have to
+   * implement DMAC ack logic. */
+  uint32_t saved_ext[48]; /* vectors 80..127 */
   for (uint32_t i = 0; i < 8u; i++) saved_auto[i] = dst[24u + i];
   for (uint32_t i = 0; i < 16u; i++) saved_mfp[i] = dst[64u + i];
+  for (uint32_t i = 0; i < 48u; i++) saved_ext[i] = dst[80u + i];
 
   for (uint32_t i = 0u; i < 256u; i++) dst[i] = src[i];
 
   /* Restore IPL ROM handlers for IOCS:
    *   - TRAP #15: IOCS dispatch
    *   - Autovectors 24-31: VSYNC (28), SCC (29), etc.
-   *   - MFP vectors 64-79: keyboard (74), timers, serial, etc. */
+   *   - MFP vectors 64-79: keyboard (74), timers, serial, etc.
+   *   - Extended vectors 80-127: DMAC channels (FDC/SCSI/etc.) */
   dst[47] = iocs_handler;
   for (uint32_t i = 0; i < 8u; i++) dst[24u + i] = saved_auto[i];
   for (uint32_t i = 0; i < 16u; i++) dst[64u + i] = saved_mfp[i];
+  for (uint32_t i = 0; i < 48u; i++) dst[80u + i] = saved_ext[i];
 #pragma GCC diagnostic pop
 
   /* Jump to kernel Reset_Handler */

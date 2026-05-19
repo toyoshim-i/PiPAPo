@@ -119,8 +119,11 @@ void target_early_init(void) {
     vt[v] = ignore;
   for (uint32_t v = 48u; v < 64u; v++) /* TRAP #16+ and reserved */
     vt[v] = ignore;
-  for (uint32_t v = 80u; v < 256u; v++) /* extended vectors */
-    vt[v] = ignore;
+  /* Vectors 80-127 hold HD63450 DMAC channel NIV/EIV entries that stage2
+   * preserved from the IPL ROM.  Skipping them keeps IOCS _B_READ /
+   * _B_WRITE able to ack their DMA completion IRQs.  Bare-rte ignore is
+   * fine for everything above 127. */
+  for (uint32_t v = 128u; v < 256u; v++) vt[v] = ignore;
 #pragma GCC diagnostic pop
 
   /* Diagnostic: "Po" — kernel reached (TRAP #15 = IPL IOCS, restored by
