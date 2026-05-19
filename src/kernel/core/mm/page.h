@@ -59,11 +59,9 @@ void page_free(page_id_t id);
  * Returns 0 for PAGE_ID_INVALID. */
 uint32_t page_linear(page_id_t id);
 
-/* Return the linear base pointer of a page_id_t (32-bit only).
- * On i16 this is NOT available — use the helpers in mm/page_io.h. */
-#if !defined(__ia16__)
-void *page_to_ptr(page_id_t id);
-#endif
+/* page_to_ptr (page_id_t -> flat void *) is a migration shim that
+ * lives in mm/page_ptr.h.  i16 builds omit page_ptr.c on purpose so
+ * an unguarded caller surfaces as a link error.  Prefer page_io.h. */
 
 /* Return the page_id_t for an existing pointer (linear address / PAGE_SIZE).
  * Returns PAGE_ID_INVALID only for NULL. */

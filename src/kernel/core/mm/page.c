@@ -275,13 +275,6 @@ uint32_t page_linear(page_id_t id) {
 /* page_read / page_write / page_zero live in mm/page_io.c (flat-pointer
  * default) with a strong override in arch/i16/.../page_io.c. */
 
-#if !defined(__ia16__)
-void *page_to_ptr(page_id_t id) {
-  if (id == PAGE_ID_INVALID) return NULL;
-  return (void *)page_id_linear(id);
-}
-#endif
-
 page_id_t page_from_ptr(void *ptr) {
   uintptr_t addr = (uintptr_t)ptr;
 

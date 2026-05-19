@@ -73,6 +73,7 @@ set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/kernel/core/mm/page.c
     ${_KS_ROOT}/src/kernel/core/mm/page_io.c
     ${_KS_ROOT}/src/kernel/core/mm/page_pool.c
+    ${_KS_ROOT}/src/kernel/core/mm/page_ptr.c
     ${_KS_ROOT}/src/kernel/core/mm/kmem.c
     ${_KS_ROOT}/src/kernel/core/mm/mem_helper.c
     ${_KS_ROOT}/src/kernel/core/mm/region.c

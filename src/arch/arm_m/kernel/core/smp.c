@@ -34,6 +34,7 @@
 #include "kernel/core/arch.h"
 #include "kernel/core/mm/mpu.h" /* mpu_init */
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/page_ptr.h"
 #include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"  /* pcb_t, proc_alloc, current_core */
 #include "kernel/core/proc/sched.h" /* SYSTICK_RELOAD */

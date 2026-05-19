@@ -21,6 +21,7 @@
 
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/core/arch.h"
+#include "kernel/core/mm/page_ptr.h"
 #include "kernel/core/proc/proc.h"
 
 /* ── MPU register addresses (common to ARMv6-M and ARMv8-M) ─────────────── */

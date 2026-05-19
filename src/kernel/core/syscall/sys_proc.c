@@ -25,6 +25,7 @@
 #include "kernel/core/exec/exec_args.h"
 #include "kernel/core/mm/page.h"
 #include "kernel/core/mm/page_io.h"
+#include "kernel/core/mm/page_ptr.h"
 #include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"

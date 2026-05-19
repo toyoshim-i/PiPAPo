@@ -15,6 +15,7 @@
 #include "kernel/core/mm/region.h"
 #include "kernel/vfs/klog.h"
 #include "kernel/core/mm/page.h"
+#include "kernel/core/mm/page_ptr.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/vfs/fd.h"
