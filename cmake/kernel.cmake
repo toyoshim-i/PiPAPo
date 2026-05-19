@@ -42,6 +42,7 @@ set(ARCH_M68K_SOURCES
 
 set(ARCH_RISCV_SOURCES
     ${_KS_ROOT}/src/arch/riscv/boot/boot.S
+    ${_KS_ROOT}/src/arch/riscv/kernel/core/backtrace.c
     ${_KS_ROOT}/src/arch/riscv/kernel/core/trap.S
     ${_KS_ROOT}/src/arch/riscv/kernel/core/riscv_common.c
     ${_KS_ROOT}/src/arch/riscv/kernel/core/signal/signal_check.c
@@ -64,6 +65,7 @@ set(ARCH_XTENSA_SOURCES
 set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/target/target_default.c
     ${_KS_ROOT}/src/kernel/core/main.c
+    ${_KS_ROOT}/src/kernel/core/backtrace.c
     ${_KS_ROOT}/src/kernel/core/core.c
     ${_KS_ROOT}/src/kernel/core/panic.c
     ${_KS_ROOT}/src/kernel/core/mm/page.c

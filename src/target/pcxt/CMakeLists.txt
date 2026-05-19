@@ -319,6 +319,7 @@ set(ARCH_I16_SOURCES
 
 set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/core/main.c
+  ${PPAP_ROOT}/src/kernel/core/backtrace.c
   ${PPAP_ROOT}/src/kernel/core/core.c
   ${PPAP_ROOT}/src/kernel/core/panic.c
   ${PPAP_ROOT}/src/kernel/core/mm/page.c

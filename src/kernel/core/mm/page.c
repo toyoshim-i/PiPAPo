@@ -22,6 +22,7 @@
 
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/spinlock.h"
+#include "kernel/core/backtrace.h"
 #include "kernel/core/mm/kmem.h"
 #include "kernel/core/mm/mem_helper.h"
 #include "kernel/core/mm/page_pool.h"
@@ -188,35 +189,6 @@ void mm_init(void) {
 
   mem_helper_post_init();
 }
-
-/* ── Stack backtrace (RISC-V) ─────────────────────────────────────────────
- *
- * Walk the s0 (frame pointer) chain.  Each frame stores:
- *   [fp-4] = return address (ra)
- *   [fp-8] = previous frame pointer
- *
- * Requires -fno-omit-frame-pointer in CFLAGS.
- */
-#if defined(__riscv)
-static void stack_backtrace(void) {
-  uintptr_t fp;
-  __asm__ volatile("mv %0, s0" : "=r"(fp));
-
-  mod_vfs.klogf("  backtrace:\n");
-  for (uint32_t depth = 0; depth < 16 && fp; depth++) {
-    uintptr_t ra = *(uintptr_t *)(fp - 4);
-    uintptr_t prev_fp = *(uintptr_t *)(fp - 8);
-    mod_vfs.klogf("    #%u ra=%lx fp=%lx\n", depth, (unsigned long)ra,
-                  (unsigned long)fp);
-    if (prev_fp <= fp) break; /* stack grows down — prev fp must be higher */
-    fp = prev_fp;
-  }
-}
-#else
-static void stack_backtrace(void) {
-  /* Not yet implemented for this architecture */
-}
-#endif
 
 /* ── Allocation ─────────────────────────────────────────────────────────── */
 
