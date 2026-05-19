@@ -18,14 +18,11 @@
 
 #include "kernel/core/mm/page.h"
 
-#include "kernel/core/mm/kmem.h"
-#if !defined(__m68k__)
-#include "kernel/core/mm/xip.h"
-#endif
 #include <stddef.h>
 
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/spinlock.h"
+#include "kernel/core/mm/kmem.h"
 #include "kernel/core/mm/mem_helper.h"
 #include "kernel/core/mm/page_pool.h"
 #include "kernel/core/mm/region.h"
@@ -189,11 +186,7 @@ void mm_init(void) {
                 (unsigned long)(SRAM_DMA_SIZE / 1024u));
 #endif
 
-#if defined(PPAP_TESTS) && \
-    (defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__))
-  /* ── XIP verification and benchmark (ARM only) ───────────────────────── */
-  xip_verify();
-#endif
+  mem_helper_post_init();
 }
 
 /* ── Stack backtrace (RISC-V) ─────────────────────────────────────────────

@@ -22,6 +22,7 @@ set(ARCH_ARM_M_SOURCES
     ${_KS_ROOT}/src/arch/arm_m/kernel/core/switch.S
     ${_KS_ROOT}/src/arch/arm_m/kernel/core/trap.S
     ${_KS_ROOT}/src/arch/arm_m/kernel/core/arm_m_common.c
+    ${_KS_ROOT}/src/arch/arm_m/kernel/core/mem_helper.c
     ${_KS_ROOT}/src/arch/arm_m/kernel/core/signal/signal_check.c
     ${_KS_ROOT}/src/arch/arm_m/kernel/core/smp.c
 )

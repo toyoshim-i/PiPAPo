@@ -74,4 +74,10 @@ int mem_helper_pool_aliases_text(uintptr_t lo, uintptr_t hi);
  * early-boot output has scrolled off.  Default: no-op. */
 void mem_helper_log_state(void);
 
+/* Called once at the tail of mm_init, after the page pool is built and
+ * the boot memory map has been logged.  Lets an arch overlay run
+ * post-pool diagnostics (currently ARM's xip_verify under PPAP_TESTS).
+ * Default: no-op. */
+void mem_helper_post_init(void);
+
 #endif /* PPAP_KERNEL_CORE_MM_MEM_HELPER_H */
