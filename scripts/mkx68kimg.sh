@@ -156,7 +156,9 @@ INNER_SIZE_KB=$(( (STAGING_KB * 115 / 100 + 32 + 3) / 4 * 4 ))
 # Count inodes needed: one per filesystem entry (file, dir, symlink) + 25% margin
 STAGING_INODES=$(find "$ROMFS_STAGING" | wc -l)
 INNER_INODES=$(( STAGING_INODES * 5 / 4 + 16 ))
-"$MKUFS" -s "${INNER_SIZE_KB}K" -i "$INNER_INODES" -B -p "$ROMFS_STAGING" "$TMPDIR/rootfs.ufs"
+# Kernel ufs.c expects 44bsd magic (0x00011954); stage2 reads the outer
+# UFS only and that stays legacy (magic 0x55465331).
+"$MKUFS" -f 44bsd -s "${INNER_SIZE_KB}K" -i "$INNER_INODES" -B -p "$ROMFS_STAGING" "$TMPDIR/rootfs.ufs"
 INNER_SIZE=$(stat -c%s "$TMPDIR/rootfs.ufs")
 echo "[mkx68kimg] Rootfs:   $INNER_SIZE bytes (${INNER_SIZE_KB} KB allocated)"
 
