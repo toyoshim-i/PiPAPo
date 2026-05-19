@@ -13,6 +13,14 @@ void klog_init_logger(void) {
 
 void vfs_notify(int event) {
   switch (event) {
+    case VFS_EVENT_MODULE_READY:
+      /* Register both klog backends here so target_early_init's klogf
+       * output (banner, RTC seed, etc.) reaches the serial mirror, not
+       * just TVRAM.  TTY backend wiring stays in LATE_INIT — the TTY
+       * subsystem itself comes up later, inside vfs_init. */
+      klog_init_logger();
+      klog_set_logger(KLOG_LOGGER_SECONDARY, uart_serial_putc, NULL);
+      break;
     case VFS_EVENT_LATE_INIT: {
       /* Dual-TTY: TTY_DISPLAY = TVRAM (primary), TTY_SERIAL = RS-232C */
       static const tty_backend_t tvram_be = {
@@ -32,7 +40,6 @@ void vfs_notify(int event) {
       tty_set_backend(TTY_DISPLAY, &tvram_be);
       tty_set_backend(TTY_SERIAL, &serial_be);
       tty_set_console(TTY_DISPLAY);
-      klog_set_logger(KLOG_LOGGER_SECONDARY, uart_serial_putc, NULL);
       break;
     }
     case VFS_EVENT_IDLE:
