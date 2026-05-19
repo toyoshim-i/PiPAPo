@@ -29,6 +29,7 @@ set(ARCH_ARM_M_SOURCES
 set(ARCH_M68K_SOURCES
     ${_KS_ROOT}/src/arch/m68k/boot/boot.S
     ${_KS_ROOT}/src/arch/m68k/kernel/core/m68k_common.c
+    ${_KS_ROOT}/src/arch/m68k/kernel/core/mem_helper.c
     ${_KS_ROOT}/src/arch/m68k/kernel/core/probe_ram.S
     ${_KS_ROOT}/src/arch/m68k/kernel/core/signal/signal_check.c
     ${_KS_ROOT}/src/arch/m68k/kernel/core/string.c

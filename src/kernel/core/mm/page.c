@@ -76,19 +76,6 @@ static void page_trace_tail(const char *op, unsigned id, unsigned arg) {
 #endif
 }
 
-#if defined(__m68k__)
-/* Assembly RAM probe — detects accessible RAM via bus error catching.
- * Returns total accessible bytes starting from `start`, up to `max_size`. */
-extern uint32_t m68k_probe_ram(uint32_t start, uint32_t max_size);
-#elif defined(__ia16__)
-/* BIOS INT 12h: returns conventional memory size in KB (AX). */
-static uint32_t i16_detect_ram(void) {
-  uint16_t kb;
-  __asm__ volatile("int $0x12" : "=a"(kb) : : "cc");
-  return (uint32_t)kb * 1024u;
-}
-#endif
-
 /* ── Internal helpers ───────────────────────────────────────────────────────
  */
 
@@ -132,36 +119,13 @@ void mm_init(void) {
   uintptr_t stack_top = (uintptr_t)&__stack_top;
   uintptr_t kern_used = bss_end - SRAM_KERNEL_BASE;
 
-  /* Detect available RAM and set runtime page_count. */
-#if defined(__m68k__)
-  {
-    uint32_t probe_end = RAM_END;
-    uint32_t max_bytes = probe_end - PAGE_POOL_BASE;
-    uint32_t ram_bytes = m68k_probe_ram(PAGE_POOL_BASE, max_bytes);
-    if (ram_bytes > max_bytes) ram_bytes = max_bytes;
-    page_count = ram_bytes / PAGE_SIZE;
-    if (page_count > PAGE_COUNT_MAX) page_count = PAGE_COUNT_MAX;
-  }
-  s_pool_base = PAGE_POOL_BASE;
-#elif defined(__ia16__)
-  {
-    uint32_t ram_top = i16_detect_ram();
-    if (ram_top > RAM_END) ram_top = RAM_END;
-    if (ram_top > PAGE_POOL_BASE) {
-      page_count = (uint32_t)(ram_top - PAGE_POOL_BASE) / PAGE_SIZE;
-      if (page_count > PAGE_COUNT_MAX) page_count = PAGE_COUNT_MAX;
-    } else {
-      page_count = 0;
-    }
-  }
-  s_pool_base = PAGE_POOL_BASE;
-#else
+  /* Detect available RAM and set runtime page_count.  Default values
+   * cover targets with a fixed/linker-located pool; arch and target
+   * overlays of mem_helper_init_pool overwrite both page_count and
+   * s_pool_base when a runtime probe or heap grab is required. */
   page_count = PAGE_COUNT_MAX;
   s_pool_base = PAGE_POOL_BASE;
-  /* Targets that allocate the pool from a runtime heap override this
-   * and rewrite both page_count and s_pool_base. */
   if (mem_helper_init_pool(&s_pool_base) < 0) panic("page pool init failed\n");
-#endif
 
   /* Build the free stack: push pages from the pool that don't overlap
    * with the kernel stack.  On QEMU (flat memory model) the initial
