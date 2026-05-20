@@ -10,6 +10,7 @@
  *
  * Usage:
  *   #include "kernel/common/mod/mod_core.h"
+ *   // kmem pools are unlocked; hold the pool owner's lock first.
  *   void *p = mod_core.kmem_alloc(&pool);
  *   region_t r;
  *   mod_core.region_alloc(PPAP_MEM_RAM_DATA, PAGE_SIZE, flags, &r);
@@ -43,6 +44,8 @@ MOD_DECLARE_BEGIN(core)
  *
  *   pool  Initialized slab pool.
  *
+ * Caller must hold the lock that protects this pool.
+ *
  * Returns pointer to object, or NULL if pool exhausted.
  */
 MOD_FUNC(core, void *, kmem_alloc, kmem_pool_t *)
@@ -52,6 +55,8 @@ MOD_FUNC(core, void *, kmem_alloc, kmem_pool_t *)
  *
  *   pool  Pool the object was allocated from.
  *   obj   Object to free (NULL is a no-op).
+ *
+ * Caller must hold the lock that protects this pool.
  */
 MOD_FUNC(core, void, kmem_free, kmem_pool_t *, void *)
 
@@ -59,6 +64,8 @@ MOD_FUNC(core, void, kmem_free, kmem_pool_t *, void *)
  * kmem_free_count — Query free objects in a slab pool.
  *
  *   pool  Pool to query.
+ *
+ * Caller must hold the lock that protects this pool.
  *
  * Returns count of objects available for allocation.
  */

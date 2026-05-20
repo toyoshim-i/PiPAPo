@@ -18,13 +18,13 @@
 #include <stddef.h>
 
 #include "common/errno.h"
-#include "kernel/common/core/kmem_types.h" /* kmem_pool_t */
+#include "kernel/common/core/kmem_types.h"
 #include "kernel/common/mod/mod_core.h"
-#include "kernel/common/spinlock.h" /* SPIN_VFS */
-#include "kernel/vfs/file.h"        /* fd_pool_init */
-#include "kernel/vfs/fstab.h"       /* fstab_parse, fstab_mount_all */
+#include "kernel/common/spinlock.h"
+#include "kernel/vfs/file.h"
+#include "kernel/vfs/fstab.h"
 #include "kernel/vfs/klog.h"
-#include "kernel/vfs/tty.h" /* tty_rx_notify */
+#include "kernel/vfs/tty.h"
 
 /* ── Static storage ─────────────────────────────────────────────────────────
  */
@@ -122,16 +122,26 @@ void vfs_vnode_release(vnode_t *vn) {
 }
 
 uint32_t vnode_free_count(void) {
-  return mod_core.kmem_free_count(&vnode_pool);
+  uint32_t saved = spin_lock_irqsave(SPIN_VFS);
+  uint32_t count = mod_core.kmem_free_count(&vnode_pool);
+  spin_unlock_irqrestore(SPIN_VFS, saved);
+  return count;
 }
 
 /* ── VFS scratch pool ────────────────────────────────────────────────────── */
 
-void *vfs_scratch_alloc(void) { return mod_core.kmem_alloc(&vfs_scratch_pool); }
+void *vfs_scratch_alloc(void) {
+  uint32_t saved = spin_lock_irqsave(SPIN_VFS);
+  void *buf = mod_core.kmem_alloc(&vfs_scratch_pool);
+  spin_unlock_irqrestore(SPIN_VFS, saved);
+  return buf;
+}
 
 void vfs_scratch_free(void *buf) {
   if (!buf) return;
+  uint32_t saved = spin_lock_irqsave(SPIN_VFS);
   mod_core.kmem_free(&vfs_scratch_pool, buf);
+  spin_unlock_irqrestore(SPIN_VFS, saved);
 }
 
 /* ── vfs_mount ──────────────────────────────────────────────────────────────

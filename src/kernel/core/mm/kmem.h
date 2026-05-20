@@ -18,6 +18,10 @@
  *
  *   pcb_t *p = kmem_alloc(&pcb_pool);
  *   kmem_free(&pcb_pool, p);
+ *
+ * Synchronization: kmem pools are intentionally unlocked.  The pool owner
+ * must serialize kmem_alloc(), kmem_free(), and kmem_free_count() with the
+ * appropriate subsystem lock.
  */
 
 #ifndef PPAP_KERNEL_CORE_MM_KMEM_H
@@ -32,14 +36,17 @@
 void kmem_pool_init(kmem_pool_t *pool, void *mem, size_t obj_size,
                     uint32_t count);
 
-/* Allocate one object from the pool.  Returns NULL if the pool is empty. */
+/* Allocate one object from the pool.  Caller must hold the pool owner's lock.
+ * Returns NULL if the pool is empty. */
 void *kmem_alloc(kmem_pool_t *pool);
 
 /* Return an object to the pool.  Behaviour is undefined if `obj` was not
- * obtained from this pool or has already been freed. */
+ * obtained from this pool or has already been freed.  Caller must hold the
+ * pool owner's lock. */
 void kmem_free(kmem_pool_t *pool, void *obj);
 
-/* Number of objects currently available for allocation. */
+/* Number of objects currently available for allocation.  Caller must hold the
+ * pool owner's lock. */
 uint32_t kmem_free_count(const kmem_pool_t *pool);
 
 #endif /* PPAP_KERNEL_CORE_MM_KMEM_H */

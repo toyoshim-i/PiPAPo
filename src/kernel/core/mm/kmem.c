@@ -13,9 +13,8 @@
  * kmem_alloc(): pop the head of the free list.  O(1).
  * kmem_free():  push to the head of the free list.  O(1).
  *
- * No locks — callers are responsible for mutual exclusion.  In Phase 1 the
- * kernel runs with interrupts disabled during PCB allocation; in later phases
- * a spinlock will be added around pool operations.
+ * No locks — callers are responsible for mutual exclusion with the subsystem
+ * lock that owns the pool.
  */
 
 #include "kernel/core/mm/kmem.h"
