@@ -23,6 +23,7 @@
 #include "kernel/common/core/page_types.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/common/spinlock.h"
 
 /* ── Inode structure ──────────────────────────────────────────────────── */
 
@@ -91,6 +92,11 @@ static void inode_free(int ino) {
 static int tmpfs_mount(mount_entry_t *mnt, const void *dev_data) {
   (void)dev_data;
 
+  vnode_t *root = mod_vfs.vnode_alloc();
+  if (!root) return -ENOMEM;
+
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
+
   /* Initialise all inodes */
   for (int i = 0; i < TMPFS_INODE_MAX; i++) {
     inodes[i].active = 0;
@@ -111,10 +117,6 @@ static int tmpfs_mount(mount_entry_t *mnt, const void *dev_data) {
   inodes[0].atime = now;
   inodes[0].name[0] = '\0';
 
-  /* Allocate root vnode */
-  vnode_t *root = mod_vfs.vnode_alloc();
-  if (!root) return -ENOMEM;
-
   root->type = VNODE_DIR;
   root->mode = S_IFDIR | 0755u;
   root->ino = 0;
@@ -123,20 +125,21 @@ static int tmpfs_mount(mount_entry_t *mnt, const void *dev_data) {
   root->fs_priv = (void *)0;
 
   mnt->root = root;
+  spin_unlock_irqrestore(SPIN_FS, saved);
   return 0;
 }
 
 static int tmpfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
   uint32_t dir_ino = dir->ino;
+  vnode_t *vn = mod_vfs.vnode_alloc();
+  if (!vn) return -ENOMEM;
+
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
 
   for (int i = 0; i < TMPFS_INODE_MAX; i++) {
     if (!inodes[i].active) continue;
     if (inodes[i].parent_ino != dir_ino) continue;
     if (!str_eq(inodes[i].name, name)) continue;
-
-    /* Found — create a vnode */
-    vnode_t *vn = mod_vfs.vnode_alloc();
-    if (!vn) return -ENOMEM;
 
     vn->ino = (uint32_t)i;
     vn->type = (vnode_type_t)inodes[i].type;
@@ -146,19 +149,29 @@ static int tmpfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
     vn->fs_priv = (void *)0;
 
     *result = vn;
+    spin_unlock_irqrestore(SPIN_FS, saved);
     return 0;
   }
 
+  spin_unlock_irqrestore(SPIN_FS, saved);
+  mod_vfs.vnode_release(vn);
   return -ENOENT;
 }
 
 static long tmpfs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
                        uint32_t off) {
-  if (vn->type == VNODE_DIR) return -(long)EISDIR;
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
+  if (vn->type == VNODE_DIR) {
+    spin_unlock_irqrestore(SPIN_FS, saved);
+    return -(long)EISDIR;
+  }
 
   tmpfs_inode_t *ti = &inodes[vn->ino];
 
-  if (off >= ti->size) return 0;
+  if (off >= ti->size) {
+    spin_unlock_irqrestore(SPIN_FS, saved);
+    return 0;
+  }
   if (off + n > ti->size) n = ti->size - off;
 
   if (ti->data_page != PAGE_ID_INVALID) {
@@ -187,12 +200,17 @@ static long tmpfs_read(vnode_t *vn, page_id_t page, uint16_t page_off, size_t n,
     }
   }
 
+  spin_unlock_irqrestore(SPIN_FS, saved);
   return (long)n;
 }
 
 static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
                         size_t n, uint32_t off) {
-  if (vn->type == VNODE_DIR) return -(long)EISDIR;
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
+  if (vn->type == VNODE_DIR) {
+    spin_unlock_irqrestore(SPIN_FS, saved);
+    return -(long)EISDIR;
+  }
 
   tmpfs_inode_t *ti = &inodes[vn->ino];
   uint32_t now = mod_core.time_now_sec();
@@ -201,7 +219,10 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
 
   /* Enforce per-file limit (one page) */
   if (off + n > TMPFS_FILE_MAX) {
-    if (off >= TMPFS_FILE_MAX) return -(long)ENOSPC;
+    if (off >= TMPFS_FILE_MAX) {
+      spin_unlock_irqrestore(SPIN_FS, saved);
+      return -(long)ENOSPC;
+    }
     n = TMPFS_FILE_MAX - off;
   }
 
@@ -209,9 +230,14 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
   if (ti->data_page == PAGE_ID_INVALID) {
     region_t r;
 
-    if (data_pages_used >= TMPFS_MAX_PAGES) return -(long)ENOSPC;
-    if (mod_core.region_alloc(PPAP_MEM_RAM_DATA, PAGE_SIZE, 0, &r) < 0)
+    if (data_pages_used >= TMPFS_MAX_PAGES) {
+      spin_unlock_irqrestore(SPIN_FS, saved);
+      return -(long)ENOSPC;
+    }
+    if (mod_core.region_alloc(PPAP_MEM_RAM_DATA, PAGE_SIZE, 0, &r) < 0) {
+      spin_unlock_irqrestore(SPIN_FS, saved);
       return -(long)ENOMEM;
+    }
     ti->data_page = r.base_page;
 
     /* Zero the freshly allocated page via the page-indexed API.  Direct
@@ -241,6 +267,7 @@ static long tmpfs_write(vnode_t *vn, page_id_t page, uint16_t page_off,
     vn->size = ti->size;
   }
 
+  spin_unlock_irqrestore(SPIN_FS, saved);
   return (long)n;
 }
 
@@ -250,6 +277,7 @@ static int tmpfs_readdir(vnode_t *dir, struct dirent *entries,
   int count = 0;
   uint32_t skip = *cookie;
   uint32_t seen = 0;
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
 
   for (int i = 0; i < TMPFS_INODE_MAX && (size_t)count < max_entries; i++) {
     if (!inodes[i].active) continue;
@@ -270,10 +298,12 @@ static int tmpfs_readdir(vnode_t *dir, struct dirent *entries,
   }
 
   *cookie = seen;
+  spin_unlock_irqrestore(SPIN_FS, saved);
   return count;
 }
 
 static int tmpfs_stat(vnode_t *vn, struct stat *st) {
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
   tmpfs_inode_t *ti = &inodes[vn->ino];
 
   st->st_ino = vn->ino;
@@ -283,20 +313,33 @@ static int tmpfs_stat(vnode_t *vn, struct stat *st) {
   st->st_mtime = ti->mtime;
   st->st_ctime = ti->ctime;
   st->st_atime = ti->atime;
+  spin_unlock_irqrestore(SPIN_FS, saved);
   return 0;
 }
 
 static int tmpfs_create(vnode_t *dir, const char *name, uint32_t mode,
                         vnode_t **result) {
+  vnode_t *vn = mod_vfs.vnode_alloc();
+  if (!vn) return -ENOMEM;
+
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
+
   /* Check for duplicate */
   for (int i = 0; i < TMPFS_INODE_MAX; i++) {
     if (inodes[i].active && inodes[i].parent_ino == dir->ino &&
-        str_eq(inodes[i].name, name))
+        str_eq(inodes[i].name, name)) {
+      spin_unlock_irqrestore(SPIN_FS, saved);
+      mod_vfs.vnode_release(vn);
       return -EEXIST;
+    }
   }
 
   int idx = inode_alloc();
-  if (idx < 0) return -ENOSPC;
+  if (idx < 0) {
+    spin_unlock_irqrestore(SPIN_FS, saved);
+    mod_vfs.vnode_release(vn);
+    return -ENOSPC;
+  }
 
   uint32_t now = mod_core.time_now_sec();
   tmpfs_inode_t *ti = &inodes[idx];
@@ -315,13 +358,6 @@ static int tmpfs_create(vnode_t *dir, const char *name, uint32_t mode,
   inodes[dir->ino].mtime = now;
   inodes[dir->ino].ctime = now;
 
-  /* Return vnode for the new file */
-  vnode_t *vn = mod_vfs.vnode_alloc();
-  if (!vn) {
-    ti->active = 0;
-    return -ENOMEM;
-  }
-
   vn->ino = (uint32_t)idx;
   vn->type = VNODE_FILE;
   vn->mode = ti->mode;
@@ -330,19 +366,27 @@ static int tmpfs_create(vnode_t *dir, const char *name, uint32_t mode,
   vn->fs_priv = (void *)0;
 
   *result = vn;
+  spin_unlock_irqrestore(SPIN_FS, saved);
   return 0;
 }
 
 static int tmpfs_mkdir(vnode_t *dir, const char *name, uint32_t mode) {
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
+
   /* Check for duplicate */
   for (int i = 0; i < TMPFS_INODE_MAX; i++) {
     if (inodes[i].active && inodes[i].parent_ino == dir->ino &&
-        str_eq(inodes[i].name, name))
+        str_eq(inodes[i].name, name)) {
+      spin_unlock_irqrestore(SPIN_FS, saved);
       return -EEXIST;
+    }
   }
 
   int idx = inode_alloc();
-  if (idx < 0) return -ENOSPC;
+  if (idx < 0) {
+    spin_unlock_irqrestore(SPIN_FS, saved);
+    return -ENOSPC;
+  }
 
   uint32_t now = mod_core.time_now_sec();
   tmpfs_inode_t *ti = &inodes[idx];
@@ -360,10 +404,13 @@ static int tmpfs_mkdir(vnode_t *dir, const char *name, uint32_t mode) {
   inodes[dir->ino].mtime = now;
   inodes[dir->ino].ctime = now;
 
+  spin_unlock_irqrestore(SPIN_FS, saved);
   return 0;
 }
 
 static int tmpfs_unlink(vnode_t *dir, const char *name) {
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
+
   for (int i = 0; i < TMPFS_INODE_MAX; i++) {
     if (!inodes[i].active) continue;
     if (inodes[i].parent_ino != dir->ino) continue;
@@ -373,8 +420,10 @@ static int tmpfs_unlink(vnode_t *dir, const char *name) {
     if (inodes[i].type == VNODE_DIR) {
       for (int j = 0; j < TMPFS_INODE_MAX; j++) {
         if (j == i) continue;
-        if (inodes[j].active && inodes[j].parent_ino == (uint32_t)i)
+        if (inodes[j].active && inodes[j].parent_ino == (uint32_t)i) {
+          spin_unlock_irqrestore(SPIN_FS, saved);
           return -ENOTEMPTY;
+        }
       }
     }
 
@@ -382,14 +431,18 @@ static int tmpfs_unlink(vnode_t *dir, const char *name) {
     uint32_t now = mod_core.time_now_sec();
     inodes[dir->ino].mtime = now;
     inodes[dir->ino].ctime = now;
+    spin_unlock_irqrestore(SPIN_FS, saved);
     return 0;
   }
 
+  spin_unlock_irqrestore(SPIN_FS, saved);
   return -ENOENT;
 }
 
 static int tmpfs_rename(vnode_t *old_dir, const char *old_name,
                         vnode_t *new_dir, const char *new_name) {
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
+
   /* Find the source inode */
   int src = -1;
   for (int i = 0; i < TMPFS_INODE_MAX; i++) {
@@ -399,7 +452,10 @@ static int tmpfs_rename(vnode_t *old_dir, const char *old_name,
     src = i;
     break;
   }
-  if (src < 0) return -ENOENT;
+  if (src < 0) {
+    spin_unlock_irqrestore(SPIN_FS, saved);
+    return -ENOENT;
+  }
 
   /* Check if destination already exists */
   for (int i = 0; i < TMPFS_INODE_MAX; i++) {
@@ -411,8 +467,10 @@ static int tmpfs_rename(vnode_t *old_dir, const char *old_name,
     if (inodes[i].type == VNODE_DIR) {
       for (int j = 0; j < TMPFS_INODE_MAX; j++) {
         if (j == i) continue;
-        if (inodes[j].active && inodes[j].parent_ino == (uint32_t)i)
+        if (inodes[j].active && inodes[j].parent_ino == (uint32_t)i) {
+          spin_unlock_irqrestore(SPIN_FS, saved);
           return -ENOTEMPTY;
+        }
       }
     }
     /* Remove the existing target */
@@ -432,13 +490,18 @@ static int tmpfs_rename(vnode_t *old_dir, const char *old_name,
     inodes[new_dir->ino].mtime = now;
     inodes[new_dir->ino].ctime = now;
   }
+  spin_unlock_irqrestore(SPIN_FS, saved);
   return 0;
 }
 
 static int tmpfs_truncate(vnode_t *vn, uint32_t length) {
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
   tmpfs_inode_t *ti = &inodes[vn->ino];
 
-  if (ti->type == VNODE_DIR) return -EISDIR;
+  if (ti->type == VNODE_DIR) {
+    spin_unlock_irqrestore(SPIN_FS, saved);
+    return -EISDIR;
+  }
 
   if (length == 0 && ti->data_page != PAGE_ID_INVALID) {
     region_t r = {NULL, ti->data_page};
@@ -452,6 +515,7 @@ static int tmpfs_truncate(vnode_t *vn, uint32_t length) {
   uint32_t now = mod_core.time_now_sec();
   ti->mtime = now;
   ti->ctime = now;
+  spin_unlock_irqrestore(SPIN_FS, saved);
   return 0;
 }
 
@@ -459,6 +523,7 @@ static int tmpfs_truncate(vnode_t *vn, uint32_t length) {
 
 static int tmpfs_statfs(mount_entry_t *mnt, struct kernel_statfs *buf) {
   (void)mnt;
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
   __builtin_memset(buf, 0, sizeof(*buf));
 
   /* Count active inodes */
@@ -475,22 +540,27 @@ static int tmpfs_statfs(mount_entry_t *mnt, struct kernel_statfs *buf) {
   buf->f_files = TMPFS_INODE_MAX;
   buf->f_ffree = TMPFS_INODE_MAX - active;
   buf->f_namelen = TMPFS_NAME_MAX;
+  spin_unlock_irqrestore(SPIN_FS, saved);
   return 0;
 }
 
 static int tmpfs_utimes(vnode_t *vn, uint32_t atime, uint32_t mtime) {
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
   tmpfs_inode_t *ti = &inodes[vn->ino];
   ti->atime = atime;
   ti->mtime = mtime;
   ti->ctime = mod_core.time_now_sec();
+  spin_unlock_irqrestore(SPIN_FS, saved);
   return 0;
 }
 
 static int tmpfs_chmod(vnode_t *vn, uint32_t mode) {
+  uint32_t saved = spin_lock_irqsave(SPIN_FS);
   tmpfs_inode_t *ti = &inodes[vn->ino];
   ti->mode = (ti->mode & S_IFMT) | (mode & 07777u);
   ti->ctime = mod_core.time_now_sec();
   vn->mode = ti->mode;
+  spin_unlock_irqrestore(SPIN_FS, saved);
   return 0;
 }
 

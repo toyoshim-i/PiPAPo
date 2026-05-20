@@ -15,9 +15,10 @@
 
 #include "common/errno.h"
 #include "kernel/common/config.h"
-#include "kernel/common/core/proc_info.h" /* pcb_t — only for fd_stdio_init compat */
+#include "kernel/common/core/proc_info.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/common/spinlock.h"
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/file.h"
 #include "kernel/vfs/tty.h"
@@ -32,12 +33,17 @@ static struct file fd_pool[FILE_MAX];
 static int stdio_descs[3] = {-1, -1, -1};
 
 static int fd_pool_alloc(void) {
+  uint32_t saved = spin_lock_irqsave(SPIN_FD);
+
   for (int i = 0; i < FILE_MAX; i++) {
     if (fd_pool[i].refcnt == 0 && fd_pool[i].ops == NULL) {
       memset(&fd_pool[i], 0, sizeof(struct file));
+      fd_pool[i].refcnt = 1;
+      spin_unlock_irqrestore(SPIN_FD, saved);
       return i;
     }
   }
+  spin_unlock_irqrestore(SPIN_FD, saved);
   return -1;
 }
 
@@ -102,23 +108,36 @@ void fd_pool_init(void) {
 
 int vfs_fd_stdio_desc(int which) {
   if (which < 0 || which > 2) return -1;
+  uint32_t saved = spin_lock_irqsave(SPIN_FD);
   fd_pool[stdio_descs[which]].refcnt++;
+  spin_unlock_irqrestore(SPIN_FD, saved);
   return stdio_descs[which];
 }
 
 void vfs_fd_acquire(int desc) {
   if (desc < 0 || desc >= FILE_MAX) return;
-  fd_pool[desc].refcnt++;
+  uint32_t saved = spin_lock_irqsave(SPIN_FD);
+  if (fd_pool[desc].refcnt > 0u) fd_pool[desc].refcnt++;
+  spin_unlock_irqrestore(SPIN_FD, saved);
 }
 
 void vfs_fd_release(int desc) {
   if (desc < 0 || desc >= FILE_MAX) return;
+  struct file closing;
+  int do_close = 0;
+
+  uint32_t saved = spin_lock_irqsave(SPIN_FD);
   struct file *f = &fd_pool[desc];
   if (f->refcnt > 0u) f->refcnt--;
   if (f->refcnt == 0u) {
-    if (f->ops && f->ops->close) f->ops->close(f);
+    closing = *f;
     memset(f, 0, sizeof(struct file));
+    do_close = 1;
   }
+  spin_unlock_irqrestore(SPIN_FD, saved);
+
+  if (do_close && closing.ops && closing.ops->close)
+    closing.ops->close(&closing);
 }
 
 /* ── fd_open ─────────────────────────────────────────────────────────────────
@@ -199,7 +218,6 @@ int vfs_fd_open(const char *path, int flags, int mode) {
       fd_pool[desc].ops = &tty_fops;
       fd_pool[desc].priv = tty_get_dev(tty_idx);
       fd_pool[desc].flags = (uint32_t)flags;
-      fd_pool[desc].refcnt = 1;
       fd_pool[desc].vnode = NULL;
       fd_pool[desc].offset = 0;
       mod_vfs.vnode_release(vn);
@@ -217,7 +235,6 @@ int vfs_fd_open(const char *path, int flags, int mode) {
   fd_pool[desc].ops = &vfs_bridge_ops;
   fd_pool[desc].priv = NULL;
   fd_pool[desc].flags = (uint32_t)flags;
-  fd_pool[desc].refcnt = 1;
   fd_pool[desc].vnode = vn;
   fd_pool[desc].offset = ((uint32_t)flags & O_APPEND) ? vn->size : 0;
   return desc;
@@ -458,7 +475,6 @@ int fd_pool_alloc_pipe(const struct file_ops *ops, void *priv, uint32_t flags) {
   fd_pool[desc].ops = ops;
   fd_pool[desc].priv = priv;
   fd_pool[desc].flags = flags;
-  fd_pool[desc].refcnt = 1;
   fd_pool[desc].vnode = NULL;
   fd_pool[desc].offset = 0;
   return desc;

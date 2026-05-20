@@ -24,6 +24,7 @@
 #include "kernel/common/config.h"
 #include "kernel/common/core/proc_info.h"
 #include "kernel/common/mod/mod_core.h"
+#include "kernel/common/spinlock.h"
 #include "kernel/vfs/fd.h"
 #include "kernel/vfs/file.h"
 
@@ -55,6 +56,8 @@ static pipe_t pipe_pool[PIPE_MAX]; /* ~2 KB in BSS */
  */
 
 static pipe_t *pipe_alloc(void) {
+  uint32_t saved = spin_lock_irqsave(SPIN_PIPE);
+
   for (int i = 0; i < PIPE_MAX; i++) {
     if (!pipe_pool[i].in_use) {
       pipe_t *p = &pipe_pool[i];
@@ -62,13 +65,19 @@ static pipe_t *pipe_alloc(void) {
       p->in_use = 1;
       p->readers = 1;
       p->writers = 1;
+      spin_unlock_irqrestore(SPIN_PIPE, saved);
       return p;
     }
   }
+  spin_unlock_irqrestore(SPIN_PIPE, saved);
   return NULL;
 }
 
-static void pipe_free(pipe_t *p) { p->in_use = 0; }
+static void pipe_free(pipe_t *p) {
+  uint32_t saved = spin_lock_irqsave(SPIN_PIPE);
+  p->in_use = 0;
+  spin_unlock_irqrestore(SPIN_PIPE, saved);
+}
 
 static uint16_t pipe_used(pipe_t *p) {
   return (uint16_t)((p->head - p->tail) & PIPE_MASK);
@@ -97,6 +106,7 @@ static long pipe_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
   /* Wait for data, then drain one batch.  Loop internally across
    * sched_switch so the syscall returns a real status. */
   for (;;) {
+    uint32_t saved = spin_lock_irqsave(SPIN_PIPE);
     uint16_t avail = pipe_used(p);
     if (avail > 0) {
       size_t count = (n < avail) ? n : avail;
@@ -106,14 +116,25 @@ static long pipe_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
         pipe_advance(&page, &off);
         p->tail = (uint16_t)((p->tail + 1u) & PIPE_MASK);
       }
+      spin_unlock_irqrestore(SPIN_PIPE, saved);
       mod_core.sched_wakeup(p); /* wake blocked writers */
       return (long)count;
     }
-    if (p->writers == 0) return 0; /* EOF — no writers left */
-    if (nonblock) return -(long)EAGAIN;
-    if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
+    if (p->writers == 0) {
+      spin_unlock_irqrestore(SPIN_PIPE, saved);
+      return 0; /* EOF — no writers left */
+    }
+    if (nonblock) {
+      spin_unlock_irqrestore(SPIN_PIPE, saved);
+      return -(long)EAGAIN;
+    }
+    if (current->sig_pending & ~current->sig_blocked) {
+      spin_unlock_irqrestore(SPIN_PIPE, saved);
+      return -(long)EINTR;
+    }
     current->wait_channel = p;
     current->state = PROC_BLOCKED;
+    spin_unlock_irqrestore(SPIN_PIPE, saved);
     mod_core.sched_switch();
   }
 }
@@ -125,7 +146,11 @@ static long pipe_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
   /* Wait for space, then push one batch.  Loop internally across
    * sched_switch so the syscall returns a real status. */
   for (;;) {
-    if (p->readers == 0) return -(long)EPIPE; /* broken pipe */
+    uint32_t saved = spin_lock_irqsave(SPIN_PIPE);
+    if (p->readers == 0) {
+      spin_unlock_irqrestore(SPIN_PIPE, saved);
+      return -(long)EPIPE; /* broken pipe */
+    }
     uint16_t space = pipe_space(p);
     if (space > 0) {
       size_t count = (n < space) ? n : space;
@@ -136,29 +161,42 @@ static long pipe_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
         p->buf[p->head] = ch;
         p->head = (uint16_t)((p->head + 1u) & PIPE_MASK);
       }
+      spin_unlock_irqrestore(SPIN_PIPE, saved);
       mod_core.sched_wakeup(p); /* wake blocked readers */
       return (long)count;
     }
-    if (nonblock) return -(long)EAGAIN;
-    if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
+    if (nonblock) {
+      spin_unlock_irqrestore(SPIN_PIPE, saved);
+      return -(long)EAGAIN;
+    }
+    if (current->sig_pending & ~current->sig_blocked) {
+      spin_unlock_irqrestore(SPIN_PIPE, saved);
+      return -(long)EINTR;
+    }
     current->wait_channel = p;
     current->state = PROC_BLOCKED;
+    spin_unlock_irqrestore(SPIN_PIPE, saved);
     mod_core.sched_switch();
   }
 }
 
 static int pipe_close(struct file *f) {
   pipe_t *p = f->priv;
+  int do_free = 0;
 
+  uint32_t saved = spin_lock_irqsave(SPIN_PIPE);
   if (f->flags == O_RDONLY)
     p->readers--;
   else
     p->writers--;
 
+  if (p->readers == 0 && p->writers == 0) do_free = 1;
+  spin_unlock_irqrestore(SPIN_PIPE, saved);
+
   /* Wake the other end so it can detect EOF / EPIPE */
   mod_core.sched_wakeup(p);
 
-  if (p->readers == 0 && p->writers == 0) pipe_free(p);
+  if (do_free) pipe_free(p);
 
   /* Note: file_free is called by fd_free when refcnt reaches 0.
    * Do NOT call file_free here — that would be a double-free. */

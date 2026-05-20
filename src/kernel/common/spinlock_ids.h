@@ -21,6 +21,8 @@ enum {
   SPIN_I2C = 6,    /* I2C controller */
   SPIN_MEM = 7,    /* mem_region arena state */
   SPIN_FBCON = 8,  /* framebuffer console flush serialisation */
+  SPIN_FD = 9,     /* global open-file descriptor pool */
+  SPIN_PIPE = 10,  /* pipe pool and ring metadata */
 };
 
 #endif /* PPAP_KERNEL_COMMON_SPINLOCK_IDS_H */
