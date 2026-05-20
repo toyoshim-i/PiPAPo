@@ -76,6 +76,13 @@ void sched_timer_tick(int from_user);
 void sched_switch(void);
 
 /*
+ * Mark the current process blocked on a wait channel.
+ * Caller is responsible for checking its blocking condition first, then
+ * calling sched_switch() after releasing any resource lock.
+ */
+void sched_block_current(void *channel);
+
+/*
  * Wake all processes blocked on the given channel.
  * Scans proc_table for PROC_BLOCKED processes whose wait_channel matches,
  * sets them to PROC_RUNNABLE, and clears their wait_channel.

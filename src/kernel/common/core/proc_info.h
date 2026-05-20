@@ -60,7 +60,7 @@ typedef enum {
   PROC_FREE = 0,        /* slot is not in use                              */
   PROC_RUNNABLE = 1,    /* ready to run, or currently executing            */
   PROC_SLEEPING = 2,    /* blocked until sleep_until SysTick count         */
-  PROC_BLOCKED = 3,     /* blocked on vfork/waitpid                        */
+  PROC_BLOCKED = 3,     /* blocked on a wait channel or process lifecycle  */
   PROC_ZOMBIE = 4,      /* exited; slot freed when parent calls waitpid()  */
   PROC_TRACED_STOP = 5, /* stopped and waiting for tracer resume          */
 } proc_state_t;

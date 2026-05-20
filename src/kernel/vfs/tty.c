@@ -297,8 +297,7 @@ static long tty_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
         if (nonblock) return pos > 0 ? (long)pos : -(long)EAGAIN;
         if (current->sig_pending & ~current->sig_blocked)
           return pos > 0 ? (long)pos : -(long)EINTR;
-        current->wait_channel = &t->tx_page;
-        current->state = PROC_BLOCKED;
+        mod_core.sched_block_current(&t->tx_page);
         mod_core.sched_switch();
       }
     }
@@ -306,8 +305,7 @@ static long tty_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
       if (nonblock) return pos > 0 ? (long)pos : -(long)EAGAIN;
       if (current->sig_pending & ~current->sig_blocked)
         return pos > 0 ? (long)pos : -(long)EINTR;
-      current->wait_channel = &t->tx_page;
-      current->state = PROC_BLOCKED;
+      mod_core.sched_block_current(&t->tx_page);
       mod_core.sched_switch();
     }
     pos++;
@@ -334,8 +332,7 @@ static long tty_read_canon(tty_dev_t *t, int nonblock, page_id_t page,
       /* Block and retry after wakeup.  We stay inside this function
        * across the context switch, so the syscall completes with a
        * real status when we eventually get data or a signal. */
-      current->wait_channel = t;
-      current->state = PROC_BLOCKED;
+      mod_core.sched_block_current(t);
       mod_core.sched_switch();
       continue;
     }
@@ -456,8 +453,7 @@ static long tty_read_raw(tty_dev_t *t, int nonblock, page_id_t page,
     if (c >= 0) break;
     if (nonblock) return -(long)EAGAIN;
     if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
-    current->wait_channel = t;
-    current->state = PROC_BLOCKED;
+    mod_core.sched_block_current(t);
     mod_core.sched_switch();
   }
 
@@ -500,8 +496,7 @@ static long tty_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
      * so the syscall completes with -EINTR rather than a phantom 0. */
     for (;;) {
       if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
-      current->wait_channel = t;
-      current->state = PROC_BLOCKED;
+      mod_core.sched_block_current(t);
       mod_core.sched_switch();
     }
   }

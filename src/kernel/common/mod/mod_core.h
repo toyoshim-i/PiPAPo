@@ -167,6 +167,15 @@ MOD_FUNC(core, uint32_t, region_free_bytes, ppap_mem_class_t)
 MOD_FUNC(core, uint32_t, region_total_bytes, ppap_mem_class_t)
 
 /*
+ * sched_block_current — Mark current blocked on a wait channel.
+ *
+ *   channel  Wait channel to match in sched_wakeup().
+ *
+ * Caller should call sched_switch() after releasing any resource lock.
+ */
+MOD_FUNC(core, void, sched_block_current, void *)
+
+/*
  * sched_get_ticks — Get monotonic tick count since boot.
  *
  * Returns uint32_t tick counter.  One tick = 10 ms (100 Hz).

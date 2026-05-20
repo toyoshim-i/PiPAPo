@@ -26,6 +26,7 @@ int region_alloc(ppap_mem_class_t, uint32_t, uint32_t, region_t *);
 void region_free(ppap_mem_class_t, uint32_t, const region_t *);
 uint32_t region_free_bytes(ppap_mem_class_t);
 uint32_t region_total_bytes(ppap_mem_class_t);
+void sched_block_current(void *);
 uint32_t sched_get_ticks(void);
 void sched_switch(void);
 void sched_wakeup(void *);
@@ -45,6 +46,7 @@ uint32_t time_now_sec(void);
 #define core_region_free         region_free
 #define core_region_free_bytes   region_free_bytes
 #define core_region_total_bytes  region_total_bytes
+#define core_sched_block_current sched_block_current
 #define core_sched_get_ticks     sched_get_ticks
 #define core_sched_switch        sched_switch
 #define core_sched_wakeup        sched_wakeup

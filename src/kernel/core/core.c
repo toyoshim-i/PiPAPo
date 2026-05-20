@@ -28,6 +28,7 @@ mod_core_t mod_core = {
     .region_free = region_free,
     .region_free_bytes = region_free_bytes,
     .region_total_bytes = region_total_bytes,
+    .sched_block_current = sched_block_current,
     .sched_get_ticks = sched_get_ticks,
     .sched_switch = sched_switch,
     .sched_wakeup = sched_wakeup,

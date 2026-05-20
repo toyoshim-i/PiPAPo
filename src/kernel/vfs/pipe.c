@@ -132,8 +132,7 @@ static long pipe_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
       spin_unlock_irqrestore(SPIN_PIPE, saved);
       return -(long)EINTR;
     }
-    current->wait_channel = p;
-    current->state = PROC_BLOCKED;
+    mod_core.sched_block_current(p);
     spin_unlock_irqrestore(SPIN_PIPE, saved);
     mod_core.sched_switch();
   }
@@ -173,8 +172,7 @@ static long pipe_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
       spin_unlock_irqrestore(SPIN_PIPE, saved);
       return -(long)EINTR;
     }
-    current->wait_channel = p;
-    current->state = PROC_BLOCKED;
+    mod_core.sched_block_current(p);
     spin_unlock_irqrestore(SPIN_PIPE, saved);
     mod_core.sched_switch();
   }

@@ -200,6 +200,13 @@ void sched_start(void) {
  * callers), so the yield is honored before sched_switch() returns. */
 void sched_switch(void) { arch_sched_switch(); }
 
+void sched_block_current(void *channel) {
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+  current->wait_channel = channel;
+  current->state = PROC_BLOCKED;
+  spin_unlock_irqrestore(SPIN_PROC, saved);
+}
+
 /* ── Channel-based wakeup ────────────────────────────────────────────────────
  */
 

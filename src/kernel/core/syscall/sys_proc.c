@@ -1822,7 +1822,7 @@ long sys_vfork(uint32_t *frame) {
 #endif
 
   /* 8. Block parent, make child runnable */
-  current->state = PROC_BLOCKED;
+  sched_block_current(NULL);
   child->state = PROC_RUNNABLE;
 
   /* 9. Yield to the child.  Some architectures switch immediately here;
@@ -1950,7 +1950,7 @@ long sys_waitpid(long pid, long status_ptr, long options) {
     }
 
     /* Block until sys_exit / sys_kill / trace_stop sets PROC_RUNNABLE. */
-    current->state = PROC_BLOCKED;
+    sched_block_current(NULL);
     sched_switch();
   }
 }

@@ -96,18 +96,18 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds, uint32_t timeout_ticks,
     /* Block: wait for data or timeout.
      * Use the first polled fd's priv as wait channel — for tty fds this
      * is the tty_dev_t*, matching what tty_rx_notify() wakes. */
-    current->wait_channel = NULL;
+    void *channel = NULL;
     for (uint32_t i = 0; i < nfds; i++) {
       int fd = fds[i].fd;
       if (fd >= 0 && fd < FD_MAX && current->fd_map[fd] != FD_DESC_NONE) {
         void *priv = mod_vfs.fd_get_priv(current->fd_map[fd]);
         if (priv) {
-          current->wait_channel = priv;
+          channel = priv;
           break;
         }
       }
     }
-    current->state = PROC_BLOCKED;
+    mod_core.sched_block_current(channel);
     mod_core.sched_switch();
   }
 }
