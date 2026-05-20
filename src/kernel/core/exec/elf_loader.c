@@ -379,17 +379,24 @@ static int elf_reloc_arch(const elf_reloc_ctx_t *ctx, elf_load_result_t *out) {
 #endif /* arch relocation callbacks */
 
 /* Copy data to text memory.  Uses word-at-a-time writes so that this
- * is safe for Xtensa IRAM (which faults on byte stores) while remaining
- * correct on all other architectures. */
+ * is safe for Xtensa IRAM (which faults on byte stores).  __builtin_memcpy
+ * into a local uint32_t preserves the source's byte order regardless of
+ * CPU endianness — the on-disk byte sequence ends up at the destination
+ * in the same order whether the host stores native words little- or
+ * big-endian. */
 static void elf_copy_text(void *dst, const uint8_t *src, uint32_t size) {
   volatile uint32_t *d = (volatile uint32_t *)dst;
-  uint32_t words = (size + 3) / 4;
-  for (uint32_t w = 0; w < words; w++) {
-    uint32_t val = src[w * 4];
-    if (w * 4 + 1 < size) val |= (uint32_t)src[w * 4 + 1] << 8;
-    if (w * 4 + 2 < size) val |= (uint32_t)src[w * 4 + 2] << 16;
-    if (w * 4 + 3 < size) val |= (uint32_t)src[w * 4 + 3] << 24;
+  uint32_t full_words = size / 4;
+  for (uint32_t w = 0; w < full_words; w++) {
+    uint32_t val;
+    __builtin_memcpy(&val, src + w * 4, 4);
     d[w] = val;
+  }
+  uint32_t remainder = size - full_words * 4;
+  if (remainder) {
+    uint32_t val = 0;
+    __builtin_memcpy(&val, src + full_words * 4, remainder);
+    d[full_words] = val;
   }
 }
 
