@@ -34,6 +34,7 @@ add_executable(ppap_x68k
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_x68k.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/iocs_blk.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/uart_x68k.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/x68k_iocs.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/x68k_logger.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/timer_x68k.c
 )

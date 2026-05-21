@@ -47,7 +47,8 @@ static inline void iocs_b_clr_st(void) {
 
 static inline void iocs_b_clr_ed(void) {
   register int32_t d0 asm("d0") = 0x2A;
-  register int32_t d1 asm("d1") = 0; /* mode 0 = clear cursor to end of screen */
+  register int32_t d1 asm("d1") =
+      0; /* mode 0 = clear cursor to end of screen */
   asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "d2", "a0", "a1", "memory");
 }
 
@@ -269,43 +270,54 @@ void uart_init(void) {
   /* No-op on X68000: IOCS handles the UART, and clearing the screen here
    * would wipe stage1/2's "PiPA" + the kernel's "Po" banner.  cur_x/cur_y
    * stay 0; the first VT100 sequence corrects them. */
+  x68k_iocs_init();
 }
 
 int uart_putc(char c, void (*notify)(void)) {
   (void)notify; /* IOCS is synchronous — putc never fails */
   if (uart_tvram_inhibit) return 1;
+  x68k_iocs_enter();
   uint16_t sr = ipl7_save();
   if (!vt_feed(c)) iocs_b_putc(c);
   ipl7_restore(sr);
+  x68k_iocs_exit();
   return 1;
 }
 
 int uart_serial_putc(char c, void (*notify)(void)) {
   (void)notify;
+  if (uart_tvram_inhibit && x68k_iocs_held_by_current()) return 1;
+  x68k_iocs_enter();
   uint16_t sr = ipl7_save();
   if (c == '\n') iocs_out232c('\r');
   iocs_out232c(c);
   ipl7_restore(sr);
+  x68k_iocs_exit();
   return 1;
 }
 
 int uart_getc(void) {
+  x68k_iocs_enter();
   uint16_t sr = ipl7_save();
   int avail = iocs_b_keysns();
   if (!avail) {
     ipl7_restore(sr);
+    x68k_iocs_exit();
     return -1;
   }
   int c = iocs_b_getc();
   ipl7_restore(sr);
+  x68k_iocs_exit();
   if (c > 0x7F) return -1;
   return c;
 }
 
 int uart_rx_avail(void) {
+  x68k_iocs_enter();
   uint16_t sr = ipl7_save();
   int r = iocs_b_keysns() ? 1 : 0;
   ipl7_restore(sr);
+  x68k_iocs_exit();
   return r;
 }
 
@@ -340,22 +352,27 @@ static inline int iocs_inp232c(void) {
 }
 
 int uart_serial_getc(void) {
+  x68k_iocs_enter();
   uint16_t sr = ipl7_save();
   int avail = iocs_isns232c();
   if (!avail) {
     ipl7_restore(sr);
+    x68k_iocs_exit();
     return -1;
   }
   int c = iocs_inp232c();
   ipl7_restore(sr);
+  x68k_iocs_exit();
   if (c > 0x7F) return -1;
   return c;
 }
 
 int uart_serial_rx_avail(void) {
+  x68k_iocs_enter();
   uint16_t sr = ipl7_save();
   int r = iocs_isns232c() ? 1 : 0;
   ipl7_restore(sr);
+  x68k_iocs_exit();
   return r;
 }
 

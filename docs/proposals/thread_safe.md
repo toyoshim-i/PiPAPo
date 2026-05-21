@@ -49,6 +49,7 @@ Recent neutral hardening work started covering:
 - `fd.c`: descriptor pool allocation and reference counts.
 - `pipe.c`: pipe pool and ring metadata.
 - `tmpfs.c`: global inode table and data-page accounting.
+- `x68k_iocs.c`: target IOCS traps are serialized with `kmutex_t`.
 
 This is not enough to declare the common kernel thread-safe.
 
@@ -168,19 +169,19 @@ Plan:
 - keep `SPIN_FS` only for filesystems with short nonblocking shared-buffer
   critical sections.
 
-### 5. `x68k_iocs.c` Has a Broken Mutex
+### 5. `x68k_iocs.c` IOCS Serialization Is Target-Local
 
-The current IOCS guard is a bare busy flag.  It has no owner, no death cleanup,
-and can block from unsafe contexts.  If the holder dies, future IOCS users can
-deadlock forever.
+The x68k IOCS guard now uses `kmutex_t` for process-context serialization, so
+holder death is handled by `proc_free()` through the common held-mutex cleanup.
+Early boot calls before `current` exists remain single-context and do not take
+the mutex.
 
-Plan:
+Remaining follow-up:
 
-- replace the busy flag with `kmutex_t`;
-- initialize it during x68k VFS/driver init;
-- release owned mutexes from `proc_free()`;
-- remove crash-output bypass hacks once normal logging can safely wait for
-  IOCS or recover after holder death.
+- add an IRQ-context assertion once a common `arch_in_irq()` helper exists;
+- keep crash-output bypass behavior for same-owner recursive crash logging;
+- consider a hardware-level serial fallback for crash logs that fault while
+  IOCS is already held.
 
 ### 6. `kmem_alloc()` Contract Is Too Easy To Violate
 
@@ -294,4 +295,3 @@ The proposal is complete when:
 - qemu_arm, qemu_rv32, qemu_m68k, pcxt, and x68k run their normal test suites
   without regressions;
 - stress tests cover fd, pipe, tmpfs, and process-death lock cleanup.
-

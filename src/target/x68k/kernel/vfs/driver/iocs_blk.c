@@ -22,24 +22,24 @@
 
 /* X68000 2HD floppy geometry: 77 cyl x 2 head x 8 sec x 1024 B = 1232 KB. */
 #define FLOPPY_SEC_BYTES 1024u
-#define FLOPPY_SECS_PER_CYL 16u   /* 2 heads x 8 sectors */
+#define FLOPPY_SECS_PER_CYL 16u /* 2 heads x 8 sectors */
 #define FLOPPY_SECS_PER_HEAD 8u
-#define FLOPPY_TOTAL_PHYS_SECS (77u * FLOPPY_SECS_PER_CYL)  /* 1232 */
+#define FLOPPY_TOTAL_PHYS_SECS (77u * FLOPPY_SECS_PER_CYL) /* 1232 */
 
 /* IOCS _B_READ argument constants — match stage2.c. */
 #define IOCS_B_READ 0x46u
-#define FDC_PDA 0x90u           /* 2HD FDD unit 0 */
-#define FDC_MODE 0x70u          /* MFM | retry | seek */
-#define SEC_LEN_CODE 3u         /* 1024-byte sectors */
+#define FDC_PDA 0x90u   /* 2HD FDD unit 0 */
+#define FDC_MODE 0x70u  /* MFM | retry | seek */
+#define SEC_LEN_CODE 3u /* 1024-byte sectors */
 
 /* UFS partition starts after stage1 (sector 0) and stage2 (sectors 1..3).
  * In 512-byte blkdev units that is sector 8. */
 #define UFS_BASE_512 8u
 
-#define BLKDEV_SECTORS_PER_PHYS \
-    (FLOPPY_SEC_BYTES / BLKDEV_SECTOR_SIZE)  /* 2 */
+#define BLKDEV_SECTORS_PER_PHYS (FLOPPY_SEC_BYTES / BLKDEV_SECTOR_SIZE) /* 2 \
+                                                                         */
 
-#define CACHE_PHYS_NONE ((uint32_t)-1)
+#define CACHE_PHYS_NONE ((uint32_t) - 1)
 
 static uint8_t cache_buf[FLOPPY_SEC_BYTES] __attribute__((aligned(4)));
 static uint32_t cache_phys_lba = CACHE_PHYS_NONE;
@@ -65,8 +65,9 @@ static int iocs_read_phys(uint32_t lba, void *dest) {
   uint32_t head = track_off / FLOPPY_SECS_PER_HEAD;
   uint32_t sec = (track_off % FLOPPY_SECS_PER_HEAD) + 1u; /* 1-based */
 
-  uint32_t d2_val =
-      (SEC_LEN_CODE << 24) | (cyl << 16) | (head << 8) | sec;
+  uint32_t d2_val = (SEC_LEN_CODE << 24) | (cyl << 16) | (head << 8) | sec;
+
+  x68k_iocs_enter();
 
   volatile uint8_t *imrb = (volatile uint8_t *)MFP_IMRB_ADDR;
   uint8_t saved_imrb = *imrb;
@@ -92,6 +93,7 @@ static int iocs_read_phys(uint32_t lba, void *dest) {
 
   asm volatile("move.w %0,%%sr" : : "d"(saved_sr) : "memory");
   *imrb = saved_imrb;
+  x68k_iocs_exit();
 
   /* d0 returns FDC status: negative = error, 0 = success. */
   return ((int32_t)d0) < 0 ? -EIO : 0;
@@ -107,13 +109,6 @@ static int iocs_blk_read(struct blkdev *dev, page_id_t page, uint16_t off,
     uint32_t phys = abs512 / BLKDEV_SECTORS_PER_PHYS;
     uint32_t half = abs512 % BLKDEV_SECTORS_PER_PHYS;
 
-    /* No CPU-IPL guard around _B_READ: the FDC interrupt that the IOCS
-     * loop waits on lives at an IPL level we cannot pin down portably,
-     * so raising IPL has bitten us with a hang.  stage2 calls _B_READ
-     * with no guard and works; do the same.  Reentrancy concerns are
-     * handled by the kernel never preempting into IOCS console output
-     * while a blkdev read is in flight (smoke-test path is single-
-     * threaded during boot). */
     if (cache_phys_lba != phys) {
       int rc = iocs_read_phys(phys, cache_buf);
       if (rc < 0) {
@@ -122,8 +117,7 @@ static int iocs_blk_read(struct blkdev *dev, page_id_t page, uint16_t off,
       }
       cache_phys_lba = phys;
     }
-    mod_core.page_write(page,
-                        (uint16_t)(off + i * BLKDEV_SECTOR_SIZE),
+    mod_core.page_write(page, (uint16_t)(off + i * BLKDEV_SECTOR_SIZE),
                         cache_buf + half * BLKDEV_SECTOR_SIZE,
                         BLKDEV_SECTOR_SIZE);
   }
