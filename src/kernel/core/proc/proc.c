@@ -18,12 +18,13 @@
 #include "kernel/common/ioregs.h"
 #include "kernel/common/mod/mod_vfs.h"
 #include "kernel/common/spinlock.h" /* SPIN_PROC */
-#include "kernel/core/arch.h"       /* arch_build_initial_frame */
-#include "kernel/core/mm/page.h"    /* PAGE_SIZE — for proc_setup_stack */
+#include "kernel/common/sync/kmutex.h"
+#include "kernel/core/arch.h"
+#include "kernel/core/mm/page.h"
 #include "kernel/core/mm/page_ptr.h"
 #include "kernel/core/mm/region.h"
 #include "kernel/core/proc/kstack.h"
-#include "kernel/core/proc/sched.h" /* sched_get_ticks — for start_time */
+#include "kernel/core/proc/sched.h"
 
 /* Default file creation mask (octal 022 → owner rw, group/other r) */
 #define DEFAULT_UMASK 022
@@ -177,6 +178,7 @@ pcb_t *proc_alloc(void) {
 
 void proc_free(pcb_t *p) {
   if (!p) return;
+  kmutex_release_owned(p);
   uint32_t saved = spin_lock_irqsave(SPIN_PROC);
   p->state = PROC_FREE;
   spin_unlock_irqrestore(SPIN_PROC, saved);

@@ -18,11 +18,12 @@
 #include "kernel/common/core/page_types.h"
 #include "kernel/common/core/proc_image.h"
 #include "kernel/common/core/subsys_info.h"
-#include "kernel/common/spinlock.h" /* core_id() for #define current */
+#include "kernel/common/spinlock.h"
 
-/* Forward declaration — struct file is defined in fd/file.h.
- * We only store pointers here so the incomplete type is sufficient. */
+/* Forward declarations.  We only store pointers here so incomplete types are
+ * sufficient. */
 struct file;
+struct kmutex;
 
 /* Signal handler type — matches signal/signal.h.
  * Duplicated here to avoid circular include (signal.h needs pcb_t). */
@@ -181,15 +182,16 @@ typedef struct pcb {
   uint8_t is_idle;          /* 1 = idle thread (ticks count as idle)      */
 
   /* ── vfork / waitpid ──────────────────────────────────────────────── */
-  struct pcb *vfork_parent;  /* non-NULL while child shares parent's space */
-  uint8_t vfork_frame_saved; /* 1 if a parent-resume slice was saved during
-                                vfork and must be restored before this PCB
-                                returns to user mode.  The saved slice size
-                                and storage are arch-specific (see Phase 0
-                                in docs/proposals/no_stack_copy_on_vfork.md). */
-  int exit_status;           /* set by _exit(), read by waitpid()          */
-  uintptr_t got_base;        /* r9 value (GOT SRAM address) for PIC       */
-  void *wait_channel;        /* sleep/wakeup target (e.g. pipe_t*)        */
+  struct pcb *vfork_parent;   /* non-NULL while child shares parent's space */
+  uint8_t vfork_frame_saved;  /* 1 if a parent-resume slice was saved during
+                                 vfork and must be restored before this PCB
+                                 returns to user mode.  The saved slice size
+                                 and storage are arch-specific (see Phase 0
+                                 in docs/proposals/no_stack_copy_on_vfork.md). */
+  int exit_status;            /* set by _exit(), read by waitpid()          */
+  uintptr_t got_base;         /* r9 value (GOT SRAM address) for PIC       */
+  void *wait_channel;         /* sleep/wakeup target (e.g. pipe_t*)        */
+  struct kmutex *kmutex_held; /* process-owned sleepable mutex list        */
 
   /* ── Heap (brk) ──────────────────────────────────────────────────── */
   uintptr_t brk_base;    /* initial break = end of .data+.bss         */

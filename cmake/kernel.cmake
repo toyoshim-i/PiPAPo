@@ -80,6 +80,7 @@ set(KERNEL_SHARED_SOURCES_BASE
     ${_KS_ROOT}/src/kernel/core/proc/proc.c
     ${_KS_ROOT}/src/kernel/core/proc/kstack.c
     ${_KS_ROOT}/src/kernel/core/proc/sched.c
+    ${_KS_ROOT}/src/kernel/core/sync/kmutex.c
     ${_KS_ROOT}/src/kernel/core/syscall/syscall.c
     ${_KS_ROOT}/src/kernel/core/syscall/sys_proc.c
     ${_KS_ROOT}/src/kernel/core/syscall/sys_io.c

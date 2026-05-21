@@ -9,6 +9,7 @@
  */
 
 #include "kernel/common/mod/mod_core.h"
+#include "kernel/common/sync/kmutex.h"
 #include "kernel/core/mm/kmem.h"
 #include "kernel/core/mm/page_io.h"
 #include "kernel/core/mm/region.h"
@@ -21,6 +22,10 @@ mod_core_t mod_core = {
     .kmem_free = kmem_free,
     .kmem_free_count = kmem_free_count,
     .kmem_pool_init = kmem_pool_init,
+    .kmutex_init = kmutex_init,
+    .kmutex_lock = kmutex_lock,
+    .kmutex_release_owned = kmutex_release_owned,
+    .kmutex_unlock = kmutex_unlock,
     .page_read = page_read,
     .page_write = page_write,
     .page_zero = page_zero,

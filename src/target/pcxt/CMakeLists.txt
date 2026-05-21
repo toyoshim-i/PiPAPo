@@ -332,6 +332,7 @@ set(KERNEL_CORE_SOURCES
   ${PPAP_ROOT}/src/kernel/core/proc/proc.c
   ${PPAP_ROOT}/src/kernel/core/proc/kstack.c
   ${PPAP_ROOT}/src/kernel/core/proc/sched.c
+  ${PPAP_ROOT}/src/kernel/core/sync/kmutex.c
   ${PPAP_ROOT}/src/kernel/core/signal/signal.c
   ${PPAP_ROOT}/src/kernel/core/cpu/cpu.c
   ${PPAP_ROOT}/src/kernel/core/cpu/cpu_native.c

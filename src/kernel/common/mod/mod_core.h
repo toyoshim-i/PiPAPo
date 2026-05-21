@@ -28,6 +28,8 @@
 /* Forward declarations — full definitions in mm/, proc/ headers */
 struct kmem_pool;
 typedef struct kmem_pool kmem_pool_t;
+struct kmutex;
+typedef struct kmutex kmutex_t;
 struct pcb;
 
 #include "kernel/common/core/mem_class.h"
@@ -82,6 +84,30 @@ MOD_FUNC(core, uint32_t, kmem_free_count, const kmem_pool_t *)
  * Threads a free list through the objects for O(1) alloc/free.
  */
 MOD_FUNC(core, void, kmem_pool_init, kmem_pool_t *, void *, size_t, uint32_t)
+
+/*
+ * kmutex_init — Initialize a sleepable kernel mutex.
+ */
+MOD_FUNC(core, void, kmutex_init, kmutex_t *)
+
+/*
+ * kmutex_lock — Lock a sleepable kernel mutex.
+ *
+ * Process context only.  Blocks on contention.
+ */
+MOD_FUNC(core, void, kmutex_lock, kmutex_t *)
+
+/*
+ * kmutex_release_owned — Release all mutexes owned by a process.
+ *
+ * Called from process teardown.
+ */
+MOD_FUNC(core, void, kmutex_release_owned, struct pcb *)
+
+/*
+ * kmutex_unlock — Unlock a sleepable kernel mutex.
+ */
+MOD_FUNC(core, void, kmutex_unlock, kmutex_t *)
 
 /*
  * page_read — Read bytes from a page at an offset.

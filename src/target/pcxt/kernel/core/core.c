@@ -11,7 +11,8 @@
 #include "kernel/common/core/mem_class.h"
 #include "kernel/common/core/region_types.h"
 #include "kernel/common/mod/module.h"
-#include "kernel/core/mm/kmem.h"  /* kmem_pool_t */
+#include "kernel/common/sync/kmutex.h"
+#include "kernel/core/mm/kmem.h"
 
 /* Forward-declare the caller-side stubs from core_stubs.S, in mod_core.inc
  * order. */
@@ -19,6 +20,10 @@ void *kmem_alloc(kmem_pool_t *);
 void kmem_free(kmem_pool_t *, void *);
 uint32_t kmem_free_count(const kmem_pool_t *);
 void kmem_pool_init(kmem_pool_t *, void *, size_t, uint32_t);
+void kmutex_init(kmutex_t *);
+void kmutex_lock(kmutex_t *);
+void kmutex_release_owned(struct pcb *);
+void kmutex_unlock(kmutex_t *);
 void page_read(page_id_t, uint16_t, void *, uint16_t);
 void page_write(page_id_t, uint16_t, const void *, uint16_t);
 void page_zero(page_id_t, uint16_t, uint16_t);
@@ -39,6 +44,10 @@ uint32_t time_now_sec(void);
 #define core_kmem_free           kmem_free
 #define core_kmem_free_count     kmem_free_count
 #define core_kmem_pool_init      kmem_pool_init
+#define core_kmutex_init         kmutex_init
+#define core_kmutex_lock         kmutex_lock
+#define core_kmutex_release_owned kmutex_release_owned
+#define core_kmutex_unlock       kmutex_unlock
 #define core_page_read           page_read
 #define core_page_write          page_write
 #define core_page_zero           page_zero
