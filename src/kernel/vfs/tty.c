@@ -297,16 +297,14 @@ static long tty_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
         if (nonblock) return pos > 0 ? (long)pos : -(long)EAGAIN;
         if (current->sig_pending & ~current->sig_blocked)
           return pos > 0 ? (long)pos : -(long)EINTR;
-        mod_core.sched_block_current(&t->tx_page);
-        mod_core.sched_switch();
+        mod_core.sched_sleep_current(&t->tx_page);
       }
     }
     while (!t->out(c, t->tx_wakeup)) {
       if (nonblock) return pos > 0 ? (long)pos : -(long)EAGAIN;
       if (current->sig_pending & ~current->sig_blocked)
         return pos > 0 ? (long)pos : -(long)EINTR;
-      mod_core.sched_block_current(&t->tx_page);
-      mod_core.sched_switch();
+      mod_core.sched_sleep_current(&t->tx_page);
     }
     pos++;
     tty_advance(&cur_page, &cur_off, 1);
@@ -332,8 +330,7 @@ static long tty_read_canon(tty_dev_t *t, int nonblock, page_id_t page,
       /* Block and retry after wakeup.  We stay inside this function
        * across the context switch, so the syscall completes with a
        * real status when we eventually get data or a signal. */
-      mod_core.sched_block_current(t);
-      mod_core.sched_switch();
+      mod_core.sched_sleep_current(t);
       continue;
     }
 
@@ -453,8 +450,7 @@ static long tty_read_raw(tty_dev_t *t, int nonblock, page_id_t page,
     if (c >= 0) break;
     if (nonblock) return -(long)EAGAIN;
     if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
-    mod_core.sched_block_current(t);
-    mod_core.sched_switch();
+    mod_core.sched_sleep_current(t);
   }
 
   /* ICRNL: map CR to NL */
@@ -496,8 +492,7 @@ static long tty_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
      * so the syscall completes with -EINTR rather than a phantom 0. */
     for (;;) {
       if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
-      mod_core.sched_block_current(t);
-      mod_core.sched_switch();
+      mod_core.sched_sleep_current(t);
     }
   }
   if (n == 0) return 0;

@@ -1950,8 +1950,7 @@ long sys_waitpid(long pid, long status_ptr, long options) {
     }
 
     /* Block until sys_exit / sys_kill / trace_stop sets PROC_RUNNABLE. */
-    sched_block_current(NULL);
-    sched_switch();
+    sched_sleep_current(NULL);
   }
 }
 

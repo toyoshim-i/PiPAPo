@@ -209,6 +209,22 @@ MOD_FUNC(core, void, sched_block_current, void *)
 MOD_FUNC(core, uint32_t, sched_get_ticks, void)
 
 /*
+ * sched_sleep_current — Mark current blocked and switch away.
+ *
+ *   channel  Wait channel to match in sched_wakeup().
+ */
+MOD_FUNC(core, void, sched_sleep_current, void *)
+
+/*
+ * sched_sleep_current_unlock — Block, release a spinlock, then switch away.
+ *
+ *   channel   Wait channel to match in sched_wakeup().
+ *   lock_num  SPIN_* lock held by the caller.
+ *   saved     IRQ state returned by spin_lock_irqsave().
+ */
+MOD_FUNC(core, void, sched_sleep_current_unlock, void *, uint32_t, uint32_t)
+
+/*
  * sched_switch — Voluntarily switch to the next process.
  *
  * On ARM, pends PendSV.  On m68k, TRAP #1.  On RISC-V/Xtensa/i16,

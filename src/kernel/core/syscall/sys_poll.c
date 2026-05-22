@@ -8,7 +8,7 @@
  *   - Poll all fds via file_ops->poll callback
  *   - If any events match, return immediately
  *   - If timeout is zero, return 0 (non-blocking poll)
- *   - Otherwise, loop in kernel: set wait_channel, PROC_BLOCKED, sched_switch.
+ *   - Otherwise, loop in kernel and sleep on a wait channel.
  *     The process is woken by either:
  *       (a) data arrival (e.g. tty_rx_notify → sched_wakeup)
  *       (b) timeout expiry (sched_tick checks PROC_BLOCKED + sleep_until)
@@ -107,8 +107,7 @@ static long do_ppoll(struct pollfd *fds, uint32_t nfds, uint32_t timeout_ticks,
         }
       }
     }
-    mod_core.sched_block_current(channel);
-    mod_core.sched_switch();
+    mod_core.sched_sleep_current(channel);
   }
 }
 

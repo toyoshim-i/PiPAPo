@@ -27,11 +27,13 @@ MOD_CORE_ENTRY(region_free_bytes,     13)
 MOD_CORE_ENTRY(region_total_bytes,    14)
 MOD_CORE_ENTRY(sched_block_current,   15)
 MOD_CORE_ENTRY(sched_get_ticks,       16)
-MOD_CORE_ENTRY(sched_switch,          17)
-MOD_CORE_ENTRY(sched_wakeup,          18)
-MOD_CORE_ENTRY(subsys_read_proc,      19)
-MOD_CORE_ENTRY(time_now_sec,          20)
+MOD_CORE_ENTRY(sched_sleep_current,   17)
+MOD_CORE_ENTRY(sched_sleep_current_unlock, 18)
+MOD_CORE_ENTRY(sched_switch,          19)
+MOD_CORE_ENTRY(sched_wakeup,          20)
+MOD_CORE_ENTRY(subsys_read_proc,      21)
+MOD_CORE_ENTRY(time_now_sec,          22)
 
 #ifndef MOD_CORE_FUNC_COUNT
-#define MOD_CORE_FUNC_COUNT 21
+#define MOD_CORE_FUNC_COUNT 23
 #endif

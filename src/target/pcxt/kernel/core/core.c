@@ -33,6 +33,8 @@ uint32_t region_free_bytes(ppap_mem_class_t);
 uint32_t region_total_bytes(ppap_mem_class_t);
 void sched_block_current(void *);
 uint32_t sched_get_ticks(void);
+void sched_sleep_current(void *);
+void sched_sleep_current_unlock(void *, uint32_t, uint32_t);
 void sched_switch(void);
 void sched_wakeup(void *);
 struct pcb;
@@ -57,6 +59,8 @@ uint32_t time_now_sec(void);
 #define core_region_total_bytes  region_total_bytes
 #define core_sched_block_current sched_block_current
 #define core_sched_get_ticks     sched_get_ticks
+#define core_sched_sleep_current sched_sleep_current
+#define core_sched_sleep_current_unlock sched_sleep_current_unlock
 #define core_sched_switch        sched_switch
 #define core_sched_wakeup        sched_wakeup
 #define core_subsys_read_proc    subsys_read_proc

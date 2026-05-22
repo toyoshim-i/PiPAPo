@@ -4,11 +4,10 @@
  * A pipe is a unidirectional byte stream backed by an SRAM ring buffer.
  * Two struct file objects (read end + write end) share a single pipe_t.
  *
- * Blocking: when the buffer is empty (reader) or full (writer), the
- * calling process is marked PROC_BLOCKED with wait_channel pointing at
- * the pipe_t.  pipe_read/pipe_write loop internally across sched_switch
- * until data/space is available, a signal arrives, or O_NONBLOCK makes
- * us return -EAGAIN.  No syscall_restart IP-rewind is needed — the syscall
+ * Blocking: when the buffer is empty (reader) or full (writer), the caller
+ * blocks on the pipe_t wait channel.  pipe_read/pipe_write loop internally
+ * until data/space is available, a signal arrives, or O_NONBLOCK makes us
+ * return -EAGAIN.  No syscall_restart IP-rewind is needed — the syscall
  * completes with a real status in one call.
  *
  * Wake-up: pipe_write wakes blocked readers after adding data;
@@ -132,9 +131,7 @@ static long pipe_read(struct file *f, page_id_t page, uint16_t off, size_t n) {
       spin_unlock_irqrestore(SPIN_PIPE, saved);
       return -(long)EINTR;
     }
-    mod_core.sched_block_current(p);
-    spin_unlock_irqrestore(SPIN_PIPE, saved);
-    mod_core.sched_switch();
+    mod_core.sched_sleep_current_unlock(p, SPIN_PIPE, saved);
   }
 }
 
@@ -172,9 +169,7 @@ static long pipe_write(struct file *f, page_id_t page, uint16_t off, size_t n) {
       spin_unlock_irqrestore(SPIN_PIPE, saved);
       return -(long)EINTR;
     }
-    mod_core.sched_block_current(p);
-    spin_unlock_irqrestore(SPIN_PIPE, saved);
-    mod_core.sched_switch();
+    mod_core.sched_sleep_current_unlock(p, SPIN_PIPE, saved);
   }
 }
 

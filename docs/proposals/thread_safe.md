@@ -51,6 +51,7 @@ Recent neutral hardening work started covering:
 - `tmpfs.c`: global inode table and data-page accounting.
 - `x68k_iocs.c`: target IOCS traps are serialized with `kmutex_t`.
 - `fd.c`: open-file state is pinned and serialized per `struct file`.
+- `pipe.c`, `tty.c`, and `poll`: blocking paths use shared sleep helpers.
 
 This is not enough to declare the common kernel thread-safe.
 
@@ -116,33 +117,28 @@ Remaining follow-up:
 - split per-driver blocking from file-state mutation if a driver needs
   concurrent operations on the same open-file instance.
 
-### 3. Pipe Blocking Needs Lost-Wakeup Review
+### 3. Blocking Paths Need Continued Lost-Wakeup Audits
 
-`pipe.c` now protects ring metadata with `SPIN_PIPE`, but its blocking protocol
-still uses raw:
+`pipe.c` protects ring metadata with `SPIN_PIPE`, and blocking pipe waits now
+use `sched_sleep_current_unlock()` so the current process is marked blocked
+before `SPIN_PIPE` is released.  TTY and poll waits use
+`sched_sleep_current()` for the common block-and-switch sequence.
 
-- `current->wait_channel = p`
-- `current->state = PROC_BLOCKED`
-- `sched_switch()`
-- `sched_wakeup(p)`
+The remaining raw wait-channel writes are special cases:
 
-This pattern appears in multiple subsystems and is easy to get subtly wrong.
+- `kmutex.c` updates owner and wait state under `SPIN_PROC`;
+- `vfork` blocks the parent before making the child runnable;
+- signal and process teardown paths wake or clear blocked processes directly;
+- timer timeout handling clears `wait_channel` during tick processing.
 
-Plan:
+Remaining follow-up:
 
-- introduce common sleep helpers, for example:
-
-```c
-void sleep_prepare(void *channel);
-void sleep_commit(void);
-void wakeup_all(void *channel);
-```
-
-- ensure the state transition to `PROC_BLOCKED` is atomic with the condition
-  check under the resource lock;
 - document whether wakeups are level-triggered by rechecking the condition or
   edge-triggered;
-- convert pipe, poll, sleep, and target locks to the helper.
+- consider a debug assertion for `sched_sleep_current_unlock()` callers that
+  pass an invalid spinlock ID;
+- decide whether process teardown should use helper APIs for direct
+  `PROC_BLOCKED` state changes.
 
 ### 4. `tmpfs.c` Uses a Coarse Spinlock
 

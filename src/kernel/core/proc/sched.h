@@ -83,6 +83,20 @@ void sched_switch(void);
 void sched_block_current(void *channel);
 
 /*
+ * Block the current process on a wait channel, then switch away.
+ * The caller must have already checked the blocking condition.
+ */
+void sched_sleep_current(void *channel);
+
+/*
+ * Block the current process on a wait channel, release a caller-held spinlock,
+ * then switch away.  Use this after checking a blocking condition under the
+ * same resource lock so wakeups cannot slip between the check and the block.
+ */
+void sched_sleep_current_unlock(void *channel, uint32_t lock_num,
+                                uint32_t saved);
+
+/*
  * Wake all processes blocked on the given channel.
  * Scans proc_table for PROC_BLOCKED processes whose wait_channel matches,
  * sets them to PROC_RUNNABLE, and clears their wait_channel.

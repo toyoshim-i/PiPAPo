@@ -207,6 +207,18 @@ void sched_block_current(void *channel) {
   spin_unlock_irqrestore(SPIN_PROC, saved);
 }
 
+void sched_sleep_current(void *channel) {
+  sched_block_current(channel);
+  sched_switch();
+}
+
+void sched_sleep_current_unlock(void *channel, uint32_t lock_num,
+                                uint32_t saved) {
+  sched_block_current(channel);
+  spin_unlock_irqrestore(lock_num, saved);
+  sched_switch();
+}
+
 /* ── Channel-based wakeup ────────────────────────────────────────────────────
  */
 
