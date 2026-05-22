@@ -23,6 +23,7 @@
 #include "common/fcntl.h"
 #include "common/seek.h"
 #include "kernel/common/core/page_types.h"
+#include "kernel/common/sync/kmutex.h"
 
 /* Forward declarations */
 struct file;
@@ -58,6 +59,7 @@ struct file_ops {
 struct file {
   const struct file_ops *ops; /* driver vtable                     */
   void *priv;                 /* driver-private state (NULL = none) */
+  kmutex_t lock;              /* protects mutable open-file state   */
   uint32_t flags;             /* O_RDONLY / O_WRONLY / O_RDWR       */
   uint32_t refcnt;            /* reference count (dup/fork sharing) */
   struct vnode *vnode;        /* backing vnode (NULL for tty files) */

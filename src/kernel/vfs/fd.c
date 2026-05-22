@@ -38,6 +38,7 @@ static int fd_pool_alloc(void) {
   for (int i = 0; i < FILE_MAX; i++) {
     if (fd_pool[i].refcnt == 0 && fd_pool[i].ops == NULL) {
       memset(&fd_pool[i], 0, sizeof(struct file));
+      mod_core.kmutex_init(&fd_pool[i].lock);
       fd_pool[i].refcnt = 1;
       spin_unlock_irqrestore(SPIN_FD, saved);
       return i;
@@ -45,6 +46,19 @@ static int fd_pool_alloc(void) {
   }
   spin_unlock_irqrestore(SPIN_FD, saved);
   return -1;
+}
+
+static struct file *fd_get(int desc) {
+  if (desc < 0 || desc >= FILE_MAX) return NULL;
+
+  struct file *f = NULL;
+  uint32_t saved = spin_lock_irqsave(SPIN_FD);
+  if (fd_pool[desc].refcnt > 0u && fd_pool[desc].ops) {
+    fd_pool[desc].refcnt++;
+    f = &fd_pool[desc];
+  }
+  spin_unlock_irqrestore(SPIN_FD, saved);
+  return f;
 }
 
 /* ── VFS bridge file_ops ─────────────────────────────────────────────────────
@@ -90,11 +104,14 @@ static const struct file_ops vfs_bridge_ops = {
 /* ── Pool init (replaces fd_pool_init) ───────────────────────────────────── */
 
 void fd_pool_init(void) {
+  for (int i = 0; i < FILE_MAX; i++) mod_core.kmutex_init(&fd_pool[i].lock);
+
   /* Pre-allocate entries 0-2 for tty stdin/stdout/stderr.
    * These have a permanent base ref and are never freed. */
   void *console = tty_get_console_dev();
   for (int i = 0; i < 3; i++) {
     memset(&fd_pool[i], 0, sizeof(struct file));
+    mod_core.kmutex_init(&fd_pool[i].lock);
     fd_pool[i].ops = &tty_fops;
     fd_pool[i].priv = console;
     fd_pool[i].flags = (i == 0) ? O_RDONLY : O_WRONLY;
@@ -244,41 +261,70 @@ int vfs_fd_open(const char *path, int flags, int mode) {
  */
 
 long vfs_fd_read(int desc, page_id_t page, uint16_t off, size_t n) {
-  if (desc < 0 || desc >= FILE_MAX) return -(long)EBADF;
-  struct file *f = &fd_pool[desc];
-  if (!f->ops || !f->ops->read) return -(long)EBADF;
-  return f->ops->read(f, page, off, n);
+  struct file *f = fd_get(desc);
+  if (!f) return -(long)EBADF;
+
+  mod_core.kmutex_lock(&f->lock);
+  long ret =
+      (!f->ops || !f->ops->read) ? -(long)EBADF : f->ops->read(f, page, off, n);
+  mod_core.kmutex_unlock(&f->lock);
+  vfs_fd_release(desc);
+  return ret;
 }
 
 long vfs_fd_write(int desc, page_id_t page, uint16_t off, size_t n) {
-  if (desc < 0 || desc >= FILE_MAX) return -(long)EBADF;
-  struct file *f = &fd_pool[desc];
-  if (!f->ops || !f->ops->write) return -(long)EBADF;
-  return f->ops->write(f, page, off, n);
+  struct file *f = fd_get(desc);
+  if (!f) return -(long)EBADF;
+
+  mod_core.kmutex_lock(&f->lock);
+  long ret = (!f->ops || !f->ops->write) ? -(long)EBADF
+                                         : f->ops->write(f, page, off, n);
+  mod_core.kmutex_unlock(&f->lock);
+  vfs_fd_release(desc);
+  return ret;
 }
 
 int vfs_fd_ioctl(int desc, uint32_t cmd, void *arg) {
-  if (desc < 0 || desc >= FILE_MAX) return -EBADF;
-  struct file *f = &fd_pool[desc];
-  if (!f->ops) return -EBADF;
-  if (!f->ops->ioctl) return -ENOTTY;
-  return f->ops->ioctl(f, cmd, arg);
+  struct file *f = fd_get(desc);
+  if (!f) return -EBADF;
+
+  mod_core.kmutex_lock(&f->lock);
+  int ret;
+  if (!f->ops)
+    ret = -EBADF;
+  else if (!f->ops->ioctl)
+    ret = -ENOTTY;
+  else
+    ret = f->ops->ioctl(f, cmd, arg);
+  mod_core.kmutex_unlock(&f->lock);
+  vfs_fd_release(desc);
+  return ret;
 }
 
 int vfs_fd_poll(int desc) {
-  if (desc < 0 || desc >= FILE_MAX) return 0;
-  struct file *f = &fd_pool[desc];
-  if (f->ops && f->ops->poll) return f->ops->poll(f);
-  return POLLIN | POLLOUT; /* no poll → assume ready */
+  struct file *f = fd_get(desc);
+  if (!f) return 0;
+
+  mod_core.kmutex_lock(&f->lock);
+  int ret = (f->ops && f->ops->poll) ? f->ops->poll(f) : POLLIN | POLLOUT;
+  mod_core.kmutex_unlock(&f->lock);
+  vfs_fd_release(desc);
+  return ret;
 }
 
 /* ── File state ──────────────────────────────────────────────────────────────
  */
 
 long vfs_fd_lseek(int desc, long off, int whence) {
-  if (desc < 0 || desc >= FILE_MAX) return -(long)EBADF;
-  struct file *f = &fd_pool[desc];
-  if (!f->vnode) return -(long)ESPIPE;
+  struct file *f = fd_get(desc);
+  if (!f) return -(long)EBADF;
+
+  mod_core.kmutex_lock(&f->lock);
+  if (!f->vnode) {
+    mod_core.kmutex_unlock(&f->lock);
+    vfs_fd_release(desc);
+    return -(long)ESPIPE;
+  }
 
   long new_off;
   switch (whence) {
@@ -292,16 +338,27 @@ long vfs_fd_lseek(int desc, long off, int whence) {
       new_off = (long)f->vnode->size + off;
       break;
     default:
+      mod_core.kmutex_unlock(&f->lock);
+      vfs_fd_release(desc);
       return -(long)EINVAL;
   }
-  if (new_off < 0) return -(long)EINVAL;
+  if (new_off < 0) {
+    mod_core.kmutex_unlock(&f->lock);
+    vfs_fd_release(desc);
+    return -(long)EINVAL;
+  }
   f->offset = (uint32_t)new_off;
+  mod_core.kmutex_unlock(&f->lock);
+  vfs_fd_release(desc);
   return new_off;
 }
 
 int vfs_fd_fstat(int desc, void *buf) {
-  if (desc < 0 || desc >= FILE_MAX || !buf) return -EBADF;
-  struct file *f = &fd_pool[desc];
+  if (!buf) return -EBADF;
+  struct file *f = fd_get(desc);
+  if (!f) return -EBADF;
+
+  mod_core.kmutex_lock(&f->lock);
 
   /* tty files (no vnode): synthesize minimal char-device stat */
   if (!f->vnode) {
@@ -310,13 +367,22 @@ int vfs_fd_fstat(int desc, void *buf) {
     tty_st.st_mode = S_IFCHR | 0666u;
     tty_st.st_nlink = 1;
     memcpy(buf, &tty_st, sizeof(tty_st));
+    mod_core.kmutex_unlock(&f->lock);
+    vfs_fd_release(desc);
     return 0;
   }
 
-  if (!f->vnode->mount || !f->vnode->mount->ops || !f->vnode->mount->ops->stat)
+  if (!f->vnode->mount || !f->vnode->mount->ops ||
+      !f->vnode->mount->ops->stat) {
+    mod_core.kmutex_unlock(&f->lock);
+    vfs_fd_release(desc);
     return -ENOSYS;
+  }
 
-  return f->vnode->mount->ops->stat(f->vnode, (struct stat *)buf);
+  int ret = f->vnode->mount->ops->stat(f->vnode, (struct stat *)buf);
+  mod_core.kmutex_unlock(&f->lock);
+  vfs_fd_release(desc);
+  return ret;
 }
 
 /* Sentinel: directory fully read */
@@ -325,17 +391,34 @@ int vfs_fd_fstat(int desc, void *buf) {
 long vfs_fd_getdents(int desc, page_id_t page, uint16_t off, size_t count) {
   struct dirent entries[4];
 
-  if (desc < 0 || desc >= FILE_MAX || page == PAGE_ID_INVALID)
-    return -(long)EBADF;
-  struct file *f = &fd_pool[desc];
-  if (!f->vnode || f->vnode->type != VNODE_DIR) return -(long)ENOTDIR;
+  if (page == PAGE_ID_INVALID) return -(long)EBADF;
+  struct file *f = fd_get(desc);
+  if (!f) return -(long)EBADF;
+
+  mod_core.kmutex_lock(&f->lock);
+  if (!f->vnode || f->vnode->type != VNODE_DIR) {
+    mod_core.kmutex_unlock(&f->lock);
+    vfs_fd_release(desc);
+    return -(long)ENOTDIR;
+  }
   if (!f->vnode->mount || !f->vnode->mount->ops ||
-      !f->vnode->mount->ops->readdir)
+      !f->vnode->mount->ops->readdir) {
+    mod_core.kmutex_unlock(&f->lock);
+    vfs_fd_release(desc);
     return -(long)ENOSYS;
-  if (f->offset == GETDENTS_EOF) return 0;
+  }
+  if (f->offset == GETDENTS_EOF) {
+    mod_core.kmutex_unlock(&f->lock);
+    vfs_fd_release(desc);
+    return 0;
+  }
 
   size_t max_entries = count / sizeof(struct dirent);
-  if (max_entries == 0) return -(long)EINVAL;
+  if (max_entries == 0) {
+    mod_core.kmutex_unlock(&f->lock);
+    vfs_fd_release(desc);
+    return -(long)EINVAL;
+  }
 
   uint32_t cookie = f->offset;
   size_t total = 0;
@@ -349,8 +432,12 @@ long vfs_fd_getdents(int desc, page_id_t page, uint16_t off, size_t count) {
     if (n < 0) {
       if (total > 0) {
         f->offset = (cookie == 0) ? GETDENTS_EOF : cookie;
+        mod_core.kmutex_unlock(&f->lock);
+        vfs_fd_release(desc);
         return (long)total;
       }
+      mod_core.kmutex_unlock(&f->lock);
+      vfs_fd_release(desc);
       return (long)n;
     }
     if (n == 0) break;
@@ -377,24 +464,46 @@ long vfs_fd_getdents(int desc, page_id_t page, uint16_t off, size_t count) {
     f->offset = (cookie == 0) ? GETDENTS_EOF : cookie;
   else
     f->offset = GETDENTS_EOF;
+  mod_core.kmutex_unlock(&f->lock);
+  vfs_fd_release(desc);
   return (long)total;
 }
 
 long vfs_fd_getdents64(int desc, void *buf, long count) {
-  if (desc < 0 || desc >= FILE_MAX || !buf) return -(long)EBADF;
-  struct file *f = &fd_pool[desc];
-  if (!f->vnode || f->vnode->type != VNODE_DIR) return -(long)ENOTDIR;
+  if (!buf) return -(long)EBADF;
+  struct file *f = fd_get(desc);
+  if (!f) return -(long)EBADF;
+
+  mod_core.kmutex_lock(&f->lock);
+  if (!f->vnode || f->vnode->type != VNODE_DIR) {
+    mod_core.kmutex_unlock(&f->lock);
+    vfs_fd_release(desc);
+    return -(long)ENOTDIR;
+  }
   if (!f->vnode->mount || !f->vnode->mount->ops ||
-      !f->vnode->mount->ops->readdir)
+      !f->vnode->mount->ops->readdir) {
+    mod_core.kmutex_unlock(&f->lock);
+    vfs_fd_release(desc);
     return -(long)ENOSYS;
-  if (f->offset == GETDENTS_EOF) return 0;
+  }
+  if (f->offset == GETDENTS_EOF) {
+    mod_core.kmutex_unlock(&f->lock);
+    vfs_fd_release(desc);
+    return 0;
+  }
 
   struct dirent entries[8];
   uint32_t cookie = f->offset;
   int n = f->vnode->mount->ops->readdir(f->vnode, entries, 8, &cookie);
-  if (n < 0) return (long)n;
+  if (n < 0) {
+    mod_core.kmutex_unlock(&f->lock);
+    vfs_fd_release(desc);
+    return (long)n;
+  }
   if (n == 0) {
     f->offset = GETDENTS_EOF;
+    mod_core.kmutex_unlock(&f->lock);
+    vfs_fd_release(desc);
     return 0;
   }
 
@@ -418,13 +527,17 @@ long vfs_fd_getdents64(int desc, void *buf, long count) {
   }
 
   f->offset = (cookie == 0) ? GETDENTS_EOF : cookie;
+  mod_core.kmutex_unlock(&f->lock);
+  vfs_fd_release(desc);
   return total;
 }
 
 int vfs_fd_fstatfs(int desc, void *buf) {
-  if (desc < 0 || desc >= FILE_MAX || !buf) return -EBADF;
-  struct file *f = &fd_pool[desc];
+  if (!buf) return -EBADF;
+  struct file *f = fd_get(desc);
+  if (!f) return -EBADF;
 
+  mod_core.kmutex_lock(&f->lock);
   mount_entry_t *mnt = NULL;
   if (f->vnode && f->vnode->mount) mnt = f->vnode->mount;
 
@@ -432,6 +545,8 @@ int vfs_fd_fstatfs(int desc, void *buf) {
   __builtin_memset(&ksf, 0, sizeof(ksf));
   if (mnt && mnt->ops && mnt->ops->statfs) mnt->ops->statfs(mnt, &ksf);
   __builtin_memcpy(buf, &ksf, sizeof(ksf));
+  mod_core.kmutex_unlock(&f->lock);
+  vfs_fd_release(desc);
   return 0;
 }
 
@@ -450,19 +565,27 @@ int vfs_path_statfs(const char *path, void *buf) {
 }
 
 long vfs_fd_fcntl(int desc, int cmd, long arg) {
-  if (desc < 0 || desc >= FILE_MAX) return -(long)EBADF;
-  struct file *f = &fd_pool[desc];
+  struct file *f = fd_get(desc);
+  if (!f) return -(long)EBADF;
 
   /* F_GETFL(3), F_SETFL(4) */
+  mod_core.kmutex_lock(&f->lock);
+  long ret;
   switch (cmd) {
     case 3: /* F_GETFL */
-      return (long)f->flags;
+      ret = (long)f->flags;
+      break;
     case 4: /* F_SETFL */
       f->flags = (f->flags & O_ACCMODE) | ((uint32_t)arg & ~O_ACCMODE);
-      return 0;
+      ret = 0;
+      break;
     default:
-      return -(long)EINVAL;
+      ret = -(long)EINVAL;
+      break;
   }
+  mod_core.kmutex_unlock(&f->lock);
+  vfs_fd_release(desc);
+  return ret;
 }
 
 /* ── Pipe support ────────────────────────────────────────────────────────────
@@ -484,8 +607,14 @@ int fd_pool_alloc_pipe(const struct file_ops *ops, void *priv, uint32_t flags) {
  */
 
 void *vfs_fd_get_priv(int desc) {
-  if (desc < 0 || desc >= FILE_MAX) return NULL;
-  return fd_pool[desc].priv;
+  struct file *f = fd_get(desc);
+  if (!f) return NULL;
+
+  mod_core.kmutex_lock(&f->lock);
+  void *priv = f->priv;
+  mod_core.kmutex_unlock(&f->lock);
+  vfs_fd_release(desc);
+  return priv;
 }
 
 /* ── Compat: fd_stdio_init (transition wrapper) ──────────────────────────────

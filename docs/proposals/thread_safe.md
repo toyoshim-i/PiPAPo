@@ -50,6 +50,7 @@ Recent neutral hardening work started covering:
 - `pipe.c`: pipe pool and ring metadata.
 - `tmpfs.c`: global inode table and data-page accounting.
 - `x68k_iocs.c`: target IOCS traps are serialized with `kmutex_t`.
+- `fd.c`: open-file state is pinned and serialized per `struct file`.
 
 This is not enough to declare the common kernel thread-safe.
 
@@ -91,10 +92,10 @@ Open design point: add a common `arch_in_irq()` or `kernel_in_irq()` helper.
 Targets without nested IRQ tracking can return false initially, but hardware
 IRQ entry points should eventually maintain a nesting counter.
 
-### 2. `fd.c` Shared File State Is Still Racy
+### 2. `fd.c` Shared File State Needs Follow-Up Audits
 
-`fd_pool[]` allocation and refcounts can be protected with `SPIN_FD`, but the
-open-file instance itself still has mutable state:
+`fd_pool[]` allocation and refcounts are protected with `SPIN_FD`, and the
+open-file instance now has a `kmutex_t` for mutable state:
 
 - `struct file.offset`
 - `struct file.flags`
@@ -102,25 +103,18 @@ open-file instance itself still has mutable state:
 - `struct file.priv`
 - close-vs-I/O lifetime
 
-Examples:
+The first pass pins descriptor IDs before I/O, locks the file while reading or
+mutating open-file state, and releases the temporary pin afterwards.  This
+serializes shared offsets across `dup()` / fork-like descriptor sharing.
 
-- two processes sharing a descriptor through `dup()` or fork-like paths can
-  race `read()` offset updates;
-- `lseek()` can interleave with `read()`/`write()`;
-- `getdents()` updates the directory cookie in `offset`;
-- `fcntl(F_SETFL)` can race I/O flag checks;
-- `close()` can zero or reclaim a file while another path still uses it if
-  descriptor lifetime is not pinned.
+Remaining follow-up:
 
-Plan:
-
-- add `kmutex_t lock` to `struct file`;
-- initialize it when a file slot is allocated;
-- take the file mutex around operations that inspect or mutate file state;
-- keep descriptor-pool/refcount changes under `SPIN_FD`;
-- add a short-lived reference or equivalent pin before dropping `SPIN_FD` and
-  entering a potentially blocking file operation;
-- never hold `SPIN_FD` while calling file operations.
+- audit killed-process cleanup for descriptor pins held by interrupted blocking
+  file operations;
+- decide whether `fcntl(F_SETFL)` should be allowed to update nonblocking mode
+  while another shared operation is asleep;
+- split per-driver blocking from file-state mutation if a driver needs
+  concurrent operations on the same open-file instance.
 
 ### 3. Pipe Blocking Needs Lost-Wakeup Review
 

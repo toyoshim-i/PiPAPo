@@ -635,6 +635,20 @@ void tty_set_fg_pgrp(int idx, int pgid) {
 const struct file_ops tty_fops = {tty_read, tty_write, tty_close, tty_ioctl,
                                   tty_poll};
 
-struct file tty_stdin = {&tty_fops, NULL, O_RDONLY, 1u, NULL, 0};
-struct file tty_stdout = {&tty_fops, NULL, O_WRONLY, 1u, NULL, 0};
-struct file tty_stderr = {&tty_fops, NULL, O_WRONLY, 1u, NULL, 0};
+struct file tty_stdin = {
+    .ops = &tty_fops,
+    .flags = O_RDONLY,
+    .refcnt = 1u,
+};
+
+struct file tty_stdout = {
+    .ops = &tty_fops,
+    .flags = O_WRONLY,
+    .refcnt = 1u,
+};
+
+struct file tty_stderr = {
+    .ops = &tty_fops,
+    .flags = O_WRONLY,
+    .refcnt = 1u,
+};
