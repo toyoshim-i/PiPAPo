@@ -25,6 +25,7 @@
  * live trap frame whose pc/ps/a1/a0/a2 it must restore.  Set at every
  * syscall entry; not consulted outside the syscall path. */
 volatile uint32_t xtensa_trap_frame_sp = 0;
+volatile uint32_t xtensa_trap_entry_low_sp = 0;
 
 /* Timer ready flag — set by xtensa_timer_init().
  * arch_preempt_enable() checks this to avoid enabling the timer interrupt
@@ -35,7 +36,7 @@ volatile uint32_t xtensa_trap_ready = 0;
 /* Tick counter — incremented by timer ISR. */
 volatile uint32_t xtensa_tick_count = 0;
 
-void xtensa_syscall_body(XtExcFrame *frame);
+void xtensa_syscall_body(XtExcFrame *frame, uintptr_t entry_low_sp);
 void xtensa_syscall_on_kstack(XtExcFrame *frame, uintptr_t kernel_sp);
 static void xtensa_syscall_handler(XtExcFrame *frame);
 static void xtensa_fault_handler(XtExcFrame *frame);
@@ -147,7 +148,7 @@ uint32_t xtensa_ctx_switch(uint32_t current_sp) {
  * instruction is ILL (PPAP's syscall trap).  The XtExcFrame has all
  * registers saved; we extract syscall args from a2-a7 and call the
  * shared syscall_dispatch(). */
-void xtensa_syscall_body(XtExcFrame *frame) {
+void xtensa_syscall_body(XtExcFrame *frame, uintptr_t entry_low_sp) {
   /* Advance PC past the 3-byte ILL instruction */
   frame->pc += 3;
 
@@ -155,6 +156,7 @@ void xtensa_syscall_body(XtExcFrame *frame) {
    * pc/ps/a0/a1/a2 slots it needs to restore after a signal handler
    * returns via the sa_restorer trampoline. */
   xtensa_trap_frame_sp = (uint32_t)(uintptr_t)frame;
+  xtensa_trap_entry_low_sp = (uint32_t)entry_low_sp;
 
   /* syscall_dispatch(frame, nr, a4, a5):
    *   frame[0..3] = a2,a3,a4,a5 (contiguous in XtExcFrame)
@@ -199,6 +201,8 @@ void xtensa_syscall_body(XtExcFrame *frame) {
     switch_pending = 0;
     sched_switch();
   }
+
+  xtensa_vfork_restore_frame();
 }
 
 /* ESP-IDF exception-table entry point.  Keep this wrapper separate from the
@@ -209,7 +213,7 @@ static void xtensa_syscall_handler(XtExcFrame *frame) {
     xtensa_syscall_on_kstack(frame, (uintptr_t)current->kernel_sp);
     return;
   }
-  xtensa_syscall_body(frame);
+  xtensa_syscall_body(frame, (uintptr_t)frame);
 }
 
 /* ── Fault handler ───────────────────────────────────────────────────────── */
@@ -352,6 +356,47 @@ uint32_t *xtensa_build_vfork_child_frame(uint32_t kernel_sp, uint32_t child_pc,
   *--sp = 0;             /* [SP+4]  ABI scratch */
   *--sp = 0;             /* [SP+0]  ABI scratch */
   return sp;
+}
+
+typedef char xtensa_vfork_frame_fits_pcb
+    [XT_STK_FRMSZ <= sizeof(((pcb_t *)0)->vfork_saved_frame) ? 1 : -1];
+
+/* ESP-IDF enters below XtExcFrame before PPAP switches to kernel_sp.  A
+ * vfork child reuses that user stack, so preserve the complete live resume
+ * slice rather than only the architectural frame at its high end. */
+void xtensa_vfork_save_parent_frame(struct pcb *parent, const void *frame,
+                                    uintptr_t entry_low_sp) {
+  uintptr_t end;
+  const uint32_t *src;
+  uint32_t words;
+  uint32_t capacity;
+
+  if (!parent || !frame) return;
+  end = (uintptr_t)frame + XT_STK_FRMSZ;
+  src = (const uint32_t *)entry_low_sp;
+  words = (uint32_t)((end - entry_low_sp) / sizeof(uint32_t));
+  capacity = (uint32_t)(sizeof(parent->vfork_saved_frame) / sizeof(uint32_t));
+
+  if (entry_low_sp > (uintptr_t)frame || (entry_low_sp & 3u) != 0u ||
+      (end - entry_low_sp) % sizeof(uint32_t) != 0u || words > capacity)
+    __wrap_abort();
+
+  parent->vfork_saved_frame_sp = (uint32_t)entry_low_sp;
+  parent->vfork_saved_frame_words = words;
+  for (uint32_t i = 0; i < words; i++) parent->vfork_saved_frame[i] = src[i];
+  parent->vfork_frame_saved = 1;
+}
+
+void xtensa_vfork_restore_frame(void) {
+  pcb_t *p = current;
+  uint32_t *dst;
+  uint32_t words;
+
+  if (!p || !p->vfork_frame_saved) return;
+  p->vfork_frame_saved = 0;
+  words = p->vfork_saved_frame_words;
+  dst = (uint32_t *)(uintptr_t)p->vfork_saved_frame_sp;
+  for (uint32_t i = 0; i < words; i++) dst[i] = p->vfork_saved_frame[i];
 }
 
 /* Build a "new-process" frame for switch.S (exit marker = 1).

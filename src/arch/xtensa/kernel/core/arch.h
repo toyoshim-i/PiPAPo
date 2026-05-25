@@ -33,6 +33,12 @@ uint32_t *xtensa_build_vfork_child_frame(uint32_t kernel_sp, uint32_t child_pc,
                                          uint32_t child_user_sp,
                                          uint32_t child_a0, uint32_t child_a3);
 
+struct pcb;
+extern volatile uint32_t xtensa_trap_entry_low_sp;
+void xtensa_vfork_save_parent_frame(struct pcb *parent, const void *frame,
+                                    uintptr_t entry_low_sp);
+void xtensa_vfork_restore_frame(void);
+
 /* Pointer to the live trap frame, published by xtensa_syscall_body so
  * sys_rt_sigreturn can locate the frame whose registers it must restore.
  * Mirrors rv32_trap_frame_sp. */

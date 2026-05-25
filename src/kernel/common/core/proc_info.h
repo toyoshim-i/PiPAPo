@@ -135,8 +135,11 @@ typedef struct pcb {
   uint32_t sp;             /* saved stack pointer     (offset 48)      */
   uint32_t kernel_sp;      /* kernel stack top for mscratch (offset 52) */
 #elif defined(__xtensa__)
-  uint32_t sp;        /* saved solicited-frame SP (offset 0)      */
-  uint32_t kernel_sp; /* fixed kernel-stack top   (offset 4)      */
+  uint32_t sp;                   /* saved solicited-frame SP (offset 0)      */
+  uint32_t kernel_sp;            /* fixed kernel-stack top   (offset 4)      */
+  uint32_t vfork_saved_frame_sp; /* low end of parent resume slice */
+  uint32_t vfork_saved_frame_words; /* populated words in slice       */
+  uint32_t vfork_saved_frame[128];  /* exception entry through frame   */
 #elif defined(__ia16__)
   uint32_t sp;           /* saved kernel-stack SP (offset 0)          */
   uint16_t kernel_sp;    /* top of this process's kernel stack slot   */

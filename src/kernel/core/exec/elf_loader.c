@@ -728,10 +728,13 @@ static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
    *
    * Computing argv_sp up front lets us write pointer slots in the
    * frame as we copy each string, so no intermediate kernel arrays are
-   * needed.  Align to 8 bytes on non-m68k for the userland ABI. */
+   * needed.  Xtensa exception entry requires 16-byte stack alignment;
+   * other non-m68k user ABIs use 8-byte alignment here. */
   uint32_t frame_bytes = (uint32_t)(argc + envc + 13) * 4u;
   argv_sp = sp - strings_bytes - frame_bytes;
-  if (cpu_ops->arch_id == CPU_ARCH_M68K)
+  if (cpu_ops->arch_id == CPU_ARCH_XTENSA)
+    argv_sp &= ~15u;
+  else if (cpu_ops->arch_id == CPU_ARCH_M68K)
     argv_sp &= ~3u;
   else
     argv_sp &= ~7u;

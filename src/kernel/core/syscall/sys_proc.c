@@ -1761,13 +1761,12 @@ long sys_vfork(uint32_t *frame) {
    * The child resumes at the instruction after the ILL trap (pc already +3)
    * with a2 = 0 (switch.S .Lnew_process clears a2 before jx).
    *
-   * No-copy vfork: the child shares the parent's user_stack_page.  The
-   * xtensa vfork / execve / _exit stubs push nothing on a1, user code
-   * runs with PS.WOE = 0 (call0 ABI per arch_build_initial_frame) so
-   * there are no window-overflow spills, and the parent's saved register
-   * state lives in its own XtExcFrame on ESP-IDF's exception stack
-   * (kernel memory) — out of reach of the child.  a3 may still point
-   * into the shared user-stack page, which is correct, so no remap. */
+   * No-copy vfork: the child shares the parent's user_stack_page.  ESP-IDF
+   * exception entry leaves a windowed continuation below XtExcFrame on that
+   * stack, and the child's next exception can overwrite either.  Step 7
+   * therefore saves the vulnerable resume slice after patching the parent's
+   * a2 return slot.  The syscall epilogue restores it before the parent
+   * returns to user mode. */
   {
     uint32_t child_pc = frame[-4];      /* pc (already advanced +3) */
     uint32_t child_user_sp = frame[-1]; /* a1 = user SP at syscall */
@@ -1779,6 +1778,7 @@ long sys_vfork(uint32_t *frame) {
       proc_free(child);
       return -(long)ENOMEM;
     }
+
     child->user_stack_page = parent_ustack;
 
     uint32_t *sp = xtensa_build_vfork_child_frame(
@@ -1810,6 +1810,10 @@ long sys_vfork(uint32_t *frame) {
 
   /* 7. Set parent's return value (child PID) in stacked r0 */
   frame[0] = (uint32_t)child->pid;
+
+#if defined(__xtensa__)
+  xtensa_vfork_save_parent_frame(current, frame - 5, xtensa_trap_entry_low_sp);
+#endif
 
 #if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
   /* 7a. No-copy vfork on arm: the HW frame lives in shared user memory.

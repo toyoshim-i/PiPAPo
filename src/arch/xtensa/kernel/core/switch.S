@@ -114,6 +114,24 @@ xtensa_do_yield:
     # a8 is used as the jump target so a3 can be restored from the frame
     # (vfork child needs a3 preserved — the compiler does not clobber it
     # across the inline syscall wrapper).
+    /*
+     * Normalize the window state before changing to the user stack.  The
+     * child runs call0 user code with PS.WOE=0, but the kernel is windowed;
+     * if WINDOWSTART still names older kernel windows, the next exception's
+     * SPILL_ALL_WINDOWS can rotate through stale frames after vfork.
+     */
+    rsr     a5, ps
+    movi    a6, ~(0x00040000 | 0x00030000 | 0x00000F00)
+    and     a5, a5, a6
+    wsr     a5, ps
+    rsync
+    rsr.windowbase a5
+    ssl     a5
+    movi    a5, 1
+    sll     a5, a5
+    wsr.windowstart a5
+    rsync
+
     l32i    a8, a1, SOL_PC            # a8 = entry address (temp for jx)
     l32i    a4, a1, SOL_PS            # a4 = PS
     l32i    a0, a1, SOL_A0            # a0 = return addr (vfork needs this)
@@ -149,6 +167,7 @@ xtensa_syscall_on_kstack:
 
     movsp   a1, a3
     mov     a6, a2                    # call4: our a6 -> callee's a2
+    mov     a7, a4                    # call4: our a7 -> callee's a3
     call4   xtensa_syscall_body
 
     l32i    a3, a1, 16
