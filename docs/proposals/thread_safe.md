@@ -48,7 +48,8 @@ Recent neutral hardening work started covering:
 
 - `fd.c`: descriptor pool allocation and reference counts.
 - `pipe.c`: pipe pool and ring metadata.
-- `tmpfs.c`: global inode table and data-page accounting.
+- `tmpfs.c`: global inode table and data-page accounting now use a
+  sleepable mutex.
 - `x68k_iocs.c`: target IOCS traps are serialized with `kmutex_t`.
 - `fd.c`: open-file state is pinned and serialized per `struct file`.
 - `pipe.c`, `tty.c`, and `poll`: blocking paths use shared sleep helpers.
@@ -140,7 +141,7 @@ Remaining follow-up:
 - decide whether process teardown should use helper APIs for direct
   `PROC_BLOCKED` state changes.
 
-### 4. `tmpfs.c` Uses a Coarse Spinlock
+### 4. `tmpfs.c` Uses a Coarse Sleepable Mutex
 
 `tmpfs` has global metadata:
 
@@ -148,14 +149,15 @@ Remaining follow-up:
 - `data_pages_used`
 - file `size`, timestamps, parent/name links
 
-The current coarse `SPIN_FS` protection removes simple metadata races, but
-some tmpfs paths call allocators or page I/O while holding the lock.
+The current coarse `kmutex_t` protection removes simple metadata races without
+holding a spinlock across allocator or page I/O calls.  This keeps tmpfs
+conservative and correct while allowing page allocation and page copies to stay
+inside the same serialized operation.
 
-Plan:
+Remaining follow-up:
 
-- keep the coarse lock as a first correctness barrier;
-- after `kmutex_t` exists, consider a per-mount tmpfs mutex so operations can
-  safely allocate or block without a spinlock;
+- make the lock per mount if multiple tmpfs instances become supported;
+- split per-inode locks only if contention becomes meaningful;
 - keep `SPIN_FS` only for filesystems with short nonblocking shared-buffer
   critical sections.
 
