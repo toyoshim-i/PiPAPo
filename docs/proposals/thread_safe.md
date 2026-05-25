@@ -39,8 +39,8 @@ Some common subsystems already have reasonable locking boundaries:
 - `page.c` wraps the page allocator with `SPIN_PAGE`.
 - `proc.c` and `sched.c` use `SPIN_PROC` for process-table and scheduler
   state.
-- `vfs.c` uses `SPIN_VFS` for mount/vnode pools.  The VFS scratch pool should
-  be guarded by the same lock.
+- `vfs.c` uses `SPIN_VFS` for the vnode and VFS scratch pools, and for mount
+  mutation; mount lookup/lifetime still needs an audit.
 - `ufs.c` and `vfat.c` serialize shared filesystem buffers with `SPIN_FS`.
 - `klog.c` serializes log output with `SPIN_UART`.
 
@@ -175,17 +175,24 @@ Remaining follow-up:
 - consider a hardware-level serial fallback for crash logs that fault while
   IOCS is already held.
 
-### 6. `kmem_alloc()` Contract Is Too Easy To Violate
+### 6. `kmem_alloc()` Contract Audit
 
 `kmem_alloc()` and `kmem_free()` are intentionally low-level and unlocked.
 Callers are expected to choose the correct subsystem lock.  The VFS scratch
-bug came from one caller missing that convention.
+bug came from one caller missing that convention.  The allocator headers now
+state the unlocked contract explicitly.
 
-Plan:
+The current production caller audit found only the VFS pools:
 
-- document `kmem_alloc()` as unlocked in `kmem.h` and `mod_core.h`;
-- audit every direct `kmem_alloc()` / `kmem_free()` caller;
-- prefer subsystem wrapper APIs so callers do not touch raw pools directly;
+- `vnode_pool` allocations, releases, and free-count queries are under
+  `SPIN_VFS`;
+- `vfs_scratch_pool` allocations and releases are under `SPIN_VFS`;
+- `vfs_umount()` frees its root vnode directly only while already holding
+  `SPIN_VFS`, avoiding recursive acquisition through `vfs_vnode_release()`.
+
+Remaining follow-up:
+
+- prefer subsystem wrapper APIs if additional pools appear;
 - optionally add debug assertions for known pools if a lock-tracking facility
   appears.
 
@@ -229,7 +236,8 @@ Plan:
 ### Phase 1: Contracts And Audits
 
 1. Add a shared document section or comments for spinlock IDs and ownership.
-2. Audit all `kmem_alloc()` / `kmem_free()` callers.
+2. Audit all `kmem_alloc()` / `kmem_free()` callers. (done: VFS pools use
+   `SPIN_VFS`)
 3. Audit all raw `wait_channel` / `PROC_BLOCKED` users.
 4. Audit all `static` mutable globals under `src/kernel`.
 5. Mark boot-only registries as boot-only or add locks.

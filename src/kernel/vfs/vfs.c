@@ -32,13 +32,14 @@
 /* Mount table — up to VFS_MOUNT_MAX entries.  Zero-initialised by BSS. */
 mount_entry_t vfs_mount_table[VFS_MOUNT_MAX];
 
-/* Vnode pool — VFS_VNODE_MAX objects managed by kmem. */
+/* Vnode pool — VFS_VNODE_MAX objects managed by kmem under SPIN_VFS. */
 static vnode_t vnode_storage[VFS_VNODE_MAX];
 static kmem_pool_t vnode_pool;
 
 /* VFS scratch buffer pool — shared across namei, fd, ufs for temporary
  * path strings, inode structs, and name components.  8 × 128 B = 1 KB.
- * Worst-case simultaneous: 5 namei + 1 fd + 2 ufs = 8. */
+ * Worst-case simultaneous: 5 namei + 1 fd + 2 ufs = 8.  The kmem free
+ * list is protected by SPIN_VFS through vfs_scratch_alloc/free(). */
 #define VFS_SCRATCH_POOL_SIZE 8
 static uint8_t vfs_scratch_storage[VFS_SCRATCH_POOL_SIZE][VFS_PATH_MAX]
     __attribute__((aligned(4)));
