@@ -148,6 +148,7 @@ void vfs_notify(int event) {
       fbcon_set_mode(FBCON_MODE_COMPACT);
       klog_set_logger(KLOG_LOGGER_SECONDARY, fbcon_putc, fbcon_flush);
       tty_set_backend(TTY_DISPLAY, &fbcon_backend);
+      tty_set_console(TTY_DISPLAY);
       gpio_set_level(DISPLAY_BL_PIN, 1); /* backlight on, suppress garbage */
       klogf("LCD: console mirrored to display, backlight on\n");
 
