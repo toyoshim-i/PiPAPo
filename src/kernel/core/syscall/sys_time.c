@@ -9,6 +9,7 @@
 #include "common/errno.h"
 #include "common/time.h"
 #include "kernel/common/config.h"
+#include "kernel/common/spinlock.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/syscall/syscall.h"
@@ -18,19 +19,28 @@
 
 /* Kernel wallclock: seconds-since-epoch at tick 0.  Zero until
  * set via sys_settimeofday (or a future RTC seed).  Current wallclock
- * is time_boot_epoch + sched_get_ticks()/PPAP_TICK_HZ. */
+ * is time_boot_epoch + sched_get_ticks()/PPAP_TICK_HZ.  Readers and
+ * setters pair the epoch with their tick snapshot under SPIN_TIME. */
 static uint32_t time_boot_epoch;
 
 void sys_time_now(uint32_t *sec_out, uint32_t *frac_ticks_out) {
+  uint32_t saved = spin_lock_irqsave(SPIN_TIME);
   uint32_t ticks = sched_get_ticks();
-  uint32_t sec = time_boot_epoch + ticks / PPAP_TICK_HZ;
+  uint32_t epoch = time_boot_epoch;
+  spin_unlock_irqrestore(SPIN_TIME, saved);
+
+  uint32_t sec = epoch + ticks / PPAP_TICK_HZ;
   uint32_t frac = ticks % PPAP_TICK_HZ;
   if (sec_out) *sec_out = sec;
   if (frac_ticks_out) *frac_ticks_out = frac;
 }
 
 uint32_t time_now_sec(void) {
-  return time_boot_epoch + sched_get_ticks() / PPAP_TICK_HZ;
+  uint32_t saved = spin_lock_irqsave(SPIN_TIME);
+  uint32_t ticks = sched_get_ticks();
+  uint32_t epoch = time_boot_epoch;
+  spin_unlock_irqrestore(SPIN_TIME, saved);
+  return epoch + ticks / PPAP_TICK_HZ;
 }
 
 /* Seed the kernel wallclock — pins time_now_sec() to return `sec`
@@ -38,8 +48,10 @@ uint32_t time_now_sec(void) {
  * Used by sys_settimeofday (user-initiated) and by target init
  * hooks that read an RTC on boot. */
 void time_set_wallclock(uint32_t sec) {
+  uint32_t saved = spin_lock_irqsave(SPIN_TIME);
   uint32_t ticks = sched_get_ticks();
   time_boot_epoch = sec - ticks / PPAP_TICK_HZ;
+  spin_unlock_irqrestore(SPIN_TIME, saved);
 }
 
 static int timespec32_write_remaining(uintptr_t rem_ptr) {

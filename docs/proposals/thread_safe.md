@@ -1,6 +1,6 @@
 # Kernel Thread-Safety Plan
 
-**Status:** active.  Progress tracked through `d388720a` on May 26, 2026.
+**Status:** active.  Progress tracked through `4991ab47` on May 26, 2026.
 This is a work plan for making common kernel code safe under preemption and,
 where applicable, dual-core execution.
 
@@ -46,6 +46,8 @@ Some common subsystems already have reasonable locking boundaries:
   block-device registration APIs are boot-only contracts.
 - `procfs.c` uses `SPIN_VFS` for mount-table snapshots and its mutable mount
   timestamp; battery callback registration is a boot-only contract.
+- `sys_time.c` pairs runtime wallclock epoch updates and timestamp reads under
+  `SPIN_TIME`.
 - `ufs.c` and `vfat.c` serialize shared filesystem buffers with `SPIN_FS`.
 - `klog.c` serializes log output with `SPIN_UART`.
 
@@ -72,10 +74,9 @@ Status labels used below:
 
 The current lane is the static mutable-global audit in Phase 1.  The VFS
 scratch pool, VFS allocator contract, and mount-table lifetime are covered;
-devfs runtime state and its boot-time registry contracts are covered.  The
-current review item protects mutable procfs mount state and documents its
-remaining hook contract.  Process-owned state and remaining registries are
-next.
+devfs and procfs runtime state and their boot-time registry contracts are
+covered.  The current review item protects runtime wallclock state.
+Process-owned state and remaining registries are next.
 
 Completed implementation commits:
 
@@ -91,6 +92,7 @@ Completed implementation commits:
 | `690791f2` | VFS `kmem` lock-ownership audit |
 | `90d8fe51` | VFS mount-entry lifetime and regression coverage |
 | `d388720a` | Devfs runtime state and boot-only registry contracts |
+| `4991ab47` | Procfs mount state and boot-only battery hook contract |
 
 Estimated remaining review-sized iterations:
 
@@ -292,6 +294,13 @@ Current audit result:
   state and devfs mount timestamp use `SPIN_DEVFS`, while the procfs mount
   timestamp uses `SPIN_VFS`.
 
+Runtime wallclock state is also shared:
+
+- `time_set_wallclock()` may be called by `settimeofday()` after scheduling
+  begins, while syscall and filesystem paths read timestamps;
+- the current review item adds `SPIN_TIME` so the mutable epoch and each tick
+  snapshot are observed as one wallclock calculation.
+
 Remaining follow-up:
 
 - complete the inventory of any remaining target registration or hook tables;
@@ -331,11 +340,12 @@ Plan:
    (`e6a43d11`, `b7b1f1fe`).
 4. `active` Audit all `static` mutable globals under `src/kernel`.  VFS
    scratch and mount-entry lifetime are fixed; devfs runtime state is covered
-   (`1b898547`, `90d8fe51`, `d388720a`); procfs mutable mount state is the
-   current review item; continue the inventory.
+   (`1b898547`, `90d8fe51`, `d388720a`); procfs mutable mount state is fixed
+   (`4991ab47`); wallclock epoch synchronization is the current review item;
+   continue the inventory.
 5. `partial` Mark boot-only registries as boot-only or add locks.
    Block-device, devfs hook, and TTY backend setup contracts are documented
-   (`d388720a`); procfs battery registration is the current review item;
+   (`d388720a`); procfs battery registration is documented (`4991ab47`);
    remaining target registries still need inventory.
 
 ### Phase 2: Sleepable Mutex

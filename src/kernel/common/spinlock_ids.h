@@ -24,6 +24,7 @@ enum {
   SPIN_FD = 9,     /* global open-file descriptor pool */
   SPIN_PIPE = 10,  /* pipe pool and ring metadata */
   SPIN_DEVFS = 11, /* devfs runtime pseudo-device state */
+  SPIN_TIME = 12,  /* wallclock epoch and tick snapshot pairing */
 };
 
 #endif /* PPAP_KERNEL_COMMON_SPINLOCK_IDS_H */
