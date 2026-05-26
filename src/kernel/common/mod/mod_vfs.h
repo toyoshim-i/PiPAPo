@@ -339,8 +339,8 @@ MOD_FUNC(vfs, int, mount_by_fstype, const char *, const char *, const char *,
  *   path       Pathname to locate.
  *   remainder  Output: path portion after mount point.
  *
- * Returns mount_entry_t pointer, or NULL (should not happen if
- * root "/" is mounted).
+ * Returns an active mount entry with one reference held on its root vnode,
+ * or NULL.  The caller must release `mnt->root` after using the entry.
  */
 MOD_FUNC(vfs, mount_entry_t *, mount_find, const char *, const char **)
 

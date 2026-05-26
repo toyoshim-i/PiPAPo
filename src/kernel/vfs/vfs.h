@@ -33,6 +33,8 @@ int vfs_path_rename(const char *oldpath, const char *newpath);
 int vfs_path_utimes(const char *path, uint32_t atime, uint32_t mtime);
 int vfs_path_chmod(const char *path, uint32_t mode);
 int vfs_path_link(const char *oldpath, const char *newpath);
+/* Returns an active mount with one reference held on mnt->root.  Release
+ * that vnode when the caller no longer accesses the mount entry. */
 mount_entry_t *vfs_mount_find(const char *path, const char **remainder);
 int vfs_path_statfs(const char *path, void *buf);
 int vfs_path_unlink(const char *path);
@@ -45,7 +47,7 @@ uint32_t vnode_free_count(void);
  * exactly 128 B = VFS_PATH_MAX), name components, etc.
  *
  * Allocated from DS=0 BSS.  Saves kernel stack space by replacing
- * large stack-local arrays.  Single-threaded kernel — no locking needed.
+ * large stack-local arrays.  Alloc/free are serialized by SPIN_VFS.
  *
  * Callers MUST free on every return path (including errors).
  */

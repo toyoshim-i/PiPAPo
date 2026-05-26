@@ -39,8 +39,8 @@ Some common subsystems already have reasonable locking boundaries:
 - `page.c` wraps the page allocator with `SPIN_PAGE`.
 - `proc.c` and `sched.c` use `SPIN_PROC` for process-table and scheduler
   state.
-- `vfs.c` uses `SPIN_VFS` for the vnode and VFS scratch pools, and for mount
-  mutation; mount lookup/lifetime still needs an audit.
+- `vfs.c` uses `SPIN_VFS` for the vnode and VFS scratch pools and for mount
+  mutation.  Path resolution pins an active mount through its root vnode.
 - `ufs.c` and `vfat.c` serialize shared filesystem buffers with `SPIN_FS`.
 - `klog.c` serializes log output with `SPIN_UART`.
 
@@ -196,7 +196,28 @@ Remaining follow-up:
 - optionally add debug assertions for known pools if a lock-tracking facility
   appears.
 
-### 7. Boot-Only Registries Need Explicit Contracts
+### 7. VFS Mount Entry Lifetime
+
+Mount entries are shared by path lookup, open descriptors, `statfs`, and
+`/proc/mounts`, while `mount()` and `umount()` can mutate or reuse entries.
+
+Current protection:
+
+- `MNT_STATE_MOUNTING` reserves a slot before a mount callback runs and keeps
+  partial state invisible to readers;
+- duplicate or concurrent mounts at the same path return `-EBUSY`;
+- `vfs_mount_find()` takes a reference on the selected mount root, so path
+  walking and `statfs` cannot race with unmount entry reuse;
+- non-root vnodes and additional root references make `umount()` return
+  `-EBUSY`;
+- `/proc/mounts` formats the table while holding `SPIN_VFS`.
+
+Remaining follow-up:
+
+- add a targeted concurrent mount/unmount stress test once process-level
+  concurrency test helpers exist.
+
+### 8. Boot-Only Registries Need Explicit Contracts
 
 Some global registries are currently unprotected because they are expected to
 be initialized before user scheduling starts:
@@ -211,7 +232,7 @@ Plan:
 - assert or guard if runtime registration is expected later;
 - use simple spinlocks if lookup and registration can happen concurrently.
 
-### 8. Process-Local State Still Needs Lifecycle Audit
+### 9. Process-Local State Still Needs Lifecycle Audit
 
 Process fields are often assumed to be touched only by `current`, but signals,
 exit/reparenting, wait, vfork, and scheduler paths can touch another process:

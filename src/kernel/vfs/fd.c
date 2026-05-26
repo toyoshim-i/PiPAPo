@@ -561,6 +561,7 @@ int vfs_path_statfs(const char *path, void *buf) {
   __builtin_memset(&ksf, 0, sizeof(ksf));
   if (mnt->ops && mnt->ops->statfs) mnt->ops->statfs(mnt, &ksf);
   __builtin_memcpy(buf, &ksf, sizeof(ksf));
+  vfs_vnode_release(mnt->root);
   return 0;
 }
 

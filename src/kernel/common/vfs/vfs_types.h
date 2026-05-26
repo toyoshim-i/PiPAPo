@@ -15,8 +15,9 @@
  * the kmem allocator.  Vnodes are allocated on open/lookup and freed
  * when refcnt drops to zero.
  *
- * The mount table is a static array of VFS_MOUNT_MAX entries.  Mounts
- * are never removed in Phase 2 (romfs, devfs, procfs are permanent).
+ * The mount table is a static array of VFS_MOUNT_MAX entries.  Dynamic
+ * mount and unmount operations retain each active entry while referenced
+ * vnodes are live.
  */
 
 #ifndef PPAP_KERNEL_COMMON_VFS_VFS_TYPES_H
@@ -50,6 +51,11 @@ _Static_assert(
  */
 
 #define MNT_RDONLY 0x01u /* read-only mount (romfs, procfs)             */
+
+/* mount_entry.active lifecycle states, protected by SPIN_VFS. */
+#define MNT_STATE_FREE 0u
+#define MNT_STATE_ACTIVE 1u
+#define MNT_STATE_MOUNTING 2u
 
 /* Linux mount flags used by busybox mount(2) — only MS_RDONLY is honoured */
 #define MS_RDONLY 1u
@@ -161,7 +167,7 @@ struct mount_entry {
   char path[VFS_PATH_MAX]; /* mount point (e.g., "/", "/dev")  */
   uint8_t path_len;        /* strlen(path) — cached            */
   uint8_t flags;           /* MNT_RDONLY, etc.                  */
-  uint8_t active;          /* 1 = in use, 0 = free slot        */
+  uint8_t active;          /* MNT_STATE_* lifecycle state      */
   uint8_t _pad;
   const vfs_ops_t *ops; /* FS driver operations             */
   vnode_t *root;        /* root vnode of this mount         */

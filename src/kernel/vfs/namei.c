@@ -114,13 +114,15 @@ static int path_normalize(const char *path, char *buf, int bufsiz) {
  * Check if `resolved` exactly matches a mount point.  Uses vfs_mount_find()
  * and verifies that the remainder is empty (exact match, not just a prefix).
  *
- * Returns the matching mount entry, or NULL if no exact match.
+ * Returns the matching mount entry with one reference held on its root
+ * vnode, or NULL if no exact match.
  */
-static mount_entry_t *mount_at(const char *resolved) {
+static mount_entry_t *mount_at_acquire(const char *resolved) {
   const char *rem = NULL;
   mount_entry_t *mnt = vfs_mount_find(resolved, &rem);
 
   if (mnt && rem && *rem == '\0') return mnt;
+  if (mnt) vfs_vnode_release(mnt->root);
   return NULL;
 }
 
@@ -156,12 +158,11 @@ restart:
   if (symloop >= VFS_SYMLOOP_MAX) WALK_RETURN(-ELOOP);
 
   /* Find the root mount */
-  mount_entry_t *root_mnt = mount_at("/");
-  if (!root_mnt || !root_mnt->root) WALK_RETURN(-ENOENT);
+  mount_entry_t *root_mnt = mount_at_acquire("/");
+  if (!root_mnt) WALK_RETURN(-ENOENT);
 
   /* Handle bare "/" */
   if (normalized[0] == '/' && normalized[1] == '\0') {
-    vfs_vnode_acquire(root_mnt->root);
     *result = root_mnt->root;
     WALK_RETURN(0);
   }
@@ -169,20 +170,14 @@ restart:
   /*
    * Walk the path component by component.
    *
-   * `cur` is the current directory vnode.  It starts as the root mount's
-   * root vnode (not ref'd by us — the mount holds it).  After each FS
-   * lookup, `cur` is replaced with the newly-allocated child vnode
-   * (refcnt = 1 from vfs_vnode_alloc in the FS driver's lookup).
-   *
-   * `cur_from_lookup` tracks whether we own a reference to `cur` that
-   * needs vfs_vnode_release() on cleanup.  Mount root vnodes are permanent
-   * (owned by the mount entry), so we don't put them.
+   * `cur` is the current directory vnode and always carries one reference
+   * owned by this walk.  Mount roots arrive pinned by mount_at_acquire();
+   * children arrive with refcnt = 1 from the FS driver's lookup.
    */
   int rlen = 0;
   resolved[0] = '\0';
 
   vnode_t *cur = root_mnt->root;
-  int cur_from_lookup = 0; /* 0 = mount root, 1 = from FS lookup */
 
   const char *p = normalized + 1; /* skip leading '/' */
 
@@ -193,7 +188,7 @@ restart:
 
     /* Current vnode must be a directory */
     if (cur->type != VNODE_DIR) {
-      if (cur_from_lookup) vfs_vnode_release(cur);
+      vfs_vnode_release(cur);
       WALK_RETURN(-ENOTDIR);
     }
 
@@ -202,14 +197,14 @@ restart:
     while (*p && *p != '/' && i < VFS_NAME_MAX) comp[i++] = *p++;
     if (*p && *p != '/') {
       /* Component exceeds VFS_NAME_MAX */
-      if (cur_from_lookup) vfs_vnode_release(cur);
+      vfs_vnode_release(cur);
       WALK_RETURN(-ENAMETOOLONG);
     }
     comp[i] = '\0';
 
     /* Build the resolved path: append "/component" */
     if (rlen + 1 + i >= VFS_PATH_MAX) {
-      if (cur_from_lookup) vfs_vnode_release(cur);
+      vfs_vnode_release(cur);
       WALK_RETURN(-ENAMETOOLONG);
     }
     resolved[rlen++] = '/';
@@ -222,37 +217,38 @@ restart:
      * that mount's root vnode.  This means mount-point directories
      * do NOT need to exist in the underlying FS.
      */
-    mount_entry_t *child_mnt = mount_at(resolved);
-    if (child_mnt && child_mnt->root &&
-        child_mnt != (cur_from_lookup ? cur->mount : root_mnt)) {
-      /* Cross into the new mount */
-      if (cur_from_lookup) vfs_vnode_release(cur);
-      cur = child_mnt->root;
-      cur_from_lookup = 0; /* mount root — don't put */
-      continue;
+    mount_entry_t *child_mnt = mount_at_acquire(resolved);
+    if (child_mnt) {
+      if (child_mnt != cur->mount) {
+        /* Cross into the new mount. */
+        vfs_vnode_release(cur);
+        cur = child_mnt->root;
+        continue;
+      }
+      /* The current mount already covers this path; discard the extra pin. */
+      vfs_vnode_release(child_mnt->root);
     }
 
     /* ── FS lookup ────────────────────────────────────────────────
      * Ask the current directory's FS driver to find the child.
-     * Use cur->mount when set (always valid for mount roots and
-     * for vnodes returned by FS lookup); fall back to root_mnt
-     * only for the initial root vnode before any mount crossing.
+     * The reference held on cur pins its mount until the lookup has
+     * returned a referenced child.
      */
-    mount_entry_t *cur_mnt = cur->mount ? cur->mount : root_mnt;
+    mount_entry_t *cur_mnt = cur->mount;
     if (!cur_mnt || !cur_mnt->ops || !cur_mnt->ops->lookup) {
-      if (cur_from_lookup) vfs_vnode_release(cur);
+      vfs_vnode_release(cur);
       WALK_RETURN(-ENOENT);
     }
 
     vnode_t *child = NULL;
     int err = cur_mnt->ops->lookup(cur, comp, &child);
     if (err) {
-      if (cur_from_lookup) vfs_vnode_release(cur);
+      vfs_vnode_release(cur);
       WALK_RETURN(err);
     }
 
-    /* Release the previous directory vnode (if we own it) */
-    if (cur_from_lookup) vfs_vnode_release(cur);
+    /* The child reference now pins the same mount for subsequent work. */
+    vfs_vnode_release(cur);
 
     /* ── Symlink handling ─────────────────────────────────────────
      * Read the link target, build a new absolute path (incorporating
@@ -362,16 +358,9 @@ restart:
 
     /* Regular file or directory — advance */
     cur = child;
-    cur_from_lookup = 1;
   }
 
-  /* Reached the end of the path — `cur` is the result */
-  if (!cur_from_lookup) {
-    /* Result is a mount root — add a reference for the caller */
-    vfs_vnode_acquire(cur);
-  }
-  /* else: cur has refcnt = 1 from the last FS lookup — caller owns it */
-
+  /* Reached the end of the path; the caller inherits our reference. */
   *result = cur;
   WALK_RETURN(0);
 #undef WALK_RETURN

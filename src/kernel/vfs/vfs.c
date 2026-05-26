@@ -58,7 +58,8 @@ void vfs_init(void) {
   klog_init_logger();
 
   /* Zero the mount table (BSS guarantees this, but be explicit) */
-  for (int i = 0; i < VFS_MOUNT_MAX; i++) vfs_mount_table[i].active = 0;
+  for (int i = 0; i < VFS_MOUNT_MAX; i++)
+    vfs_mount_table[i].active = MNT_STATE_FREE;
   mount_count = 0;
 
   /* Initialise the vnode slab pool */
@@ -154,19 +155,6 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
 
   uint32_t saved = spin_lock_irqsave(SPIN_VFS);
 
-  /* Find a free slot */
-  mount_entry_t *mnt = NULL;
-  for (int i = 0; i < VFS_MOUNT_MAX; i++) {
-    if (!vfs_mount_table[i].active) {
-      mnt = &vfs_mount_table[i];
-      break;
-    }
-  }
-  if (!mnt) {
-    spin_unlock_irqrestore(SPIN_VFS, saved);
-    return -ENOMEM;
-  }
-
   /* Copy the mount point path */
   size_t plen = __builtin_strlen(path);
   if (plen >= VFS_PATH_MAX) {
@@ -177,6 +165,31 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
   /* Strip trailing '/' except for the root mount */
   while (plen > 1 && path[plen - 1] == '/') plen--;
 
+  /* Reject an existing or concurrently initializing mount at this path. */
+  for (int i = 0; i < VFS_MOUNT_MAX; i++) {
+    mount_entry_t *existing = &vfs_mount_table[i];
+    if (existing->active == MNT_STATE_FREE || existing->path_len != plen)
+      continue;
+    if (__builtin_strncmp(existing->path, path, plen) == 0 &&
+        existing->path[plen] == '\0') {
+      spin_unlock_irqrestore(SPIN_VFS, saved);
+      return -EBUSY;
+    }
+  }
+
+  /* Find a free slot.  MNT_STATE_MOUNTING reserves it across the callback. */
+  mount_entry_t *mnt = NULL;
+  for (int i = 0; i < VFS_MOUNT_MAX; i++) {
+    if (vfs_mount_table[i].active == MNT_STATE_FREE) {
+      mnt = &vfs_mount_table[i];
+      break;
+    }
+  }
+  if (!mnt) {
+    spin_unlock_irqrestore(SPIN_VFS, saved);
+    return -ENOMEM;
+  }
+
   __builtin_memcpy(mnt->path, path, plen);
   mnt->path[plen] = '\0';
   mnt->path_len = (uint8_t)plen;
@@ -184,6 +197,7 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
   mnt->ops = ops;
   mnt->root = NULL;
   mnt->sb_priv = NULL;
+  mnt->active = MNT_STATE_MOUNTING;
 
   /* Release SPIN_VFS before calling the FS mount callback.
    * The callback may call vfs_vnode_alloc() which also acquires SPIN_VFS —
@@ -197,13 +211,13 @@ int vfs_mount(const char *path, const vfs_ops_t *ops, uint8_t flags,
   if (ops->mount) err = ops->mount(mnt, dev_data);
   if (err) {
     uint32_t s2 = spin_lock_irqsave(SPIN_VFS);
-    mnt->active = 0;
+    mnt->active = MNT_STATE_FREE;
     spin_unlock_irqrestore(SPIN_VFS, s2);
     return err;
   }
 
   saved = spin_lock_irqsave(SPIN_VFS);
-  mnt->active = 1;
+  mnt->active = MNT_STATE_ACTIVE;
   mount_count++;
   spin_unlock_irqrestore(SPIN_VFS, saved);
 
@@ -224,7 +238,7 @@ int vfs_umount(const char *path) {
   mount_entry_t *mnt = NULL;
   for (int i = 0; i < VFS_MOUNT_MAX; i++) {
     mount_entry_t *m = &vfs_mount_table[i];
-    if (!m->active) continue;
+    if (m->active != MNT_STATE_ACTIVE) continue;
     if (__builtin_strcmp(m->path, path) == 0) {
       mnt = m;
       break;
@@ -235,7 +249,15 @@ int vfs_umount(const char *path) {
     return -ENOENT;
   }
 
-  /* Check no vnodes still reference this mount (scan vnode pool) */
+  /* The mount owns one root reference.  Any additional root reference
+   * pins the mount while path resolution or a mount-scoped operation uses
+   * the entry. */
+  if (mnt->root && mnt->root->refcnt > 1u) {
+    spin_unlock_irqrestore(SPIN_VFS, saved);
+    return -EBUSY;
+  }
+
+  /* Check no non-root vnodes still reference this mount (scan vnode pool). */
   for (int i = 0; i < VFS_VNODE_MAX; i++) {
     if (vnode_storage[i].refcnt > 0 && vnode_storage[i].mount == mnt &&
         &vnode_storage[i] != mnt->root) {
@@ -252,7 +274,7 @@ int vfs_umount(const char *path) {
     if (mnt->root->refcnt == 0) mod_core.kmem_free(&vnode_pool, mnt->root);
   }
   mnt->root = NULL;
-  mnt->active = 0;
+  mnt->active = MNT_STATE_FREE;
   mount_count--;
 
   spin_unlock_irqrestore(SPIN_VFS, saved);
@@ -268,10 +290,11 @@ int vfs_umount(const char *path) {
 mount_entry_t *vfs_mount_find(const char *path, const char **remainder) {
   mount_entry_t *best = NULL;
   uint8_t best_len = 0;
+  uint32_t saved = spin_lock_irqsave(SPIN_VFS);
 
   for (int i = 0; i < VFS_MOUNT_MAX; i++) {
     mount_entry_t *m = &vfs_mount_table[i];
-    if (!m->active) continue;
+    if (m->active != MNT_STATE_ACTIVE) continue;
 
     uint8_t mlen = m->path_len;
 
@@ -298,6 +321,12 @@ mount_entry_t *vfs_mount_find(const char *path, const char **remainder) {
     }
   }
 
+  if (best && best->root) {
+    best->root->refcnt++;
+  } else {
+    best = NULL;
+  }
+
   if (best && remainder) {
     const char *r = path + best_len;
     /* Skip leading '/' in the remainder */
@@ -305,6 +334,7 @@ mount_entry_t *vfs_mount_find(const char *path, const char **remainder) {
     *remainder = r;
   }
 
+  spin_unlock_irqrestore(SPIN_VFS, saved);
   return best;
 }
 

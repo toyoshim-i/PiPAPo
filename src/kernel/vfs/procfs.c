@@ -30,6 +30,7 @@
 #include "kernel/common/core/sched_info.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/common/spinlock.h"
 #include "kernel/common/version.h"
 #include "kernel/vfs/devfs.h"
 #include "kernel/vfs/romfs.h"
@@ -252,10 +253,11 @@ static const char *ops_to_fstype(const vfs_ops_t *ops) {
 
 static int gen_mounts(char *buf, int bufsiz) {
   int pos = 0;
+  uint32_t saved = spin_lock_irqsave(SPIN_VFS);
 
   for (uint32_t i = 0; i < VFS_MOUNT_MAX; i++) {
     const mount_entry_t *mnt = &vfs_mount_table[i];
-    if (!mnt->active) continue;
+    if (mnt->active != MNT_STATE_ACTIVE) continue;
 
     const char *fstype = ops_to_fstype(mnt->ops);
 
@@ -273,6 +275,7 @@ static int gen_mounts(char *buf, int bufsiz) {
     pos = fmt_append(buf, pos, bufsiz, " 0 0\n");
   }
 
+  spin_unlock_irqrestore(SPIN_VFS, saved);
   return pos;
 }
 

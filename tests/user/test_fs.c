@@ -1,6 +1,6 @@
 /*
  * test_fs.c — Filesystem syscalls: open, close, read, lseek, getcwd,
- *             chdir, access on romfs files
+ *             chdir, access, and dynamic mount lifetime
  */
 
 #include "utest.h"
@@ -90,6 +90,30 @@ int main(void)
     /* 14. close invalid fd */
     ret = close(999);
     UT_ASSERT(ret < 0, "close bad fd fails");
+
+    /* 15. a dynamic mount reserves its target until it is unmounted */
+    ret = mount(0, "/vfs_test", "procfs", 0, 0);
+    UT_ASSERT_EQ(ret, 0);
+    ret = mount(0, "/vfs_test", "procfs", 0, 0);
+    UT_ASSERT(ret < 0, "duplicate mount fails");
+
+    /* 16. an open mount root keeps the mount busy */
+    fd = open("/vfs_test", O_RDONLY, 0);
+    UT_ASSERT(fd >= 0, "open mounted root");
+    ret = umount2("/vfs_test", 0);
+    UT_ASSERT(ret < 0, "umount open root fails");
+    if (fd >= 0) close(fd);
+    ret = umount2("/vfs_test", 0);
+    UT_ASSERT_EQ(ret, 0);
+
+    /* 17. statfs releases its transient mount reference */
+    struct statfs sf;
+    ret = mount(0, "/vfs_test", "procfs", 0, 0);
+    UT_ASSERT_EQ(ret, 0);
+    ret = statfs64("/vfs_test", sizeof(sf), &sf);
+    UT_ASSERT_EQ(ret, 0);
+    ret = umount2("/vfs_test", 0);
+    UT_ASSERT_EQ(ret, 0);
 
     UT_SUMMARY("test_fs");
 }
