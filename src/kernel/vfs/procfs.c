@@ -523,15 +523,16 @@ static int gen_pid_subsys(char *buf, int bufsiz, const pcb_t *p) {
 /* ── procfs_mount ───────────────────────────────────────────────────────────
  */
 
-/* Captured at mount so every procfs entry reports a consistent
- * "created-at-boot" timestamp via .stat.  See the identical pattern
- * in devfs_mount / devfs_stat. */
+/* Protected by SPIN_VFS because user processes can mount procfs at runtime. */
 static uint32_t procfs_mount_epoch;
 
 static int procfs_mount(mount_entry_t *mnt, const void *dev_data) {
   (void)dev_data;
 
-  procfs_mount_epoch = mod_core.time_now_sec();
+  uint32_t epoch = mod_core.time_now_sec();
+  uint32_t saved = spin_lock_irqsave(SPIN_VFS);
+  procfs_mount_epoch = epoch;
+  spin_unlock_irqrestore(SPIN_VFS, saved);
 
   vnode_t *root = mod_vfs.vnode_alloc();
   if (!root) return -ENOMEM;
@@ -808,12 +809,16 @@ static int procfs_readdir(vnode_t *dir, struct dirent *entries,
  */
 
 static int procfs_stat(vnode_t *vn, struct stat *st) {
+  uint32_t saved = spin_lock_irqsave(SPIN_VFS);
+  uint32_t epoch = procfs_mount_epoch;
+  spin_unlock_irqrestore(SPIN_VFS, saved);
+
   st->st_ino = vn->ino;
   st->st_mode = vn->mode;
   st->st_nlink = 1;
   st->st_size = vn->size;
-  st->st_mtime = procfs_mount_epoch;
-  st->st_ctime = procfs_mount_epoch;
+  st->st_mtime = epoch;
+  st->st_ctime = epoch;
   st->st_atime = 0;
   return 0;
 }

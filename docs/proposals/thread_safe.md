@@ -1,6 +1,6 @@
 # Kernel Thread-Safety Plan
 
-**Status:** active.  Progress tracked through `90d8fe51` on May 26, 2026.
+**Status:** active.  Progress tracked through `d388720a` on May 26, 2026.
 This is a work plan for making common kernel code safe under preemption and,
 where applicable, dual-core execution.
 
@@ -44,6 +44,8 @@ Some common subsystems already have reasonable locking boundaries:
   mutation.  Path resolution pins an active mount through its root vnode.
 - `devfs.c` uses `SPIN_DEVFS` for runtime pseudo-device state; callback and
   block-device registration APIs are boot-only contracts.
+- `procfs.c` uses `SPIN_VFS` for mount-table snapshots and its mutable mount
+  timestamp; battery callback registration is a boot-only contract.
 - `ufs.c` and `vfat.c` serialize shared filesystem buffers with `SPIN_FS`.
 - `klog.c` serializes log output with `SPIN_UART`.
 
@@ -70,9 +72,10 @@ Status labels used below:
 
 The current lane is the static mutable-global audit in Phase 1.  The VFS
 scratch pool, VFS allocator contract, and mount-table lifetime are covered;
-the current pending change protects devfs runtime state and documents its
-boot-time registry contracts.  Process-owned state and remaining registries
-are next.
+devfs runtime state and its boot-time registry contracts are covered.  The
+current review item protects mutable procfs mount state and documents its
+remaining hook contract.  Process-owned state and remaining registries are
+next.
 
 Completed implementation commits:
 
@@ -87,6 +90,7 @@ Completed implementation commits:
 | `14488135` | Sleepable tmpfs metadata protection |
 | `690791f2` | VFS `kmem` lock-ownership audit |
 | `90d8fe51` | VFS mount-entry lifetime and regression coverage |
+| `d388720a` | Devfs runtime state and boot-only registry contracts |
 
 Estimated remaining review-sized iterations:
 
@@ -281,11 +285,12 @@ Current audit result:
 - `blkdev_register()` and current `loopback_setup()` callers run only during
   bootstrap or pre-scheduler kernel tests; headers now prohibit runtime
   registration without a new synchronization/lifetime design;
-- `devfs_set_backlight()`, `devfs_set_power()`, and `tty_set_backend()` are
-  called from target initialization before `sched_start()` and are documented
-  as boot-only;
-- runtime `devfs` data is different: the `/dev/urandom` fallback state and the
-  mount timestamp now use `SPIN_DEVFS`.
+- `devfs_set_backlight()`, `devfs_set_power()`, `procfs_set_battery()`, and
+  `tty_set_backend()` are called from target initialization before
+  `sched_start()` and are documented as boot-only;
+- runtime pseudo-filesystem data is different: the `/dev/urandom` fallback
+  state and devfs mount timestamp use `SPIN_DEVFS`, while the procfs mount
+  timestamp uses `SPIN_VFS`.
 
 Remaining follow-up:
 
@@ -309,6 +314,8 @@ Plan:
 - list every `pcb_t` field and assign a protection rule:
   `current-only`, `SPIN_PROC`, file mutex, signal lock, or immutable after
   exec;
+- define a consistent snapshot rule for procfs reads of live `proc_table[]`
+  entries;
 - update `proc_info.h` comments with those rules;
 - convert ambiguous cross-process updates to helper functions.
 
@@ -324,11 +331,12 @@ Plan:
    (`e6a43d11`, `b7b1f1fe`).
 4. `active` Audit all `static` mutable globals under `src/kernel`.  VFS
    scratch and mount-entry lifetime are fixed; devfs runtime state is covered
-   by the current pending change; continue the inventory (`1b898547`,
-   `90d8fe51`).
-5. `partial` Mark boot-only registries as boot-only or add locks.  The current
-   pending change documents block-device, devfs hook, and TTY backend setup
-   contracts; remaining target registries still need inventory.
+   (`1b898547`, `90d8fe51`, `d388720a`); procfs mutable mount state is the
+   current review item; continue the inventory.
+5. `partial` Mark boot-only registries as boot-only or add locks.
+   Block-device, devfs hook, and TTY backend setup contracts are documented
+   (`d388720a`); procfs battery registration is the current review item;
+   remaining target registries still need inventory.
 
 ### Phase 2: Sleepable Mutex
 

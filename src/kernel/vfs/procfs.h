@@ -15,6 +15,7 @@
 extern const vfs_ops_t procfs_ops;
 
 /* Register hardware battery read callback (pico1calc I2C).
+ * Boot-only: call from target_late_init() before sched_start().
  * read_fn(buf, len): read 1 byte into buf[0].
  *   bits 0-6 = percentage (0-100), bit 7 = charging flag.
  * /proc/battery shows "not available" if not registered. */
