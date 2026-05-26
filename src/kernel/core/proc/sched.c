@@ -1,9 +1,10 @@
 /*
  * sched.c — Round-robin preemptive scheduler
  *
- * SysTick fires every SYSTICK_RELOAD+1 CPU cycles and calls sched_tick().
- * sched_tick() raises switch_pending when the current process's time-slice
- * expires.  The per-arch SysTick / trap exit then consumes the flag and
+ * SysTick fires every SYSTICK_RELOAD+1 CPU cycles and calls
+ * sched_timer_tick().  Its scheduler pass raises switch_pending when the
+ * current process's time-slice expires.  The per-arch SysTick / trap exit then
+ * consumes the flag and
  * performs the context swap (arm_kernel_sched_switch on ARM Cortex-M;
  * the m68k / RISC-V / Xtensa timer ISRs do the same shape natively).
  *
@@ -30,8 +31,8 @@
 /* ── Tick counter ─────────────────────────────────────────────────────────────
  */
 
-/* Incremented by SysTick_Handler every tick. */
-static volatile uint32_t tick_count = 0u;
+/* Incremented by the timer ISR and read under SPIN_SCHED. */
+static uint32_t tick_count = 0u;
 
 /* Shared cooperative-yield flag.  Used by every architecture whose arch.h
  * pulls in arch_yield_default.h (m68k, i16, riscv, xtensa, arm_m).  The
@@ -42,12 +43,17 @@ static volatile uint32_t tick_count = 0u;
  * load/store/test instructions without padding mismatches. */
 volatile unsigned int switch_pending = 0u;
 
-/* ── Per-core CPU jiffy counters (for /proc/stat) ────────────────────────── */
+/* ── Per-core CPU jiffy counters (protected by SPIN_SCHED) ─────────────── */
 uint32_t cpu_user_ticks[2] = {0, 0};
 uint32_t cpu_system_ticks[2] = {0, 0};
 uint32_t cpu_idle_ticks[2] = {0, 0};
 
-uint32_t sched_get_ticks(void) { return tick_count; }
+uint32_t sched_get_ticks(void) {
+  uint32_t saved = spin_lock_irqsave(SPIN_SCHED);
+  uint32_t ticks = tick_count;
+  spin_unlock_irqrestore(SPIN_SCHED, saved);
+  return ticks;
+}
 
 /* ── Scheduler ───────────────────────────────────────────────────────────────
  */
@@ -91,7 +97,7 @@ pcb_t *sched_next(void) {
   return result;
 }
 
-void sched_tick(void) {
+static void sched_tick(uint32_t ticks) {
   /* Only Core 0 handles sleep/timeout wakeups (avoids double-waking).
    * Comparison uses signed subtraction to handle tick_count wrap-around:
    *   (int32_t)(tick_count - sleep_until) >= 0  is true when
@@ -99,14 +105,13 @@ void sched_tick(void) {
   if (core_id() == 0) {
     for (uint32_t i = 0u; i < PROC_MAX; i++) {
       pcb_t *p = &proc_table[i];
-      if (p->state == PROC_SLEEPING &&
-          (int32_t)(tick_count - p->sleep_until) >= 0)
+      if (p->state == PROC_SLEEPING && (int32_t)(ticks - p->sleep_until) >= 0)
         p->state = PROC_RUNNABLE;
       /* PROC_BLOCKED + sleep_until: poll/select timeout.
        * Wake the process so do_ppoll's loop re-checks the deadline and
        * returns 0 (timeout) on its next iteration. */
       if (p->state == PROC_BLOCKED && p->sleep_until != 0 &&
-          (int32_t)(tick_count - p->sleep_until) >= 0) {
+          (int32_t)(ticks - p->sleep_until) >= 0) {
         p->state = PROC_RUNNABLE;
         p->wait_channel = NULL;
       }
@@ -152,25 +157,35 @@ void sched_timer_tick(int from_user) {
     signal_check_kernel();
   }
 
-  /* Only Core 0 maintains the global tick counter */
-  if (core_id() == 0) {
-    tick_count++;
-  }
-
   uint32_t cid = core_id();
+  uint32_t ticks = 0u;
+  int user_tick = 0;
+  int system_tick = 0;
+  int idle_tick = 0;
   if (current && current->state == PROC_RUNNABLE && !current->is_idle) {
     if (from_user) {
       current->utime++;
-      cpu_user_ticks[cid]++;
+      user_tick = 1;
     } else {
       current->stime++;
-      cpu_system_ticks[cid]++;
+      system_tick = 1;
     }
   } else {
-    cpu_idle_ticks[cid]++;
+    idle_tick = 1;
   }
 
-  sched_tick();
+  /* Timer-ISR writers need cross-core exclusion; readers mask local IRQs. */
+  spin_lock(SPIN_SCHED);
+  if (cid == 0) {
+    tick_count++;
+    ticks = tick_count;
+  }
+  if (user_tick) cpu_user_ticks[cid]++;
+  if (system_tick) cpu_system_ticks[cid]++;
+  if (idle_tick) cpu_idle_ticks[cid]++;
+  spin_unlock(SPIN_SCHED);
+
+  sched_tick(ticks);
 }
 
 /* ── Scheduler startup ──────────────────────────────────────────────────────

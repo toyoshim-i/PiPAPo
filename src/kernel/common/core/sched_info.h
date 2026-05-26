@@ -2,7 +2,8 @@
  * sched_info.h --- Scheduler statistics shared with VFS (procfs)
  *
  * Per-CPU tick counters for /proc/stat and /proc/uptime.
- * Defined in sched.c (core module).
+ * Defined in sched.c (core module).  Reads and writes are protected by
+ * SPIN_SCHED.
  */
 
 #ifndef PPAP_KERNEL_COMMON_CORE_SCHED_INFO_H

@@ -25,6 +25,7 @@ enum {
   SPIN_PIPE = 10,  /* pipe pool and ring metadata */
   SPIN_DEVFS = 11, /* devfs runtime pseudo-device state */
   SPIN_TIME = 12,  /* wallclock epoch and tick snapshot pairing */
+  SPIN_SCHED = 13, /* monotonic tick and CPU accounting counters */
 };
 
 #endif /* PPAP_KERNEL_COMMON_SPINLOCK_IDS_H */

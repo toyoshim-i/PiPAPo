@@ -1,6 +1,6 @@
 # Kernel Thread-Safety Plan
 
-**Status:** active.  Progress tracked through `4991ab47` on May 26, 2026.
+**Status:** active.  Progress tracked through `efde60c6` on May 26, 2026.
 This is a work plan for making common kernel code safe under preemption and,
 where applicable, dual-core execution.
 
@@ -48,6 +48,8 @@ Some common subsystems already have reasonable locking boundaries:
   timestamp; battery callback registration is a boot-only contract.
 - `sys_time.c` pairs runtime wallclock epoch updates and timestamp reads under
   `SPIN_TIME`.
+- `sched.c` and `procfs.c` use `SPIN_SCHED` for global tick and CPU
+  accounting snapshots.
 - `ufs.c` and `vfat.c` serialize shared filesystem buffers with `SPIN_FS`.
 - `klog.c` serializes log output with `SPIN_UART`.
 
@@ -74,8 +76,9 @@ Status labels used below:
 
 The current lane is the static mutable-global audit in Phase 1.  The VFS
 scratch pool, VFS allocator contract, and mount-table lifetime are covered;
-devfs and procfs runtime state and their boot-time registry contracts are
-covered.  The current review item protects runtime wallclock state.
+devfs and procfs runtime state, their boot-time registry contracts, and
+runtime wallclock state are covered.  The current review item protects
+IRQ-updated scheduler statistics read through procfs and time APIs.
 Process-owned state and remaining registries are next.
 
 Completed implementation commits:
@@ -93,6 +96,7 @@ Completed implementation commits:
 | `90d8fe51` | VFS mount-entry lifetime and regression coverage |
 | `d388720a` | Devfs runtime state and boot-only registry contracts |
 | `4991ab47` | Procfs mount state and boot-only battery hook contract |
+| `efde60c6` | Runtime wallclock epoch synchronization |
 
 Estimated remaining review-sized iterations:
 
@@ -298,8 +302,15 @@ Runtime wallclock state is also shared:
 
 - `time_set_wallclock()` may be called by `settimeofday()` after scheduling
   begins, while syscall and filesystem paths read timestamps;
-- the current review item adds `SPIN_TIME` so the mutable epoch and each tick
-  snapshot are observed as one wallclock calculation.
+- `SPIN_TIME` ensures the mutable epoch and each tick snapshot are observed as
+  one wallclock calculation (`efde60c6`).
+
+Scheduler statistics are written from timer interrupt context:
+
+- `tick_count` feeds time and `/proc/uptime`, while the per-CPU accounting
+  arrays feed `/proc/stat` and `/proc/uptime`;
+- the current review item adds `SPIN_SCHED` to prevent torn or mixed global
+  counter snapshots, particularly on 16-bit targets.
 
 Remaining follow-up:
 
@@ -341,8 +352,9 @@ Plan:
 4. `active` Audit all `static` mutable globals under `src/kernel`.  VFS
    scratch and mount-entry lifetime are fixed; devfs runtime state is covered
    (`1b898547`, `90d8fe51`, `d388720a`); procfs mutable mount state is fixed
-   (`4991ab47`); wallclock epoch synchronization is the current review item;
-   continue the inventory.
+   (`4991ab47`); wallclock epoch synchronization is fixed (`efde60c6`);
+   scheduler-statistics synchronization is the current review item; continue
+   the inventory.
 5. `partial` Mark boot-only registries as boot-only or add locks.
    Block-device, devfs hook, and TTY backend setup contracts are documented
    (`d388720a`); procfs battery registration is documented (`4991ab47`);

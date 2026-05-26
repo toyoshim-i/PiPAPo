@@ -11,6 +11,7 @@
 
 #include "ktest.h"
 #include "kernel/common/mem_region_kbuf.h"
+#include "kernel/common/spinlock.h"
 #include "kernel/core/mm/mem_helper.h"
 #include "kernel/core/mm/region.h"
 #include "kernel/vfs/klog.h"
@@ -1633,17 +1634,26 @@ static void smp_integration_test(void)
 
     /* 3. Per-core CPU tick arrays are accessible and consistent */
     {
-        uint32_t total_user   = cpu_user_ticks[0]   + cpu_user_ticks[1];
-        uint32_t total_system = cpu_system_ticks[0] + cpu_system_ticks[1];
-        uint32_t total_idle   = cpu_idle_ticks[0]   + cpu_idle_ticks[1];
+        uint32_t user[2], system[2], idle[2];
+        uint32_t saved = spin_lock_irqsave(SPIN_SCHED);
+        user[0] = cpu_user_ticks[0];
+        user[1] = cpu_user_ticks[1];
+        system[0] = cpu_system_ticks[0];
+        system[1] = cpu_system_ticks[1];
+        idle[0] = cpu_idle_ticks[0];
+        idle[1] = cpu_idle_ticks[1];
+        spin_unlock_irqrestore(SPIN_SCHED, saved);
+
+        uint32_t total_user = user[0] + user[1];
+        uint32_t total_system = system[0] + system[1];
+        uint32_t total_idle = idle[0] + idle[1];
         /* On QEMU (single core), cpu1 counters should be 0 */
-        test_report("cpu_user_ticks[1] == 0 (QEMU)", cpu_user_ticks[1] == 0);
-        test_report("cpu_system_ticks[1] == 0 (QEMU)", cpu_system_ticks[1] == 0);
+        test_report("cpu_user_ticks[1] == 0 (QEMU)", user[1] == 0);
+        test_report("cpu_system_ticks[1] == 0 (QEMU)", system[1] == 0);
         /* Counters are accessible and consistent (may be 0 before sched_start) */
         test_report("per-core tick arrays accessible",
-                    total_user == cpu_user_ticks[0]
-                    && total_system == cpu_system_ticks[0]
-                    && total_idle == cpu_idle_ticks[0]);
+                    total_user == user[0] && total_system == system[0]
+                    && total_idle == idle[0]);
     }
 
     /* 4. running_on_core is set for current process */

@@ -179,11 +179,20 @@ static int gen_stat(char *buf, int bufsiz) {
   /* Aggregate line: cpu <user> <nice> <system> <idle> 0 0 0 0 0 0 */
   int pos = 0;
   uint32_t user_total = 0, sys_total = 0, idle_total = 0;
+  uint32_t user_ticks[NUM_CORES], system_ticks[NUM_CORES],
+      idle_ticks[NUM_CORES];
+
+  uint32_t saved = spin_lock_irqsave(SPIN_SCHED);
   for (int c = 0; c < NUM_CORES; c++) {
-    user_total += cpu_user_ticks[c];
-    sys_total += cpu_system_ticks[c];
-    idle_total += cpu_idle_ticks[c];
+    user_ticks[c] = cpu_user_ticks[c];
+    system_ticks[c] = cpu_system_ticks[c];
+    idle_ticks[c] = cpu_idle_ticks[c];
+    user_total += user_ticks[c];
+    sys_total += system_ticks[c];
+    idle_total += idle_ticks[c];
   }
+  spin_unlock_irqrestore(SPIN_SCHED, saved);
+
   pos = fmt_append(buf, pos, bufsiz, "cpu ");
   pos = fmt_append_u32(buf, pos, bufsiz, user_total);
   pos = fmt_append(buf, pos, bufsiz, " 0 ");
@@ -197,11 +206,11 @@ static int gen_stat(char *buf, int bufsiz) {
     pos = fmt_append(buf, pos, bufsiz, "cpu");
     pos = fmt_append_u32(buf, pos, bufsiz, (uint32_t)c);
     pos = fmt_append(buf, pos, bufsiz, " ");
-    pos = fmt_append_u32(buf, pos, bufsiz, cpu_user_ticks[c]);
+    pos = fmt_append_u32(buf, pos, bufsiz, user_ticks[c]);
     pos = fmt_append(buf, pos, bufsiz, " 0 ");
-    pos = fmt_append_u32(buf, pos, bufsiz, cpu_system_ticks[c]);
+    pos = fmt_append_u32(buf, pos, bufsiz, system_ticks[c]);
     pos = fmt_append(buf, pos, bufsiz, " ");
-    pos = fmt_append_u32(buf, pos, bufsiz, cpu_idle_ticks[c]);
+    pos = fmt_append_u32(buf, pos, bufsiz, idle_ticks[c]);
     pos = fmt_append(buf, pos, bufsiz, " 0 0 0 0 0 0\n");
   }
   return pos;
@@ -215,7 +224,9 @@ static int gen_uptime(char *buf, int bufsiz) {
   uint32_t secs = ticks / PPAP_TICK_HZ;
   uint32_t hundredths = (ticks % PPAP_TICK_HZ) * 100 / PPAP_TICK_HZ;
   uint32_t total_idle = 0;
+  uint32_t saved = spin_lock_irqsave(SPIN_SCHED);
   for (int c = 0; c < NUM_CORES; c++) total_idle += cpu_idle_ticks[c];
+  spin_unlock_irqrestore(SPIN_SCHED, saved);
   uint32_t idle_secs = total_idle / PPAP_TICK_HZ;
   uint32_t idle_hund = (total_idle % PPAP_TICK_HZ) * 100 / PPAP_TICK_HZ;
 

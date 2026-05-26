@@ -51,14 +51,6 @@ pcb_t *sched_next(void);
 void sched_start(void);
 
 /*
- * Called from SysTick_Handler every tick.
- * Decrements current->ticks_remaining; when it reaches zero, reloads the
- * slice counter and calls arch_yield() (= raises switch_pending) so the
- * per-arch SysTick exit performs the context swap.
- */
-void sched_tick(void);
-
-/*
  * Common timer tick handler: tick counter, input polling, CPU accounting.
  * Called from the architecture-specific timer ISR (SysTick on ARM, timer
  * handler on m68k).
