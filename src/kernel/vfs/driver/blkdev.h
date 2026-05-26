@@ -55,8 +55,10 @@ typedef struct blkdev {
 /* Initialise the block device registry.  Call once from kmain(). */
 void blkdev_init(void);
 
-/* Register a block device.
+/* Register a block device during bootstrap, before sched_start().
  * The blkdev_t is copied into an internal slot.
+ * There is no runtime registration or unregister API; after publication,
+ * lookup returns stable internal slots without locking.
  * Returns the slot index (0–BLKDEV_MAX-1) on success, negative errno
  * if the registry is full (-ENOMEM) or name is NULL (-EINVAL). */
 int blkdev_register(const blkdev_t *dev);

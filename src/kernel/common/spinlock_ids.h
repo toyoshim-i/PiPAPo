@@ -23,6 +23,7 @@ enum {
   SPIN_FBCON = 8,  /* framebuffer console flush serialisation */
   SPIN_FD = 9,     /* global open-file descriptor pool */
   SPIN_PIPE = 10,  /* pipe pool and ring metadata */
+  SPIN_DEVFS = 11, /* devfs runtime pseudo-device state */
 };
 
 #endif /* PPAP_KERNEL_COMMON_SPINLOCK_IDS_H */

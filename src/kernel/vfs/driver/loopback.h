@@ -29,6 +29,9 @@ void loopback_init(void);
  *
  * Opens the file via vfs_lookup(), determines its size, computes
  * sector_count, and registers a block device named "loopN".
+ * Boot-only: current callers run from fstab setup or kernel integration
+ * tests before sched_start(); runtime loop setup would require registry
+ * synchronization and an unregister/lifetime design.
  *
  * The backing vnode is held with an incremented refcnt for the
  * lifetime of the loopback device.

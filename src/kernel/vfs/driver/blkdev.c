@@ -2,7 +2,8 @@
  * blkdev.c — Block device registry
  *
  * Manages a fixed-size table of registered block devices.  Filesystem
- * drivers look up devices by name; hardware drivers register at boot.
+ * drivers look up devices by name; devices are published only during
+ * bootstrap before sched_start().
  */
 
 #include "kernel/vfs/driver/blkdev.h"

@@ -47,7 +47,8 @@ typedef struct {
 } tty_backend_t;
 
 /* Set the I/O backend for TTY instance idx.
- * idx=0: ttyS0 (UART), idx=1: tty1 (display). */
+ * idx=0: ttyS0 (UART), idx=1: tty1 (display).
+ * Boot-only: call before sched_start(); readers use the backend lock-free. */
 void tty_set_backend(int idx, const tty_backend_t *be);
 
 /* Return an opaque pointer to the tty_dev_t for instance idx.

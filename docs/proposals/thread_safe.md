@@ -1,7 +1,8 @@
 # Kernel Thread-Safety Plan
 
-**Status:** proposed.  This is a work plan for making common kernel code
-safe under preemption and, where applicable, dual-core execution.
+**Status:** active.  Progress tracked through `90d8fe51` on May 26, 2026.
+This is a work plan for making common kernel code safe under preemption and,
+where applicable, dual-core execution.
 
 ## Goal
 
@@ -41,6 +42,8 @@ Some common subsystems already have reasonable locking boundaries:
   state.
 - `vfs.c` uses `SPIN_VFS` for the vnode and VFS scratch pools and for mount
   mutation.  Path resolution pins an active mount through its root vnode.
+- `devfs.c` uses `SPIN_DEVFS` for runtime pseudo-device state; callback and
+  block-device registration APIs are boot-only contracts.
 - `ufs.c` and `vfat.c` serialize shared filesystem buffers with `SPIN_FS`.
 - `klog.c` serializes log output with `SPIN_UART`.
 
@@ -56,15 +59,61 @@ Recent neutral hardening work started covering:
 
 This is not enough to declare the common kernel thread-safe.
 
-## Known Issues
+## Progress Tracking
 
-### 1. Sleepable Lock Primitive Is Missing
+Status labels used below:
+
+- `done`: implementation and normal target verification landed;
+- `active`: the current audit/fix lane;
+- `partial`: useful implementation landed, but defined follow-up remains;
+- `todo`: no reviewed implementation has landed yet.
+
+The current lane is the static mutable-global audit in Phase 1.  The VFS
+scratch pool, VFS allocator contract, and mount-table lifetime are covered;
+the current pending change protects devfs runtime state and documents its
+boot-time registry contracts.  Process-owned state and remaining registries
+are next.
+
+Completed implementation commits:
+
+| Commit | Result |
+| --- | --- |
+| `9814202f` | Initial common VFS, fd, pipe, and tmpfs hardening plan |
+| `1b898547` | VFS scratch-pool serialization and allocator contract |
+| `e6a43d11`, `b7b1f1fe` | Shared blocking/sleep helper paths |
+| `8d6b9a39` | Process-owned sleepable mutex primitive |
+| `5701a06d` | x68k IOCS serialization through `kmutex_t` |
+| `0df96d04` | Open-file pinning and per-file mutex protection |
+| `14488135` | Sleepable tmpfs metadata protection |
+| `690791f2` | VFS `kmem` lock-ownership audit |
+| `90d8fe51` | VFS mount-entry lifetime and regression coverage |
+
+Estimated remaining review-sized iterations:
+
+| Work group | State | Estimated iterations |
+| --- | --- | ---: |
+| Finish static-global and boot-registry audit | active | 1-2 |
+| Audit `pcb_t` lifecycle and cross-process fields | todo | 1-2 |
+| Finish fd and sleep/wakeup lifecycle follow-ups | partial | 1-2 |
+| Add mutex IRQ-context guard and dedicated cleanup tests | partial | 1-2 |
+| Add concurrency stress coverage for protected subsystems | todo | 2-3 |
+| **Known remaining total** |  | **6-11** |
+
+This estimate counts small, reviewable patches rather than unchecked bullet
+items.  The static-global and process-lifecycle audits may identify additional
+required fixes, so the upper bound should be revised as those inventories are
+completed.
+
+## Known Issues And Completed Protection
+
+### 1. Sleepable Lock Primitive Exists; IRQ Guard And Tests Remain
 
 Several resources need mutual exclusion across code that can block, call VFS
 callbacks, call device drivers, allocate memory, or voluntarily schedule.
-Spinlocks are the wrong tool for those paths.
+Spinlocks are the wrong tool for those paths.  `kmutex_t` is now implemented
+and releases held mutexes from `proc_free()`.
 
-Needed primitive:
+Implemented primitive:
 
 ```c
 typedef struct kmutex {
@@ -78,21 +127,22 @@ void kmutex_unlock(kmutex_t *m);
 void kmutex_release_owned(pcb_t *p);
 ```
 
-Required semantics:
+Implemented semantics:
 
 - `kmutex_lock()` blocks only in process context.
 - Lock acquisition and release use a spinlock only for the owner/list update.
 - Waiters block on `wait_channel == m`.
 - Unlock wakes waiters after clearing owner.
 - Each process tracks held mutexes so `proc_free()` can release them.
-- Lock attempts from hardware IRQ context panic or fail loudly.
 - Unlock by a non-owner panics.
-- Recursive lock by the same owner is either forbidden or explicitly counted;
-  prefer forbidden until a real recursive user appears.
+- Recursive lock by the same owner panics.
 
-Open design point: add a common `arch_in_irq()` or `kernel_in_irq()` helper.
-Targets without nested IRQ tracking can return false initially, but hardware
-IRQ entry points should eventually maintain a nesting counter.
+Remaining follow-up:
+
+- add a common `arch_in_irq()` or `kernel_in_irq()` helper, then make lock
+  attempts from hardware IRQ context panic or fail loudly;
+- add dedicated contention, bad-owner, recursive-lock, and process-death
+  cleanup tests.
 
 ### 2. `fd.c` Shared File State Needs Follow-Up Audits
 
@@ -226,11 +276,21 @@ be initialized before user scheduling starts:
 - devfs hardware hook pointers for backlight/power/battery style devices;
 - target driver registration tables.
 
-Plan:
+Current audit result:
 
-- document boot-only registration requirements;
-- assert or guard if runtime registration is expected later;
-- use simple spinlocks if lookup and registration can happen concurrently.
+- `blkdev_register()` and current `loopback_setup()` callers run only during
+  bootstrap or pre-scheduler kernel tests; headers now prohibit runtime
+  registration without a new synchronization/lifetime design;
+- `devfs_set_backlight()`, `devfs_set_power()`, and `tty_set_backend()` are
+  called from target initialization before `sched_start()` and are documented
+  as boot-only;
+- runtime `devfs` data is different: the `/dev/urandom` fallback state and the
+  mount timestamp now use `SPIN_DEVFS`.
+
+Remaining follow-up:
+
+- complete the inventory of any remaining target registration or hook tables;
+- add a guard or lock if a future runtime registration user is introduced.
 
 ### 9. Process-Local State Still Needs Lifecycle Audit
 
@@ -256,44 +316,55 @@ Plan:
 
 ### Phase 1: Contracts And Audits
 
-1. Add a shared document section or comments for spinlock IDs and ownership.
-2. Audit all `kmem_alloc()` / `kmem_free()` callers. (done: VFS pools use
-   `SPIN_VFS`)
-3. Audit all raw `wait_channel` / `PROC_BLOCKED` users.
-4. Audit all `static` mutable globals under `src/kernel`.
-5. Mark boot-only registries as boot-only or add locks.
+1. `done` Add shared comments for spinlock IDs and ownership (`9814202f`).
+2. `done` Audit all `kmem_alloc()` / `kmem_free()` callers; VFS pools use
+   `SPIN_VFS` (`1b898547`, `690791f2`).
+3. `partial` Audit raw `wait_channel` / `PROC_BLOCKED` users.  Shared sleep
+   helpers are landed; lifecycle rules and special cases remain
+   (`e6a43d11`, `b7b1f1fe`).
+4. `active` Audit all `static` mutable globals under `src/kernel`.  VFS
+   scratch and mount-entry lifetime are fixed; devfs runtime state is covered
+   by the current pending change; continue the inventory (`1b898547`,
+   `90d8fe51`).
+5. `partial` Mark boot-only registries as boot-only or add locks.  The current
+   pending change documents block-device, devfs hook, and TTY backend setup
+   contracts; remaining target registries still need inventory.
 
 ### Phase 2: Sleepable Mutex
 
-1. Add `src/kernel/common/sync/kmutex.h`.
-2. Add `src/kernel/common/sync/kmutex.c` or keep it inline if module
-   boundaries require that.
-3. Add held-mutex list fields to `pcb_t`.
-4. Call `kmutex_release_owned(p)` from `proc_free()`.
-5. Add IRQ-context detection hooks or conservative panic checks.
-6. Add unit or kernel tests for lock, unlock, contention, bad owner, and
+1. `done` Add `src/kernel/common/sync/kmutex.h` (`8d6b9a39`).
+2. `done` Add the module-safe implementation in
+   `src/kernel/core/sync/kmutex.c` (`8d6b9a39`).
+3. `done` Add held-mutex list fields to `pcb_t` (`8d6b9a39`).
+4. `done` Call `kmutex_release_owned(p)` from `proc_free()` (`8d6b9a39`).
+5. `todo` Add IRQ-context detection hooks or conservative panic checks.
+6. `todo` Add dedicated tests for contention, bad owner, recursive lock, and
    process-death cleanup.
 
 ### Phase 3: Convert High-Risk Users
 
-1. Convert x68k IOCS from busy flag to `kmutex_t`.
-2. Add per-file mutex/pinning in `fd.c`.
-3. Revisit pipe blocking with common sleep helpers.
-4. Convert tmpfs to a sleepable per-filesystem lock if allocator-under-spinlock
-   becomes a problem.
+1. `done` Convert x68k IOCS from busy flag to `kmutex_t` (`5701a06d`).
+2. `done` Add per-file mutex/pinning in `fd.c` (`0df96d04`).
+3. `done` Convert pipe blocking to the shared unlock-and-sleep helper
+   (`b7b1f1fe`).
+4. `done` Convert current tmpfs shared metadata to a coarse sleepable mutex
+   (`14488135`).  A per-mount split remains conditional on multiple tmpfs
+   instances.
 
 ### Phase 4: Normalize Sleep/Wakeup
 
-1. Introduce sleep helper APIs.
-2. Convert pipe, poll, nanosleep, vfork/wait, and target locks.
-3. Define the rule for when `sched_wakeup()` may be called with or without the
-   resource lock held.
-4. Add stress tests that intentionally interleave waiters and wakers.
+1. `done` Introduce sleep helper APIs (`e6a43d11`, `b7b1f1fe`).
+2. `partial` Convert blocking callers.  Pipe, poll, and tty paths use shared
+   helpers; audit the remaining timer, process, vfork/wait, and target paths.
+3. `todo` Define the rule for when `sched_wakeup()` may be called with or
+   without the resource lock held.
+4. `todo` Add stress tests that intentionally interleave waiters and wakers.
 
 ### Phase 5: Stress Testing
 
-Add tests that create real concurrency instead of only single-thread syscall
-coverage:
+`todo` Add tests that create real concurrency instead of only single-thread
+syscall coverage.  `test_fs` now validates basic mount pinning behavior, but
+does not create concurrent mount/unmount interleavings.
 
 - parallel opens/closes/dups of shared files;
 - concurrent `read()`/`lseek()` on one descriptor;

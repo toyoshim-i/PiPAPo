@@ -24,6 +24,7 @@
 
 #include "common/errno.h"
 #include "kernel/common/mod/mod_core.h"
+#include "kernel/common/spinlock.h"
 #include "kernel/vfs/tty.h"
 
 /* ── Device node descriptor ──────────────────────────────────────────────── */
@@ -106,7 +107,8 @@ static long devtty_write(page_id_t page, uint16_t page_off, size_t n,
 /* ── /dev/urandom ───────────────────────────────────────────────────────────
  */
 
-/* Simple LFSR for QEMU / m68k fallback (no ROSC hardware) */
+/* Simple LFSR for QEMU / m68k fallback (no ROSC hardware).
+ * Runtime accesses are protected by SPIN_DEVFS. */
 static uint32_t lfsr_state = 0xDEADBEEFu;
 
 #if defined(__ARM_ARCH) || defined(__arm__) || defined(__thumb__)
@@ -132,12 +134,15 @@ static uint8_t random_byte(void) {
   }
 #endif
 
-  /* QEMU / m68k fallback: 32-bit Galois LFSR with taps at 32,22,2,1 */
+  /* QEMU / m68k fallback: 32-bit Galois LFSR with taps at 32,22,2,1. */
+  uint32_t saved = spin_lock_irqsave(SPIN_DEVFS);
   uint32_t bit = ((lfsr_state >> 0) ^ (lfsr_state >> 1) ^ (lfsr_state >> 21) ^
                   (lfsr_state >> 31)) &
                  1u;
   lfsr_state = (lfsr_state >> 1) | (bit << 31);
-  return (uint8_t)(lfsr_state & 0xFFu);
+  uint8_t byte = (uint8_t)(lfsr_state & 0xFFu);
+  spin_unlock_irqrestore(SPIN_DEVFS, saved);
+  return byte;
 }
 
 static long devrandom_read(page_id_t page, uint16_t page_off, size_t n,
@@ -393,16 +398,16 @@ static uint32_t str_len(const char *s) {
 /* ── devfs_mount ────────────────────────────────────────────────────────────
  */
 
-/* Captured at mount so every devfs entry reports a consistent
- * "created-at-boot" timestamp via .stat.  Zero on targets that boot
- * before the wallclock is seeded (which is every target today
- * pre-T-4), and ticks forward only after sys_settimeofday. */
+/* Protected by SPIN_DEVFS because user processes can mount devfs at runtime. */
 static uint32_t devfs_mount_epoch;
 
 static int devfs_mount(mount_entry_t *mnt, const void *dev_data) {
   (void)dev_data;
 
-  devfs_mount_epoch = mod_core.time_now_sec();
+  uint32_t epoch = mod_core.time_now_sec();
+  uint32_t saved = spin_lock_irqsave(SPIN_DEVFS);
+  devfs_mount_epoch = epoch;
+  spin_unlock_irqrestore(SPIN_DEVFS, saved);
 
   /* Allocate root vnode for /dev directory */
   vnode_t *root = mod_vfs.vnode_alloc();
@@ -507,8 +512,11 @@ static int devfs_stat(vnode_t *vn, struct stat *st) {
   st->st_mode = vn->mode;
   st->st_nlink = 1;
   st->st_size = vn->size;
-  st->st_mtime = devfs_mount_epoch;
-  st->st_ctime = devfs_mount_epoch;
+  uint32_t saved = spin_lock_irqsave(SPIN_DEVFS);
+  uint32_t epoch = devfs_mount_epoch;
+  spin_unlock_irqrestore(SPIN_DEVFS, saved);
+  st->st_mtime = epoch;
+  st->st_ctime = epoch;
   st->st_atime = 0;
   return 0;
 }
