@@ -168,7 +168,7 @@ int main(void)
      * static pointer arrays because execve only relocates GOT entries,
      * not initialized data pointers.  Runtime assignment uses GOT-resolved
      * addresses which are correctly relocated. */
-    test_entry_t tests[32];
+    test_entry_t tests[33];
     int t = 0;
 /* Known qemu_rv32 failures are disabled until fixed. */
 #if defined(__riscv)
@@ -225,6 +225,8 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_iov",          TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_stat",         TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_tmpfs",        TEST_ENABLED  };
+    if (access("/etc/test_smp_hardware", F_OK) == 0)
+        tests[t++] = (test_entry_t){ "/bin/test_smp",      TEST_ENABLED  };
     tests[t++] = (test_entry_t){ "/bin/test_float",        TEST_ENABLED  };
 /* TODO: qemu_rv32 signal delivery issues */
 #if defined(__riscv)

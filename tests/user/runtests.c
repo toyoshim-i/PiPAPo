@@ -199,7 +199,7 @@ int main(void)
      * static pointer arrays because execve only relocates GOT entries,
      * not initialized data pointers.  Runtime assignment uses GOT-resolved
      * addresses which are correctly relocated. */
-    test_entry_t tests[35];
+    test_entry_t tests[36];
     int t = 0;
 
     tests[t++] = (test_entry_t){ "/bin/test_exec", TEST_ENABLED };
@@ -242,6 +242,8 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_stat", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_env", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_tmpfs", TEST_ENABLED };
+    if (access("/etc/test_smp_hardware", F_OK) == 0)
+        tests[t++] = (test_entry_t){ "/bin/test_smp", TEST_ENABLED };
     /* test_ufs runs only where a UFS root is mounted (pcxt today). */
     tests[t++] = (test_entry_t){ "/bin/test_ufs",
 #if defined(__ia16__)

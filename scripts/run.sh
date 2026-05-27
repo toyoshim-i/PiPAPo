@@ -156,7 +156,8 @@ ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
 
 # ── Merge filter/flaky/slow into an overlay dir ─────────────────────────────
 TEMP_OVERLAY=""
-if [[ -n "$FILTER" || $RUN_FLAKY -eq 1 || $RUN_SLOW -eq 1 ]]; then
+if [[ -n "$FILTER" || $RUN_FLAKY -eq 1 || $RUN_SLOW -eq 1 ||
+      ( "$TARGET" == "pico1" && $DO_TEST -eq 1 ) ]]; then
     mkdir -p "$PROJECT_DIR/build"
     TEMP_OVERLAY=$(mktemp -d "$PROJECT_DIR/build/test_overlay.XXXXXX")
     # Copy any user-supplied overlay first so test controls take precedence
@@ -173,6 +174,9 @@ if [[ -n "$FILTER" || $RUN_FLAKY -eq 1 || $RUN_SLOW -eq 1 ]]; then
     fi
     if [[ $RUN_SLOW -eq 1 ]]; then
         touch "$TEMP_OVERLAY/etc/test_run_slow"
+    fi
+    if [[ "$TARGET" == "pico1" && $DO_TEST -eq 1 ]]; then
+        touch "$TEMP_OVERLAY/etc/test_smp_hardware"
     fi
     OVERLAY="$TEMP_OVERLAY"
 fi
@@ -406,6 +410,59 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
 
     echo "[run] Flashing $ELF ..."
     DOCKER_ELF="/ppap/${ELF#"$PROJECT_DIR/"}"
+    if [[ "$TARGET" == pico1 && $DO_TEST -eq 1 ]]; then
+        TEST_TIMEOUT_S=180
+        TEST_OUTPUT_LOG="$BUILD_DIR/test_output.log"
+        PPAP_PICO_PORT="${PPAP_PICO_PORT:-}"
+        if [[ -z "$PPAP_PICO_PORT" ]]; then
+            for port in /dev/serial/by-id/usb-Raspberry_Pi_Debugprobe_on_Pico__CMSIS-DAP__*-if01; do
+                if [[ -e "$port" ]]; then
+                    PPAP_PICO_PORT="$port"
+                    break
+                fi
+            done
+        fi
+        if [[ -z "$PPAP_PICO_PORT" || ! -e "$PPAP_PICO_PORT" ]]; then
+            echo "[run] Error: Pico Debug Probe UART endpoint not found."
+            echo "      Set PPAP_PICO_PORT to the GP0/GP1 serial adapter."
+            exit 1
+        fi
+        echo "[run] Capturing Pico 1 SMP test output from $PPAP_PICO_PORT"
+        echo "      (up to ${TEST_TIMEOUT_S}s) -> $TEST_OUTPUT_LOG"
+        set +e
+        python3 "$SCRIPT_DIR/serial_test_monitor.py" \
+            --port "$PPAP_PICO_PORT" --timeout "$TEST_TIMEOUT_S" \
+            2>&1 | tee "$TEST_OUTPUT_LOG" &
+        MONITOR_PID=$!
+        sleep 1
+        run_openocd \
+            "${OPENOCD_ARGS[@]}" \
+            -c "program \"$DOCKER_ELF\" verify reset exit" 2>&1
+        FLASH_STATUS=$?
+        if [[ $FLASH_STATUS -ne 0 ]]; then
+            kill "$MONITOR_PID" 2>/dev/null
+        fi
+        wait "$MONITOR_PID"
+        set -e
+        if [[ $FLASH_STATUS -ne 0 ]]; then
+            echo ""
+            echo "[test] FAIL — Pico 1 flashing failed"
+            exit 1
+        fi
+        if grep -q "KERNEL TESTS FAILED\|SOME TESTS FAILED" "$TEST_OUTPUT_LOG"; then
+            echo ""
+            echo "[test] FAIL — Pico 1 test output contains failures"
+            exit 1
+        fi
+        if grep -q "ALL TESTS PASSED" "$TEST_OUTPUT_LOG"; then
+            echo ""
+            echo "[test] PASS — Pico 1 multicore tests passed"
+            exit 0
+        fi
+        echo ""
+        echo "[test] FAIL — tests did not all pass (or hardware timed out)"
+        exit 1
+    fi
     if run_openocd \
         "${OPENOCD_ARGS[@]}" \
         -c "program \"$DOCKER_ELF\" verify reset exit" 2>&1; then

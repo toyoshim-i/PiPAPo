@@ -1,6 +1,6 @@
 # Kernel Thread-Safety Plan
 
-**Status:** active.  Progress tracked through `efde60c6` on May 26, 2026.
+**Status:** active.  Progress tracked through `33e25256` on May 27, 2026.
 This is a work plan for making common kernel code safe under preemption and,
 where applicable, dual-core execution.
 
@@ -77,8 +77,8 @@ Status labels used below:
 The current lane is the static mutable-global audit in Phase 1.  The VFS
 scratch pool, VFS allocator contract, and mount-table lifetime are covered;
 devfs and procfs runtime state, their boot-time registry contracts, and
-runtime wallclock state are covered.  The current review item protects
-IRQ-updated scheduler statistics read through procfs and time APIs.
+runtime wallclock state and IRQ-updated scheduler statistics are covered.
+The current review item adds a real RP2040 multicore verification lane.
 Process-owned state and remaining registries are next.
 
 Completed implementation commits:
@@ -97,6 +97,7 @@ Completed implementation commits:
 | `d388720a` | Devfs runtime state and boot-only registry contracts |
 | `4991ab47` | Procfs mount state and boot-only battery hook contract |
 | `efde60c6` | Runtime wallclock epoch synchronization |
+| `33e25256` | Scheduler tick and CPU-accounting synchronization |
 
 Estimated remaining review-sized iterations:
 
@@ -309,8 +310,8 @@ Scheduler statistics are written from timer interrupt context:
 
 - `tick_count` feeds time and `/proc/uptime`, while the per-CPU accounting
   arrays feed `/proc/stat` and `/proc/uptime`;
-- the current review item adds `SPIN_SCHED` to prevent torn or mixed global
-  counter snapshots, particularly on 16-bit targets.
+- `SPIN_SCHED` prevents torn or mixed global counter snapshots, particularly
+  on 16-bit targets (`33e25256`).
 
 Remaining follow-up:
 
@@ -353,8 +354,8 @@ Plan:
    scratch and mount-entry lifetime are fixed; devfs runtime state is covered
    (`1b898547`, `90d8fe51`, `d388720a`); procfs mutable mount state is fixed
    (`4991ab47`); wallclock epoch synchronization is fixed (`efde60c6`);
-   scheduler-statistics synchronization is the current review item; continue
-   the inventory.
+   scheduler-statistics synchronization is fixed (`33e25256`); continue the
+   inventory.
 5. `partial` Mark boot-only registries as boot-only or add locks.
    Block-device, devfs hook, and TTY backend setup contracts are documented
    (`d388720a`); procfs battery registration is documented (`4991ab47`);
@@ -392,9 +393,11 @@ Plan:
 
 ### Phase 5: Stress Testing
 
-`todo` Add tests that create real concurrency instead of only single-thread
-syscall coverage.  `test_fs` now validates basic mount pinning behavior, but
-does not create concurrent mount/unmount interleavings.
+`active` Add tests that create real concurrency instead of only single-thread
+syscall coverage.  The current review item adds a Pico 1 UART-captured hardware
+lane (`--test --filter=smp pico1`) and a post-scheduler Core 1 statistics smoke
+test.  `test_fs` validates basic mount pinning behavior, but does not create
+concurrent mount/unmount interleavings.
 
 - parallel opens/closes/dups of shared files;
 - concurrent `read()`/`lseek()` on one descriptor;
@@ -403,6 +406,7 @@ does not create concurrent mount/unmount interleavings.
 - forced process kill while holding a `kmutex_t`;
 - repeated multi-getty startup on x68k;
 - optional qemu timer-frequency increase to expose preemption races.
+- Pico 1/Pico 2 UART-captured runs for TTY and UART IRQ behavior.
 
 ## Acceptance Criteria
 
@@ -416,4 +420,6 @@ The proposal is complete when:
 - raw sleep/wakeup patterns are centralized or documented;
 - qemu_arm, qemu_rv32, qemu_m68k, pcxt, and x68k run their normal test suites
   without regressions;
+- Pico 1 or Pico 2 runs multicore tests on real hardware for changes to shared
+  dual-core state;
 - stress tests cover fd, pipe, tmpfs, and process-death lock cleanup.

@@ -30,6 +30,9 @@ build process, and execution environment.
 # On-target tests (Xtensa, requires M5Stack CardComputer attached)
 ./scripts/run.sh --test xtensa_cc
 
+# Hardware multicore tests (Pico 1 + Debug Probe UART capture)
+./scripts/run.sh --test --filter=smp pico1
+
 # Extended on-target tests (ARM lane with extra user tests)
 ./scripts/run.sh --test-extended qemu_arm
 
@@ -166,6 +169,24 @@ On-target tests that run as real user processes. Each test is a
 standalone ELF binary compiled with PIC, linked against `crt0.o` and
 `syscall.o` (raw SVC stubs — no libc).
 
+### Pico 1 Multicore Lane
+
+`./scripts/run.sh --test --filter=smp pico1` is the hardware SMP lane.  It
+flashes Pico 1 through the Debug Probe SWD connection, captures its GP0/GP1
+UART output through the probe serial endpoint, and injects
+`/etc/test_smp_hardware` into romfs.  That marker adds `/bin/test_smp` after
+Core 1 has been launched.  Set `PPAP_PICO_PORT` when the UART adapter is not
+the Debug Probe endpoint discovered under `/dev/serial/by-id`.
+
+`test_smp` samples `/proc/stat` across a sleep and requires `cpu1` accounting
+to advance.  This exercises dual-core scheduling and SIO spinlock protection
+for shared scheduler statistics on real RP2040 hardware.
+
+This lane deliberately uses UART capture rather than semihosting: OpenOCD
+cannot transparently resume semihost calls issued concurrently from both
+RP2040 cores.  Capturing the normal UART path also covers kernel logger and
+serial-output behavior.
+
 ### Framework: `utest.h`
 
 ```c
@@ -266,6 +287,7 @@ overlay directory baked into romfs at build time (see
 | `test_iov.c` | `readv`, `writev` scatter/gather I/O |
 | `test_stat.c` | `stat`, `getdents` on romfs |
 | `test_tmpfs.c` | tmpfs create, write, read, unlink, multi-page I/O (disabled on rv32) |
+| `test_smp.c` | RP2040 hardware-only Core 1 scheduler accounting smoke test |
 | `test_ufs.c` | UFS write+read (pcxt only; disabled on romfs-root targets) |
 | `test_float.c` | FPU register preservation across context switch (disabled on m68k) |
 | `test_signal_float.c` | FPU register preservation across signal delivery (disabled on m68k) |
@@ -559,6 +581,16 @@ rarely fire.
 | `qemu_rv32` | 2026-04-18 | Disabled (pre-existing blkdev crash) | 16/16 pass | User pass |
 | `pcxt` | 2026-04-18 | N/A (no ktest) | 17/17 pass | All pass |
 | `xtensa_cc` | 2026-05-12 | 62 pass, 7 fail | 13/13 pass | User pass |
+| `pico1` | 2026-05-27 | 67 pass, 2 fail (assumed pre-existing fstab/VFAT expectations) | 25/25 pass, including `test_smp` | Focused SMP pass |
+
+`pico1` verification on May 27, 2026 used the Debug Probe UART capture lane.
+`./scripts/run.sh --test --filter=smp pico1` passed with `test_smp` reporting
+5 tests and 0 failures after Core 1 launched.  The unfiltered
+`./scripts/run.sh --test pico1` run reached the same user-space success, but
+its pre-scheduler kernel suite reported failures for `fstab_parse >= 4
+entries` and `/mnt/sd mounted (vfat)`.  These are treated as pre-existing:
+Pico 1 is documented as romfs-only with no SD card, while those kernel
+assertions require the SD/VFAT configuration used by `qemu_arm`/PicoCalc.
 
 ```bash
 ./scripts/run.sh --test              # ARM (default)
@@ -566,6 +598,7 @@ rarely fire.
 ./scripts/run.sh --test qemu_m68k    # m68k
 ./scripts/run.sh --test pcxt         # PC/XT (i16)
 ./scripts/run.sh --test xtensa_cc    # Xtensa hardware
+./scripts/run.sh --test --filter=smp pico1 # Pico 1 real multicore lane
 ```
 
 ### pcxt notes
