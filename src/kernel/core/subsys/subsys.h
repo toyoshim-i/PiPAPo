@@ -89,8 +89,10 @@ typedef struct subsys_ops {
 #include "kernel/common/core/subsys_info.h"
 
 /* Global ops table — indexed by pcb_t::subsys tag.
- * Slot 0 (SUBSYS_PPAP) is NULL (default kernel behavior). */
-extern const subsys_ops_t *subsys_ops_table[SUBSYS_MAX];
+ * Slot 0 (SUBSYS_PPAP) is NULL (default kernel behavior).
+ * Compile-time table: entries are selected by CMake feature flags and never
+ * registered at runtime. */
+extern const subsys_ops_t *const subsys_ops_table[SUBSYS_MAX];
 
 /* Register subsystem names with procfs. Call once at boot. */
 void subsys_init(void);

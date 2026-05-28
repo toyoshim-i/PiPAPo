@@ -28,7 +28,7 @@ extern const loader_t flat_loader;
 #endif
 #include <stddef.h>
 
-const loader_t* loader_registry[] = {
+const loader_t *const loader_registry[] = {
 #ifdef PPAP_ENABLE_CPM
     &cpm_loader,
 #endif

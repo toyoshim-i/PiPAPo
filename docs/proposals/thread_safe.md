@@ -1,6 +1,6 @@
 # Kernel Thread-Safety Plan
 
-**Status:** active.  Progress tracked through `33e25256` on May 27, 2026.
+**Status:** active.  Progress tracked through `d0586b89` on May 27, 2026.
 This is a work plan for making common kernel code safe under preemption and,
 where applicable, dual-core execution.
 
@@ -77,9 +77,9 @@ Status labels used below:
 The current lane is the static mutable-global audit in Phase 1.  The VFS
 scratch pool, VFS allocator contract, and mount-table lifetime are covered;
 devfs and procfs runtime state, their boot-time registry contracts, and
-runtime wallclock state and IRQ-updated scheduler statistics are covered.
-The current review item adds a real RP2040 multicore verification lane.
-Process-owned state and remaining registries are next.
+runtime wallclock state and IRQ-updated scheduler statistics are covered, and
+real RP2040 multicore verification is available.  The current review item
+finishes the remaining boot-registry inventory.  Process-owned state is next.
 
 Completed implementation commits:
 
@@ -98,12 +98,13 @@ Completed implementation commits:
 | `4991ab47` | Procfs mount state and boot-only battery hook contract |
 | `efde60c6` | Runtime wallclock epoch synchronization |
 | `33e25256` | Scheduler tick and CPU-accounting synchronization |
+| `d0586b89` | Pico 1 real multicore verification lane |
 
 Estimated remaining review-sized iterations:
 
 | Work group | State | Estimated iterations |
 | --- | --- | ---: |
-| Finish static-global and boot-registry audit | active | 1-2 |
+| Finish static-global and boot-registry audit | active | 1 |
 | Audit `pcb_t` lifecycle and cross-process fields | todo | 1-2 |
 | Finish fd and sleep/wakeup lifecycle follow-ups | partial | 1-2 |
 | Add mutex IRQ-context guard and dedicated cleanup tests | partial | 1-2 |
@@ -295,6 +296,12 @@ Current audit result:
 - `devfs_set_backlight()`, `devfs_set_power()`, `procfs_set_battery()`, and
   `tty_set_backend()` are called from target initialization before
   `sched_start()` and are documented as boot-only;
+- `klog_set_logger()` is a boot-only logger-slot registration API; targets
+  install primary and optional mirror loggers before scheduling starts;
+- loader, CPU-operation, and subsystem-operation registries are compile-time
+  tables selected by CMake feature flags;
+- subsystem-name and eCPU-name arrays are also compile-time data, but remain
+  exported as data symbols for the i16 VFS module boundary;
 - runtime pseudo-filesystem data is different: the `/dev/urandom` fallback
   state and devfs mount timestamp use `SPIN_DEVFS`, while the procfs mount
   timestamp uses `SPIN_VFS`.
@@ -315,7 +322,6 @@ Scheduler statistics are written from timer interrupt context:
 
 Remaining follow-up:
 
-- complete the inventory of any remaining target registration or hook tables;
 - add a guard or lock if a future runtime registration user is introduced.
 
 ### 9. Process-Local State Still Needs Lifecycle Audit
@@ -356,10 +362,11 @@ Plan:
    (`4991ab47`); wallclock epoch synchronization is fixed (`efde60c6`);
    scheduler-statistics synchronization is fixed (`33e25256`); continue the
    inventory.
-5. `partial` Mark boot-only registries as boot-only or add locks.
+5. `active` Mark boot-only registries as boot-only or add locks.
    Block-device, devfs hook, and TTY backend setup contracts are documented
    (`d388720a`); procfs battery registration is documented (`4991ab47`);
-   remaining target registries still need inventory.
+   logger registration and compile-time loader/CPU/subsystem tables are the
+   current review item.
 
 ### Phase 2: Sleepable Mutex
 

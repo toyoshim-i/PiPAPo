@@ -55,7 +55,7 @@ const char *ecpu_names[ECPU_MAX] = {
 };
 
 /* Build the ops table with enabled subsystems */
-const subsys_ops_t *subsys_ops_table[SUBSYS_MAX] = {
+const subsys_ops_t *const subsys_ops_table[SUBSYS_MAX] = {
     [SUBSYS_PPAP] = (const subsys_ops_t *)0,
 #ifdef PPAP_ENABLE_HUMAN68K
     [SUBSYS_HUMAN68K] = &human68k_subsys_ops,

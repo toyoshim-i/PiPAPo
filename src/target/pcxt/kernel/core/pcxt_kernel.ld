@@ -51,6 +51,10 @@ SECTIONS
 
   .data : {
     *(.data .data.*)
+    /* Name arrays are exported to the separately linked VFS module.
+       Keep initialized names even when core has no local reference. */
+    KEEP(*subsys.c.obj(.data))
+    KEEP(*subsys.c.obj(.data.*))
   }
 
   __romfs_start = .;
@@ -60,9 +64,10 @@ SECTIONS
     __bss_start = .;
     *(.bss .bss.*)
     *(COMMON)
-    /* ecpu_names is zero-init (no eCPU on pcxt) and would be GC'd
-       since core never references it, but VFS procfs needs it. */
+    /* Name arrays are exported to the separately linked VFS module.
+       Keep zero-init names even when core has no local reference. */
     KEEP(*subsys.c.obj(.bss))
+    KEEP(*subsys.c.obj(.bss.*))
     __bss_end = .;
   }
 

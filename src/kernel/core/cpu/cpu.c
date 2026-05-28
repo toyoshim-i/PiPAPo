@@ -20,14 +20,14 @@
 
 /* ── Registry of available CPU ops ─────────────────────────────────────── */
 
-static const cpu_ops_t *cpu_ops_registry[] = {&native_cpu_ops,
+static const cpu_ops_t *const cpu_ops_registry[] = {&native_cpu_ops,
 #ifdef PPAP_ENABLE_ECPU_Z80
-                                              &ecpu_z80_ops,
+                                                    &ecpu_z80_ops,
 #endif
 #ifdef PPAP_ENABLE_ECPU_M68K
-                                              &ecpu_m68k_ops,
+                                                    &ecpu_m68k_ops,
 #endif
-                                              NULL};
+                                                    NULL};
 
 /* ── Lookup by arch ID ─────────────────────────────────────────────────── */
 

@@ -61,7 +61,7 @@ int exec_execve(pcb_t *p, const exec_args_t *args) {
 
   /* ── 2. Read a header buffer for loader detect() ───────────────────── */
   uint32_t file_size = vn->size;
-  extern const loader_t *loader_registry[];
+  extern const loader_t *const loader_registry[];
   int rc = -(int)ENOEXEC;
 
   if (file_size == 0) {

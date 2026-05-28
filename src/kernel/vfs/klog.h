@@ -51,7 +51,9 @@ void vfs_kvlogf(const char *fmt, va_list ap);
 #define PPAP_DEBUG_LOGF(tag, fmt, ...) ((void)0)
 #endif
 
-/* Register or replace one logger slot. */
+/* Register or replace one logger slot.
+ * Boot-only: call from target early/late init before sched_start(); klogf()
+ * readers use the logger table lock-free while holding SPIN_UART. */
 void klog_set_logger(int id, klog_putc_fn putc, void (*flush)(void));
 
 /* Target-provided logger init — called from vfs_init() before first klogf.
