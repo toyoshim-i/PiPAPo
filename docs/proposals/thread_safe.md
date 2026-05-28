@@ -344,7 +344,8 @@ Plan:
   `current-only`, `SPIN_PROC`, file mutex, signal lock, or immutable after
   exec.  The first classification pass is documented in `proc_info.h`;
 - define a consistent snapshot rule for procfs reads of live `proc_table[]`
-  entries;
+  entries.  Procfs now snapshots PID metadata under `SPIN_PROC` and samples
+  `utime` / `stime` under `SPIN_SCHED`;
 - update `proc_info.h` comments with those rules;
 - convert ambiguous cross-process updates to helper functions.
 
@@ -370,8 +371,8 @@ Plan:
    logger registration and compile-time loader/CPU/subsystem tables are
    documented (`dad84f5b`).
 6. `active` Audit `pcb_t` lifecycle and cross-process fields.  The initial
-   protection-rule inventory is the current review item; helper conversion and
-   procfs snapshot rules remain.
+   protection-rule inventory is documented (`1f372a74`); procfs PID
+   snapshots are the current review item.  Helper conversion remains.
 
 ### Phase 2: Sleepable Mutex
 

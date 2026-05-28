@@ -159,17 +159,16 @@ void sched_timer_tick(int from_user) {
 
   uint32_t cid = core_id();
   uint32_t ticks = 0u;
+  pcb_t *acct_proc = NULL;
   int user_tick = 0;
   int system_tick = 0;
   int idle_tick = 0;
   if (current && current->state == PROC_RUNNABLE && !current->is_idle) {
-    if (from_user) {
-      current->utime++;
+    acct_proc = current;
+    if (from_user)
       user_tick = 1;
-    } else {
-      current->stime++;
+    else
       system_tick = 1;
-    }
   } else {
     idle_tick = 1;
   }
@@ -180,8 +179,14 @@ void sched_timer_tick(int from_user) {
     tick_count++;
     ticks = tick_count;
   }
-  if (user_tick) cpu_user_ticks[cid]++;
-  if (system_tick) cpu_system_ticks[cid]++;
+  if (user_tick) {
+    acct_proc->utime++;
+    cpu_user_ticks[cid]++;
+  }
+  if (system_tick) {
+    acct_proc->stime++;
+    cpu_system_ticks[cid]++;
+  }
   if (idle_tick) cpu_idle_ticks[cid]++;
   spin_unlock(SPIN_SCHED);
 

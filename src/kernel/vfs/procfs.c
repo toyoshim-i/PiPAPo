@@ -384,10 +384,91 @@ static const procfs_node_t procfs_nodes[] = {
 
 /* ── Per-PID content generators ──────────────────────────────────────────── */
 
+typedef struct {
+  pid_t pid;
+  pid_t ppid;
+  pid_t pgid;
+  pid_t sid;
+  proc_state_t state;
+  uint8_t is_idle;
+  uint8_t subsys;
+  char comm[16];
+  uint32_t utime;
+  uint32_t stime;
+  uint32_t start_time;
+  page_id_t stack_page_id;
+  uint8_t has_user_stack_page;
+  page_id_t user_pages[USER_PAGES_MAX];
+} procfs_proc_snapshot_t;
+
+static int procfs_snapshot_slot(uint32_t slot, procfs_proc_snapshot_t *snap) {
+  if (!snap || slot >= PROC_MAX) return 0;
+
+  uint32_t proc_saved = spin_lock_irqsave(SPIN_PROC);
+  const pcb_t *p = &proc_table[slot];
+  if (p->state == PROC_FREE) {
+    spin_unlock_irqrestore(SPIN_PROC, proc_saved);
+    return 0;
+  }
+
+  snap->pid = p->pid;
+  snap->ppid = p->ppid;
+  snap->pgid = p->pgid;
+  snap->sid = p->sid;
+  snap->state = p->state;
+  snap->is_idle = p->is_idle;
+  snap->subsys = p->subsys;
+  __builtin_memcpy(snap->comm, p->comm, sizeof(snap->comm));
+  snap->start_time = p->start_time;
+  snap->stack_page_id = p->stack_page_id;
+  snap->has_user_stack_page = p->user_stack_page ? 1u : 0u;
+  __builtin_memcpy(snap->user_pages, p->user_pages, sizeof(snap->user_pages));
+
+  uint32_t sched_saved = spin_lock_irqsave(SPIN_SCHED);
+  snap->utime = p->utime;
+  snap->stime = p->stime;
+  spin_unlock_irqrestore(SPIN_SCHED, sched_saved);
+  spin_unlock_irqrestore(SPIN_PROC, proc_saved);
+  return 1;
+}
+
+static int procfs_find_pid_slot(pid_t pid, uint32_t *slot_out) {
+  int found = 0;
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+
+  for (uint32_t i = 0; i < PROC_MAX; i++) {
+    if (proc_table[i].state != PROC_FREE && proc_table[i].pid == pid) {
+      if (slot_out) *slot_out = i;
+      found = 1;
+      break;
+    }
+  }
+
+  spin_unlock_irqrestore(SPIN_PROC, saved);
+  return found;
+}
+
+static int procfs_slot_active(uint32_t slot) {
+  if (slot >= PROC_MAX) return 0;
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+  int active = proc_table[slot].state != PROC_FREE;
+  spin_unlock_irqrestore(SPIN_PROC, saved);
+  return active;
+}
+
+static uint8_t procfs_slot_subsys(uint32_t slot) {
+  if (slot >= PROC_MAX) return 0;
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+  uint8_t tag =
+      (proc_table[slot].state != PROC_FREE) ? proc_table[slot].subsys : 0;
+  spin_unlock_irqrestore(SPIN_PROC, saved);
+  return tag;
+}
+
 /* Map proc_state_t to Linux single-char state */
-static char state_char(const pcb_t *p) {
-  if (p->is_idle) return 'I'; /* idle kernel thread */
-  switch (p->state) {
+static char state_char(const procfs_proc_snapshot_t *snap) {
+  if (snap->is_idle) return 'I'; /* idle kernel thread */
+  switch (snap->state) {
     case PROC_RUNNABLE:
       return 'R';
     case PROC_SLEEPING:
@@ -409,13 +490,13 @@ static char state_char(const pcb_t *p) {
  * the page pool, so they are intentionally excluded from /proc/<pid>/stat
  * vsize/rss.  User stacks may be either stack_page_id or the separate
  * user_stack_page field, depending on the architecture. */
-static uint32_t proc_page_pool_bytes(const pcb_t *p) {
+static uint32_t proc_page_pool_bytes(const procfs_proc_snapshot_t *snap) {
   uint32_t pages = 0;
 
-  if (p->stack_page_id != PAGE_ID_INVALID) pages++;
-  if (p->user_stack_page) pages++;
+  if (snap->stack_page_id != PAGE_ID_INVALID) pages++;
+  if (snap->has_user_stack_page) pages++;
   for (uint32_t i = 0; i < USER_PAGES_MAX; i++) {
-    if (p->user_pages[i] != PAGE_ID_INVALID) pages++;
+    if (snap->user_pages[i] != PAGE_ID_INVALID) pages++;
   }
   return pages * PAGE_SIZE;
 }
@@ -426,34 +507,35 @@ static uint32_t proc_page_pool_bytes(const pcb_t *p) {
  * utime(14), stime(15), nice(19), start_time(22), vsize(23), rss(24).
  * Fields we don't track are filled with 0.
  */
-static int gen_pid_stat(char *buf, int bufsiz, const pcb_t *p) {
+static int gen_pid_stat(char *buf, int bufsiz,
+                        const procfs_proc_snapshot_t *snap) {
   int pos = 0;
   /* 1: pid */
-  pos = fmt_append_i32(buf, pos, bufsiz, p->pid);
+  pos = fmt_append_i32(buf, pos, bufsiz, snap->pid);
   pos = fmt_append(buf, pos, bufsiz, " (");
   /* 2: comm */
-  pos = fmt_append(buf, pos, bufsiz, p->comm[0] ? p->comm : "?");
+  pos = fmt_append(buf, pos, bufsiz, snap->comm[0] ? snap->comm : "?");
   pos = fmt_append(buf, pos, bufsiz, ") ");
   /* 3: state */
-  char sc[2] = {state_char(p), '\0'};
+  char sc[2] = {state_char(snap), '\0'};
   pos = fmt_append(buf, pos, bufsiz, sc);
   pos = fmt_append(buf, pos, bufsiz, " ");
   /* 4: ppid */
-  pos = fmt_append_i32(buf, pos, bufsiz, p->ppid);
+  pos = fmt_append_i32(buf, pos, bufsiz, snap->ppid);
   pos = fmt_append(buf, pos, bufsiz, " ");
   /* 5: pgrp */
-  pos = fmt_append_i32(buf, pos, bufsiz, p->pgid);
+  pos = fmt_append_i32(buf, pos, bufsiz, snap->pgid);
   pos = fmt_append(buf, pos, bufsiz, " ");
   /* 6: session */
-  pos = fmt_append_i32(buf, pos, bufsiz, p->sid);
+  pos = fmt_append_i32(buf, pos, bufsiz, snap->sid);
   /* 7: tty_nr  8: tpgid  9: flags  10: minflt  11: cminflt
    * 12: majflt  13: cmajflt */
   pos = fmt_append(buf, pos, bufsiz, " 0 0 0 0 0 0 0 ");
   /* 14: utime */
-  pos = fmt_append_u32(buf, pos, bufsiz, p->utime);
+  pos = fmt_append_u32(buf, pos, bufsiz, snap->utime);
   pos = fmt_append(buf, pos, bufsiz, " ");
   /* 15: stime */
-  pos = fmt_append_u32(buf, pos, bufsiz, p->stime);
+  pos = fmt_append_u32(buf, pos, bufsiz, snap->stime);
   /* 16: cutime  17: cstime */
   pos = fmt_append(buf, pos, bufsiz, " 0 0 ");
   /* 18: priority (default 20) */
@@ -465,10 +547,10 @@ static int gen_pid_stat(char *buf, int bufsiz, const pcb_t *p) {
   /* 21: itrealvalue */
   pos = fmt_append(buf, pos, bufsiz, "0 ");
   /* 22: starttime (in jiffies since boot) */
-  pos = fmt_append_u32(buf, pos, bufsiz, p->start_time);
+  pos = fmt_append_u32(buf, pos, bufsiz, snap->start_time);
   pos = fmt_append(buf, pos, bufsiz, " ");
   /* 23: vsize (bytes) */
-  uint32_t page_pool_bytes = proc_page_pool_bytes(p);
+  uint32_t page_pool_bytes = proc_page_pool_bytes(snap);
   pos = fmt_append_u32(buf, pos, bufsiz, page_pool_bytes);
   pos = fmt_append(buf, pos, bufsiz, " ");
   /* 24: rss (pages) — page-pool-backed resident pages; no swap */
@@ -481,8 +563,9 @@ static int gen_pid_stat(char *buf, int bufsiz, const pcb_t *p) {
 }
 
 /* /proc/<pid>/cmdline — NUL-terminated command name */
-static int gen_pid_cmdline(char *buf, int bufsiz, const pcb_t *p) {
-  const char *name = p->comm[0] ? p->comm : "?";
+static int gen_pid_cmdline(char *buf, int bufsiz,
+                           const procfs_proc_snapshot_t *snap) {
+  const char *name = snap->comm[0] ? snap->comm : "?";
   int len = 0;
   while (name[len] && len < bufsiz - 2) buf[len] = name[len], len++;
   buf[len++] = '\0'; /* NUL terminator (part of cmdline format) */
@@ -499,9 +582,10 @@ static const char *subsys_name(uint8_t tag) {
   return "unknown";
 }
 
-static int gen_pid_subsys(char *buf, int bufsiz, const pcb_t *p) {
+static int gen_pid_subsys(char *buf, int bufsiz,
+                          const procfs_proc_snapshot_t *snap) {
   int pos = 0;
-  pos = fmt_append(buf, pos, bufsiz, subsys_name(p->subsys));
+  pos = fmt_append(buf, pos, bufsiz, subsys_name(snap->subsys));
   pos = fmt_append(buf, pos, bufsiz, "\n");
   return pos;
 }
@@ -583,19 +667,18 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
     /* Check for numeric PID directories */
     int32_t pid = parse_uint(name);
     if (pid >= 0) {
-      for (uint32_t i = 0; i < PROC_MAX; i++) {
-        if (proc_table[i].state != PROC_FREE && proc_table[i].pid == pid) {
-          vnode_t *vn = mod_vfs.vnode_alloc();
-          if (!vn) return -ENOMEM;
+      uint32_t slot;
+      if (procfs_find_pid_slot((pid_t)pid, &slot)) {
+        vnode_t *vn = mod_vfs.vnode_alloc();
+        if (!vn) return -ENOMEM;
 
-          vn->type = VNODE_DIR;
-          vn->mode = S_IFDIR | 0555u;
-          vn->ino = PID_SLOT_INO(i);
-          vn->size = 2; /* stat + cmdline */
-          vn->mount = dir->mount;
-          *result = vn;
-          return 0;
-        }
+        vn->type = VNODE_DIR;
+        vn->mode = S_IFDIR | 0555u;
+        vn->ino = PID_SLOT_INO(slot);
+        vn->size = 2; /* stat + cmdline */
+        vn->mount = dir->mount;
+        *result = vn;
+        return 0;
       }
     }
 
@@ -605,7 +688,7 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
   /* ── Per-PID directory lookup ──────────────────────────────────── */
   if (dir->ino >= PID_INO_BASE) {
     uint32_t slot = (dir->ino - PID_INO_BASE) / PID_INO_STRIDE;
-    if (slot >= PROC_MAX || proc_table[slot].state == PROC_FREE) return -ENOENT;
+    if (!procfs_slot_active(slot)) return -ENOENT;
 
     uint32_t base_ino = PID_SLOT_INO(slot);
 
@@ -648,7 +731,7 @@ static int procfs_lookup(vnode_t *dir, const char *name, vnode_t **result) {
 #ifdef PPAP_HAS_SUBSYS
     if (str_eq(name, "termconv")) {
       /* Only visible if the subsystem provides on_proc_read */
-      uint8_t tag = proc_table[slot].subsys;
+      uint8_t tag = procfs_slot_subsys(slot);
       if (mod_core.subsys_read_proc(tag, NULL, NULL, NULL, 0) >= 0) {
         vnode_t *vn = mod_vfs.vnode_alloc();
         if (!vn) return -ENOMEM;
@@ -685,18 +768,19 @@ static long procfs_read(vnode_t *vn, page_id_t page, uint16_t page_off,
     uint32_t slot = rel / PID_INO_STRIDE;
     uint32_t sub = rel % PID_INO_STRIDE;
     if (slot >= PROC_MAX) return -(long)EIO;
-    const pcb_t *p = &proc_table[slot];
-    if (p->state == PROC_FREE) return 0; /* process exited */
+    procfs_proc_snapshot_t snap;
+    if (!procfs_snapshot_slot(slot, &snap)) return 0; /* process exited */
 
     if (sub == PRIV_PID_STAT)
-      total = gen_pid_stat(tmp, (int)sizeof(tmp), p);
+      total = gen_pid_stat(tmp, (int)sizeof(tmp), &snap);
     else if (sub == PRIV_PID_CMDLINE)
-      total = gen_pid_cmdline(tmp, (int)sizeof(tmp), p);
+      total = gen_pid_cmdline(tmp, (int)sizeof(tmp), &snap);
     else if (sub == PRIV_PID_SUBSYS)
-      total = gen_pid_subsys(tmp, (int)sizeof(tmp), p);
+      total = gen_pid_subsys(tmp, (int)sizeof(tmp), &snap);
 #ifdef PPAP_HAS_SUBSYS
     else if (sub == PRIV_PID_TERMCONV) {
-      uint8_t tag = p->subsys;
+      uint8_t tag = snap.subsys;
+      const pcb_t *p = &proc_table[slot];
       total = mod_core.subsys_read_proc(tag, (struct pcb *)p, "termconv", tmp,
                                         (int)sizeof(tmp));
     }
@@ -748,12 +832,13 @@ static int procfs_readdir(vnode_t *dir, struct dirent *entries,
     /* Phase 2: PID directories (index offset by PROCFS_NODE_COUNT) */
     uint32_t pid_idx = (idx >= PROCFS_NODE_COUNT) ? idx - PROCFS_NODE_COUNT : 0;
     while (pid_idx < PROC_MAX && (size_t)count < max_entries) {
-      if (proc_table[pid_idx].state != PROC_FREE) {
+      procfs_proc_snapshot_t snap;
+      if (procfs_snapshot_slot(pid_idx, &snap)) {
         entries[count].d_ino = PID_SLOT_INO(pid_idx);
         entries[count].d_type = DT_DIR;
         /* Convert PID to string */
         char pid_str[12];
-        fmt_u32(pid_str, (uint32_t)proc_table[pid_idx].pid);
+        fmt_u32(pid_str, (uint32_t)snap.pid);
         uint32_t plen = str_len(pid_str);
         __builtin_memcpy(entries[count].d_name, pid_str, plen);
         entries[count].d_name[plen] = '\0';
@@ -786,7 +871,7 @@ static int procfs_readdir(vnode_t *dir, struct dirent *entries,
     };
     uint32_t nentries = sizeof(pid_entries) / sizeof(pid_entries[0]);
 
-    uint8_t tag = (slot < PROC_MAX) ? proc_table[slot].subsys : 0;
+    uint8_t tag = procfs_slot_subsys(slot);
 #ifdef PPAP_HAS_SUBSYS
     int has_proc_read =
         mod_core.subsys_read_proc(tag, NULL, NULL, NULL, 0) >= 0;
