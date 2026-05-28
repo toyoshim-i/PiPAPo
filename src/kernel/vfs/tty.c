@@ -33,6 +33,7 @@
 #include "common/termios.h"               /* struct termios, flag bits */
 #include "kernel/common/core/proc_info.h" /* proc_table, PROC_MAX, PROC_FREE */
 #include "kernel/common/mod/mod_core.h"
+#include "kernel/common/spinlock.h"
 #include "kernel/vfs/file.h"
 
 /* ── Termios defaults not in common header ─────────────────────────────────
@@ -237,6 +238,7 @@ static inline void dev_echo_flush(tty_dev_t *t) {
 
 static void dev_send_signal(tty_dev_t *t, int sig) {
   int woke = 0;
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
   for (uint32_t i = 0; i < PROC_MAX; i++) {
     pcb_t *p = &proc_table[i];
     if (p->state == PROC_FREE) continue;
@@ -260,6 +262,7 @@ static void dev_send_signal(tty_dev_t *t, int sig) {
       woke = 1;
     }
   }
+  spin_unlock_irqrestore(SPIN_PROC, saved);
   /* Trigger context switch so woken process handles the signal promptly */
   if (woke) mod_core.sched_switch();
 }

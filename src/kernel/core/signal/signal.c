@@ -29,6 +29,7 @@
 
 #include "common/errno.h"
 #include "kernel/common/bitops.h"
+#include "kernel/common/spinlock.h"
 #include "kernel/core/proc/proc.h"
 #include "kernel/core/subsys/subsys.h"
 #include "kernel/core/syscall/syscall.h"
@@ -91,28 +92,27 @@ int signal_check_kernel(void) {
 long sys_kill(long pid, long sig) {
   if (sig < 0 || sig >= NSIG) return -(long)EINVAL;
 
-  /* Find target process by PID */
-  pcb_t *target = NULL;
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+  int found = 0;
   for (uint32_t i = 0; i < PROC_MAX; i++) {
     if (proc_table[i].state != PROC_FREE && proc_table[i].pid == (pid_t)pid) {
-      target = &proc_table[i];
+      pcb_t *target = &proc_table[i];
+      found = 1;
+      if (sig != 0) {
+        target->sig_pending |= (1u << sig);
+        if (target->state == PROC_BLOCKED) {
+          target->state = PROC_RUNNABLE;
+          target->wait_channel = NULL;
+        } else if (target->state == PROC_SLEEPING) {
+          target->state = PROC_RUNNABLE;
+        }
+      }
       break;
     }
   }
+  spin_unlock_irqrestore(SPIN_PROC, saved);
 
-  if (!target) return -(long)ESRCH;
-
-  /* Signal 0 is a validity check — don't deliver */
-  if (sig == 0) return 0;
-
-  /* Set pending bit */
-  target->sig_pending |= (1u << sig);
-
-  /* Wake the target if it is blocked/sleeping */
-  if (target->state == PROC_BLOCKED || target->state == PROC_SLEEPING)
-    target->state = PROC_RUNNABLE;
-
-  return 0;
+  return found ? 0 : -(long)ESRCH;
 }
 
 /* ── sys_sigaction (kernel-internal) ────────────────────────────────────────
