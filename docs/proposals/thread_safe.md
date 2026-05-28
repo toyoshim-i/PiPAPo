@@ -1,6 +1,6 @@
 # Kernel Thread-Safety Plan
 
-**Status:** active.  Progress tracked through `d0586b89` on May 27, 2026.
+**Status:** active.  Progress tracked through `dad84f5b` on May 28, 2026.
 This is a work plan for making common kernel code safe under preemption and,
 where applicable, dual-core execution.
 
@@ -74,12 +74,13 @@ Status labels used below:
 - `partial`: useful implementation landed, but defined follow-up remains;
 - `todo`: no reviewed implementation has landed yet.
 
-The current lane is the static mutable-global audit in Phase 1.  The VFS
+The current lane is the process lifecycle audit in Phase 1.  The VFS
 scratch pool, VFS allocator contract, and mount-table lifetime are covered;
 devfs and procfs runtime state, their boot-time registry contracts, and
 runtime wallclock state and IRQ-updated scheduler statistics are covered, and
-real RP2040 multicore verification is available.  The current review item
-finishes the remaining boot-registry inventory.  Process-owned state is next.
+real RP2040 multicore verification is available.  Compile-time and boot-only
+registry contracts are now documented.  The current review item starts the
+`pcb_t` field ownership inventory.
 
 Completed implementation commits:
 
@@ -99,17 +100,18 @@ Completed implementation commits:
 | `efde60c6` | Runtime wallclock epoch synchronization |
 | `33e25256` | Scheduler tick and CPU-accounting synchronization |
 | `d0586b89` | Pico 1 real multicore verification lane |
+| `dad84f5b` | Compile-time and boot-only registry contracts |
 
 Estimated remaining review-sized iterations:
 
 | Work group | State | Estimated iterations |
 | --- | --- | ---: |
-| Finish static-global and boot-registry audit | active | 1 |
-| Audit `pcb_t` lifecycle and cross-process fields | todo | 1-2 |
+| Finish static-global and boot-registry audit | done | 0 |
+| Audit `pcb_t` lifecycle and cross-process fields | active | 1-2 |
 | Finish fd and sleep/wakeup lifecycle follow-ups | partial | 1-2 |
 | Add mutex IRQ-context guard and dedicated cleanup tests | partial | 1-2 |
 | Add concurrency stress coverage for protected subsystems | todo | 2-3 |
-| **Known remaining total** |  | **6-11** |
+| **Known remaining total** |  | **5-10** |
 
 This estimate counts small, reviewable patches rather than unchecked bullet
 items.  The static-global and process-lifecycle audits may identify additional
@@ -340,7 +342,7 @@ Plan:
 
 - list every `pcb_t` field and assign a protection rule:
   `current-only`, `SPIN_PROC`, file mutex, signal lock, or immutable after
-  exec;
+  exec.  The first classification pass is documented in `proc_info.h`;
 - define a consistent snapshot rule for procfs reads of live `proc_table[]`
   entries;
 - update `proc_info.h` comments with those rules;
@@ -356,17 +358,20 @@ Plan:
 3. `partial` Audit raw `wait_channel` / `PROC_BLOCKED` users.  Shared sleep
    helpers are landed; lifecycle rules and special cases remain
    (`e6a43d11`, `b7b1f1fe`).
-4. `active` Audit all `static` mutable globals under `src/kernel`.  VFS
+4. `done` Audit all `static` mutable globals under `src/kernel`.  VFS
    scratch and mount-entry lifetime are fixed; devfs runtime state is covered
    (`1b898547`, `90d8fe51`, `d388720a`); procfs mutable mount state is fixed
    (`4991ab47`); wallclock epoch synchronization is fixed (`efde60c6`);
-   scheduler-statistics synchronization is fixed (`33e25256`); continue the
-   inventory.
-5. `active` Mark boot-only registries as boot-only or add locks.
+   scheduler-statistics synchronization is fixed (`33e25256`); remaining
+   compile-time tables are documented (`dad84f5b`).
+5. `done` Mark boot-only registries as boot-only or add locks.
    Block-device, devfs hook, and TTY backend setup contracts are documented
    (`d388720a`); procfs battery registration is documented (`4991ab47`);
-   logger registration and compile-time loader/CPU/subsystem tables are the
-   current review item.
+   logger registration and compile-time loader/CPU/subsystem tables are
+   documented (`dad84f5b`).
+6. `active` Audit `pcb_t` lifecycle and cross-process fields.  The initial
+   protection-rule inventory is the current review item; helper conversion and
+   procfs snapshot rules remain.
 
 ### Phase 2: Sleepable Mutex
 

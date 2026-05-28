@@ -90,6 +90,32 @@ static inline user_page_ref_t user_to_page(page_id_t base, uint32_t user_off) {
 
 /* ── PCB struct ──────────────────────────────────────────────────────── */
 
+/*
+ * PCB field protection rules:
+ *
+ * - context: saved-register fields are written by architecture switch/trap
+ *   code for the running process.  Cross-process setup code writes them only
+ *   before making a process runnable, or while the process is blocked in a
+ *   lifecycle path such as vfork.
+ * - identity/lifecycle: pid, ppid, state, wait_channel, sleep_until,
+ *   running_on_core, vfork_parent, vfork_frame_saved, exit_status, and
+ *   clear_child_tid are shared with scheduler, wait, exit, signal, or procfs
+ *   paths.  Read or write them under SPIN_PROC unless the caller proves the
+ *   target is current-only or not runnable yet.
+ * - process-owned runtime state: fd_map, cwd, brk, signal masks/handlers,
+ *   trace state, subsystem state, CPU state, TLS, comm, pgid/sid, umask, and
+ *   memory-image/page-tracking fields are normally mutated by the owning
+ *   process.  Cross-process readers must either hold SPIN_PROC for a stable
+ *   lifecycle snapshot or tolerate best-effort procfs/debug output.
+ * - accounting: utime/stime are written from timer context for the running
+ *   process and sampled with scheduler/stat counters under SPIN_SCHED.
+ * - kmutex_held: owned by kmutex.c and proc_free(); updates are serialized by
+ *   the mutex implementation's SPIN_PROC critical sections.
+ * - immutable setup fields: kernel_sp, is_idle, and fixed process-image
+ *   layout are planted before the process can run and then treated as
+ *   read-only.
+ */
+
 typedef struct pcb {
   /*
    * Saved CPU context — architecture-dependent.
@@ -113,7 +139,7 @@ typedef struct pcb {
    * once by proc_kstack_init_slot() and never written by save paths.
    * arch_build_initial_frame uses it to compute where to write the
    * initial SW frame. */
-  uint32_t kernel_sp; /* slot top (immutable)        (offset 36)     */
+  uint32_t kernel_sp; /* immutable slot top          (offset 36)     */
   uint32_t vfork_saved_frame[10]; /* parent's 32B HW frame + 8B {r7,lr}
                                      stub frame at vfork-trap; restored
                                      before the parent's next user-mode
@@ -166,41 +192,42 @@ typedef struct pcb {
   pid_t ppid;
   proc_state_t state;
 
-  /* ── Memory ─────────────────────────────────────────────────────────── */
+  /* ── Memory: owner-mutated; cross-process lifecycle under SPIN_PROC ─── */
   page_id_t stack_page_id; /* page_id_t for 4 KB stack backing page */
   page_id_t user_pages[USER_PAGES_MAX]; /* page-backed user memory tracking */
   proc_image_t image;    /* explicit process image layout / memory classes */
   void *user_stack_page; /* separate user stack page, when not stack_page_id */
 
-  /* ── File descriptors ───────────────────────────────────────────────── */
+  /* ── File descriptors: fd_map is process-owned; file objects are VFS ─── */
   int16_t fd_map[FD_MAX]; /* per-process fd -> system descriptor ID map
                            * -1 (FD_DESC_NONE) = empty slot.
                            * VFS owns the file objects; core owns the map. */
   char cwd[64];           /* current working directory (Phase 2+)       */
 
-  /* ── Scheduling ─────────────────────────────────────────────────────── */
+  /* ── Scheduling: SPIN_PROC except current time-slice bookkeeping ─────── */
   uint32_t ticks_remaining; /* SysTick ticks left in current time-slice   */
   uint32_t sleep_until;     /* wake when SysTick count reaches this value */
   int8_t running_on_core;   /* -1 = not running, 0/1 = core ID           */
   uint8_t is_idle;          /* 1 = idle thread (ticks count as idle)      */
 
-  /* ── vfork / waitpid ──────────────────────────────────────────────── */
+  /* ── vfork / waitpid: lifecycle-shared, protect with SPIN_PROC ─────── */
   struct pcb *vfork_parent;   /* non-NULL while child shares parent's space */
   uint8_t vfork_frame_saved;  /* 1 if a parent-resume slice was saved during
                                  vfork and must be restored before this PCB
                                  returns to user mode.  The saved slice size
                                  and storage are arch-specific (see Phase 0
-                                 in docs/proposals/no_stack_copy_on_vfork.md). */
+                                 in docs/proposals/no_stack_copy_on_vfork.md).
+                               */
   int exit_status;            /* set by _exit(), read by waitpid()          */
   uintptr_t got_base;         /* r9 value (GOT SRAM address) for PIC       */
   void *wait_channel;         /* sleep/wakeup target (e.g. pipe_t*)        */
   struct kmutex *kmutex_held; /* process-owned sleepable mutex list        */
 
-  /* ── Heap (brk) ──────────────────────────────────────────────────── */
+  /* ── Heap (brk): owning process mutates through sys_brk() ─────────── */
   uintptr_t brk_base;    /* initial break = end of .data+.bss         */
   uintptr_t brk_current; /* current break (grows upward)             */
 
-  /* ── Signals ─────────────────────────────────────────────────────── */
+  /* ── Signals: owner mutates masks/handlers; pending is SPIN_PROC ──── */
   sighandler_t sig_handlers[NSIG];  /* SIG_DFL(0) or SIG_IGN(1) or func */
   sighandler_t sig_restorers[NSIG]; /* sa_restorer per handler, used as the
                                        handler's return address by arches
@@ -209,19 +236,19 @@ typedef struct pcb {
   uint32_t sig_pending;             /* bitmask of pending signals        */
   uint32_t sig_blocked;             /* bitmask of blocked signals        */
 
-  /* ── Process identity / accounting (Phase 6 Step 14) ─────── */
+  /* ── Process identity / accounting ────────────────────────────────── */
   char comm[16];       /* command name (basename of exe)    */
   uint32_t utime;      /* user-mode ticks consumed          */
   uint32_t stime;      /* kernel-mode ticks consumed        */
   uint32_t start_time; /* boot tick when process created    */
 
-  /* ── Process group / session (Phase 6 Step 7) ────────────────── */
+  /* ── Process group / session: owner mutates; procfs snapshots best-effort */
   pid_t pgid;                      /* process group ID                  */
   pid_t sid;                       /* session ID                        */
   uint32_t umask_val;              /* file creation mask (default 022)  */
   user_page_ref_t clear_child_tid; /* set_tid_address reference         */
 
-  /* ── Tracing ─────────────────────────────────────────────────── */
+  /* ── Tracing: tracer/tracee lifecycle state, protect with SPIN_PROC ── */
   pid_t tracer_pid;             /* parent tracer PID, or 0 if none     */
   uint8_t trace_requested;      /* set by PTRACE_TRACEME until exec     */
   uint8_t trace_mode;           /* PPAP_TRACE_MODE_* bits              */
@@ -244,15 +271,15 @@ typedef struct pcb {
   } trace_hwbp[TRACE_HW_BP_MAX];
   struct ppap_ptrace_event trace_event;
 
-  /* ── Subsystem tag ───────────────────────────────────────────── */
+  /* ── Subsystem tag: fixed after exec setup; subsystem data is owner state */
   uint8_t subsys;    /* SUBSYS_PPAP, SUBSYS_HUMAN68K, etc.  */
   void *subsys_data; /* opaque per-process subsystem state  */
 
-  /* ── CPU Operations (for emulated CPUs) ──────────────────────── */
+  /* ── CPU Operations: fixed at exec/setup; CPU state is owner state ─── */
   const struct cpu_ops *cpu_ops;
   void *cpu_state;
 
-  /* ── Thread-local storage (TLS) ──────────────────────────── */
+  /* ── Thread-local storage (TLS): owning process mutates ────────────── */
   uintptr_t tp_value; /* set/get_thread_area value          */
 
 } pcb_t;
