@@ -349,7 +349,9 @@ Plan:
 - update `proc_info.h` comments with those rules;
 - convert ambiguous cross-process updates to helper functions.
   Signal posting now updates pending bits and blocked/sleeping wake state under
-  `SPIN_PROC` in `sys_kill()` and TTY foreground-signal delivery.
+  `SPIN_PROC` in `sys_kill()` and TTY foreground-signal delivery.  Process
+  exit now publishes exit status, zombie state, waitpid/tracer wakeups,
+  vfork-parent wakeups, and child reparenting under `SPIN_PROC`.
 
 ## Implementation Order
 
@@ -375,7 +377,8 @@ Plan:
 6. `active` Audit `pcb_t` lifecycle and cross-process fields.  The initial
    protection-rule inventory is documented (`1f372a74`); procfs PID
    snapshots are documented (`bf5dcfb6`); signal posting serialization is the
-   current review item.  Wait/exit and ptrace helper conversion remains.
+   covered (`0c7a04c1`).  Exit/vfork wakeup publication is the current review
+   item; waitpid and ptrace helper conversion remains.
 
 ### Phase 2: Sleepable Mutex
 

@@ -16,6 +16,7 @@
 #include "common/utsname.h"
 #include "common/wait.h"
 #include "kernel/common/mod/mod_vfs.h"
+#include "kernel/common/spinlock.h"
 #include "kernel/common/version.h"
 #include "kernel/core/arch.h"
 #include "kernel/core/cpu/cpu.h"
@@ -214,6 +215,21 @@ static void proc_release_stack_page(void **page) {
   region_t r = {*page, page_from_ptr(*page)};
   region_free(PPAP_MEM_RAM_STACK, PAGE_SIZE, &r);
   *page = NULL;
+}
+
+static void proc_wake_blocked_locked(pcb_t *p) {
+  if (!p || p->state != PROC_BLOCKED) return;
+  p->state = PROC_RUNNABLE;
+  p->wait_channel = NULL;
+}
+
+static void proc_wake_blocked_pid_locked(pid_t pid) {
+  for (uint32_t i = 0; i < PROC_MAX; i++) {
+    pcb_t *p = &proc_table[i];
+    if (p->state == PROC_FREE || p->pid != pid) continue;
+    proc_wake_blocked_locked(p);
+    break;
+  }
 }
 
 static void trace_clear_swbp(pcb_t *target);
@@ -1490,8 +1506,6 @@ long sys_exit(long status) {
 #endif
   }
 
-  current->exit_status = (int)status;
-
   /* Let the subsystem clean up while fds are still open
    * (e.g. restore terminal state). */
   if (current->subsys < SUBSYS_MAX) {
@@ -1531,52 +1545,36 @@ long sys_exit(long status) {
       current->stack_page_id = PAGE_ID_INVALID;
   }
 
-  /* Unblock vfork parent if we are a vfork child */
+#ifdef KSTACK_USAGE_TRACK
+  proc_kstack_usage_report();
+#endif
+
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+  current->exit_status = (int)status;
+
+  /* Unblock vfork parent if we are a vfork child. */
   if (current->vfork_parent) {
-    current->vfork_parent->state = PROC_RUNNABLE;
+    proc_wake_blocked_locked(current->vfork_parent);
     current->vfork_parent = NULL;
   }
 
-  /* Wake parent if it is blocked (e.g. in waitpid).
-   * After execve, vfork_parent is NULL so the vfork unblock above
-   * won't fire — we need this separate wake-up for waitpid. */
-  for (uint32_t i = 0; i < PROC_MAX; i++) {
-    if (proc_table[i].pid == current->ppid &&
-        proc_table[i].state == PROC_BLOCKED) {
-      proc_table[i].state = PROC_RUNNABLE;
-      break;
-    }
-  }
-  if (current->tracer_pid != 0 && current->tracer_pid != current->ppid) {
-    for (uint32_t i = 0; i < PROC_MAX; i++) {
-      if (proc_table[i].pid == current->tracer_pid &&
-          proc_table[i].state == PROC_BLOCKED) {
-        proc_table[i].state = PROC_RUNNABLE;
-        break;
-      }
-    }
-  }
+  /* Wake parent if it is blocked in waitpid.  After execve, vfork_parent is
+   * NULL, so this wake is still needed for ordinary waitpid completion. */
+  proc_wake_blocked_pid_locked(current->ppid);
+  if (current->tracer_pid != 0 && current->tracer_pid != current->ppid)
+    proc_wake_blocked_pid_locked(current->tracer_pid);
 
-  /* Reparent children to init (PID 1) so they can be reaped.
-   * If a reparented child is already zombie, wake init. */
+  /* Reparent children to init (PID 1) so they can be reaped.  If a reparented
+   * child is already zombie, wake init. */
   for (uint32_t i = 1; i < PROC_MAX; i++) {
     pcb_t *child = &proc_table[i];
     if (child->state == PROC_FREE || child->ppid != current->pid) continue;
     child->ppid = 1;
-    if (child->state == PROC_ZOMBIE) {
-      for (uint32_t j = 0; j < PROC_MAX; j++) {
-        if (proc_table[j].pid == 1 && proc_table[j].state == PROC_BLOCKED) {
-          proc_table[j].state = PROC_RUNNABLE;
-          break;
-        }
-      }
-    }
+    if (child->state == PROC_ZOMBIE) proc_wake_blocked_pid_locked(1);
   }
 
-#ifdef KSTACK_USAGE_TRACK
-  proc_kstack_usage_report();
-#endif
   current->state = PROC_ZOMBIE;
+  spin_unlock_irqrestore(SPIN_PROC, saved);
 #if ARCH_EXIT_SWITCH_IN_SYSCALL_EPILOGUE
   /* Return to the syscall epilogue and let it switch away based on
    * current->state != PROC_RUNNABLE. */
@@ -2136,8 +2134,10 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
 
   /* Unblock vfork parent — we have our own pages now */
   if (current->vfork_parent) {
-    current->vfork_parent->state = PROC_RUNNABLE;
+    uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+    proc_wake_blocked_locked(current->vfork_parent);
     current->vfork_parent = NULL;
+    spin_unlock_irqrestore(SPIN_PROC, saved);
   }
 
   trace_exec_stop();
