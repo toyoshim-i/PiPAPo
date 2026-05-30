@@ -33,5 +33,25 @@ int main(void)
     pid_t pgid_after = getpgid(0);
     UT_ASSERT_EQ(pgid_after, pid);
 
+    /* 7. Parent can update and read a live child's process group */
+    {
+        char *argv[] = {(char *)"/bin/sleep", (char *)"1", (char *)0};
+        pid_t child = vfork();
+        if (child == 0) {
+            execve(argv[0], argv, (void *)0);
+            _exit(127);
+        }
+
+        UT_ASSERT(child > 0, "vfork child should start");
+        if (child > 0) {
+            int status = 0;
+            UT_ASSERT_EQ(setpgid(child, child), 0);
+            UT_ASSERT_EQ(getpgid(child), child);
+            UT_ASSERT_EQ(waitpid(child, &status, 0), child);
+            UT_ASSERT(WIFEXITED(status), "sleep child should exit");
+            UT_ASSERT_EQ(WEXITSTATUS(status), 0);
+        }
+    }
+
     UT_SUMMARY("test_id");
 }

@@ -58,6 +58,7 @@ long sys_waitpid(long pid, long status_ptr, long options);
 long sys_set_tid_address(uintptr_t tidptr);
 long sys_uname(uintptr_t buf_ptr);
 long sys_setpgid(long pid, long pgid);
+long sys_getpgid(long pid);
 long sys_setsid(void);
 long sys_wait4(long pid, long status_ptr, long options, uintptr_t rusage_ptr);
 long sys_ptrace(long req, long pid, uintptr_t addr, uintptr_t data_ptr);

@@ -2270,6 +2270,7 @@ long sys_uname(uintptr_t buf_ptr) {
  */
 
 long sys_setpgid(long pid, long pgid) {
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
   pcb_t *target;
 
   if (pid == 0)
@@ -2283,11 +2284,45 @@ long sys_setpgid(long pid, long pgid) {
         break;
       }
     }
-    if (!target) return -(long)ESRCH;
+    if (!target) {
+      spin_unlock_irqrestore(SPIN_PROC, saved);
+      return -(long)ESRCH;
+    }
   }
 
   target->pgid = (pgid == 0) ? target->pid : (pid_t)pgid;
+  spin_unlock_irqrestore(SPIN_PROC, saved);
   return 0;
+}
+
+/* ── sys_getpgid ──────────────────────────────────────────────────────────────
+ */
+
+long sys_getpgid(long pid) {
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+  pcb_t *target;
+  long result;
+
+  if (pid == 0)
+    target = current;
+  else {
+    target = NULL;
+    for (uint32_t i = 0; i < PROC_MAX; i++) {
+      if (proc_state_is_live(proc_table[i].state) &&
+          proc_table[i].pid == (pid_t)pid) {
+        target = &proc_table[i];
+        break;
+      }
+    }
+    if (!target) {
+      spin_unlock_irqrestore(SPIN_PROC, saved);
+      return -(long)ESRCH;
+    }
+  }
+
+  result = (long)target->pgid;
+  spin_unlock_irqrestore(SPIN_PROC, saved);
+  return result;
 }
 
 /* ── sys_setsid ───────────────────────────────────────────────────────────────

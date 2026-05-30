@@ -1,7 +1,7 @@
 # Kernel Thread-Safety Plan
 
-**Status:** active.  Landed progress tracked through `61d8e2ad`; ptrace
-lifecycle serialization is the current uncommitted review item.
+**Status:** active.  Phase 1 is complete after the reviewed process-group
+serialization patch.  Phase 2 is the next active lane.
 This is a work plan for making common kernel code safe under preemption and,
 where applicable, dual-core execution.
 
@@ -75,21 +75,20 @@ Status labels used below:
 - `partial`: useful implementation landed, but defined follow-up remains;
 - `todo`: no reviewed implementation has landed yet.
 
-The current lane is Phase 1, step 6: the process lifecycle audit.  The current
-uncommitted review item serializes ptrace lifecycle transitions.  After that,
-one closing audit pass remains for cross-process PCB access and raw wakeup
-special cases.  Phase 2 does not start until that closing pass is reviewed and
-Phase 1 is marked done.
+Phase 1 is complete.  Its closing audit found unlocked cross-process
+`getpgid()` and `setpgid()` access; the reviewed closing patch serializes those
+paths.  The next lane is Phase 2: add a conservative IRQ-context guard for
+sleepable mutex use, then add dedicated mutex tests.
 
 Current cursor:
 
 | Level | Current position | State |
 | --- | --- | --- |
 | Overall plan | Common kernel thread-safety hardening | active |
-| Phase | Phase 1: Contracts And Audits | active |
-| Step | Phase 1.6: Audit `pcb_t` lifecycle and cross-process fields | active |
-| Review patch | Serialize ptrace lookup, attach, stop, resume, and wakeups | awaiting review |
-| Next patch after approval | Close remaining PCB and raw wakeup audit findings | queued |
+| Phase | Phase 2: Sleepable Mutex | active |
+| Step | Phase 2.5: Add IRQ-context guard | queued |
+| Review patch | Serialize cross-process process-group access | approved |
+| Next patch after commit | Add mutex IRQ-context guard | queued |
 
 Execution rule:
 
@@ -122,19 +121,18 @@ Completed implementation commits:
 | `0c7a04c1` | Signal posting serialization |
 | `466ec4cf` | Exit and vfork wakeup publication |
 | `61d8e2ad` | Waitpid zombie claiming |
+| `891aa7ae` | Ptrace lifecycle serialization and phase gates |
 
 Estimated remaining review-sized iterations:
 
 | Ordered work group | State | Estimated iterations |
 | --- | --- | ---: |
-| Phase 1: review and land ptrace lifecycle serialization | awaiting review | 1 |
-| Phase 1: close PCB and raw wakeup audit findings | queued | 1-2 |
 | Phase 2: add mutex IRQ-context guard and dedicated cleanup tests | deferred | 1-2 |
 | Phase 3: high-risk user conversions | done | 0 |
 | Phase 4: normalize remaining sleep/wakeup paths | deferred | 1-2 |
 | Phase 5: add concurrency stress coverage | deferred | 2-3 |
 | Phase 5: run final target matrix and record target-specific issues | deferred | 1 |
-| **Known remaining total, including current patch** |  | **7-11** |
+| **Known remaining total after Phase 1** |  | **5-8** |
 
 This estimate counts small, reviewable patches rather than unchecked bullet
 items.  The closing PCB audit may identify additional required fixes, so the
@@ -383,8 +381,8 @@ Phase dashboard:
 
 | Phase | State | Progress | Exit condition |
 | --- | --- | --- | --- |
-| 1. Contracts And Audits | active | Static globals and registries are done; PCB lifecycle audit is in progress | Land ptrace serialization and close remaining PCB/raw-wakeup findings |
-| 2. Sleepable Mutex | partial | Primitive and process-death release are done | Add IRQ-context guard and dedicated tests |
+| 1. Contracts And Audits | done | Static globals, registries, PCB lifecycle, and process-group access are covered | Complete |
+| 2. Sleepable Mutex | active | Primitive and process-death release are done | Add IRQ-context guard and dedicated tests |
 | 3. Convert High-Risk Users | done | x68k IOCS, fd, pipe, and tmpfs conversions are landed | Reopen only if later audits find another high-risk user |
 | 4. Normalize Sleep/Wakeup | partial | Shared helpers exist; pipe, poll, and tty use them | Audit remaining timer, process, vfork/wait, and target paths; define wakeup rule |
 | 5. Stress Testing | partial | Pico 1 multicore lane exists | Add subsystem concurrency stress and run final target matrix |
@@ -402,9 +400,9 @@ Execution order:
 1. `done` Add shared comments for spinlock IDs and ownership (`9814202f`).
 2. `done` Audit all `kmem_alloc()` / `kmem_free()` callers; VFS pools use
    `SPIN_VFS` (`1b898547`, `690791f2`).
-3. `partial` Audit raw `wait_channel` / `PROC_BLOCKED` users.  Shared sleep
-   helpers are landed; lifecycle rules and special cases remain
-   (`e6a43d11`, `b7b1f1fe`).
+3. `done` Audit raw `wait_channel` / `PROC_BLOCKED` users.  Shared sleep
+   helpers are landed (`e6a43d11`, `b7b1f1fe`); remaining caller conversion
+   and wakeup-rule normalization are tracked in Phase 4.
 4. `done` Audit all `static` mutable globals under `src/kernel`.  VFS
    scratch and mount-entry lifetime are fixed; devfs runtime state is covered
    (`1b898547`, `90d8fe51`, `d388720a`); procfs mutable mount state is fixed
@@ -416,14 +414,13 @@ Execution order:
    (`d388720a`); procfs battery registration is documented (`4991ab47`);
    logger registration and compile-time loader/CPU/subsystem tables are
    documented (`dad84f5b`).
-6. `active` Audit `pcb_t` lifecycle and cross-process fields.  The initial
+6. `done` Audit `pcb_t` lifecycle and cross-process fields.  The initial
    protection-rule inventory is documented (`1f372a74`); procfs PID
    snapshots are documented (`bf5dcfb6`); signal posting serialization is
    covered (`0c7a04c1`); exit/vfork wakeup publication is covered
-   (`466ec4cf`); waitpid zombie claiming is covered (`61d8e2ad`).  Ptrace
-   lifecycle serialization is the current uncommitted review item.  After it
-   lands, perform one closing pass over remaining cross-process PCB access and
-   raw wakeup special cases.
+   (`466ec4cf`); waitpid zombie claiming is covered (`61d8e2ad`); ptrace
+   lifecycle serialization is covered (`891aa7ae`).  The closing patch
+   serializes cross-process process-group access.
 
 ### Phase 2: Sleepable Mutex
 
