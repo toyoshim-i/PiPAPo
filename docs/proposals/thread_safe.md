@@ -1,6 +1,7 @@
 # Kernel Thread-Safety Plan
 
-**Status:** active.  Progress tracked through `dad84f5b` on May 28, 2026.
+**Status:** active.  Landed progress tracked through `61d8e2ad`; ptrace
+lifecycle serialization is the current uncommitted review item.
 This is a work plan for making common kernel code safe under preemption and,
 where applicable, dual-core execution.
 
@@ -74,13 +75,28 @@ Status labels used below:
 - `partial`: useful implementation landed, but defined follow-up remains;
 - `todo`: no reviewed implementation has landed yet.
 
-The current lane is the process lifecycle audit in Phase 1.  The VFS
-scratch pool, VFS allocator contract, and mount-table lifetime are covered;
-devfs and procfs runtime state, their boot-time registry contracts, and
-runtime wallclock state and IRQ-updated scheduler statistics are covered, and
-real RP2040 multicore verification is available.  Compile-time and boot-only
-registry contracts are now documented.  The current review item starts the
-`pcb_t` field ownership inventory.
+The current lane is Phase 1, step 6: the process lifecycle audit.  The current
+uncommitted review item serializes ptrace lifecycle transitions.  After that,
+one closing audit pass remains for cross-process PCB access and raw wakeup
+special cases.  Phase 2 does not start until that closing pass is reviewed and
+Phase 1 is marked done.
+
+Current cursor:
+
+| Level | Current position | State |
+| --- | --- | --- |
+| Overall plan | Common kernel thread-safety hardening | active |
+| Phase | Phase 1: Contracts And Audits | active |
+| Step | Phase 1.6: Audit `pcb_t` lifecycle and cross-process fields | active |
+| Review patch | Serialize ptrace lookup, attach, stop, resume, and wakeups | awaiting review |
+| Next patch after approval | Close remaining PCB and raw wakeup audit findings | queued |
+
+Execution rule:
+
+- `next` selects work only from the active phase.
+- A phase transition requires its exit condition to be met and recorded below.
+- Findings for later phases are recorded as deferred work, not pulled forward.
+- Phase 3 is already complete, so execution moves from Phase 2 to Phase 4.
 
 Completed implementation commits:
 
@@ -101,22 +117,28 @@ Completed implementation commits:
 | `33e25256` | Scheduler tick and CPU-accounting synchronization |
 | `d0586b89` | Pico 1 real multicore verification lane |
 | `dad84f5b` | Compile-time and boot-only registry contracts |
+| `1f372a74` | PCB field ownership rules |
+| `bf5dcfb6` | Procfs PCB snapshots |
+| `0c7a04c1` | Signal posting serialization |
+| `466ec4cf` | Exit and vfork wakeup publication |
+| `61d8e2ad` | Waitpid zombie claiming |
 
 Estimated remaining review-sized iterations:
 
-| Work group | State | Estimated iterations |
+| Ordered work group | State | Estimated iterations |
 | --- | --- | ---: |
-| Finish static-global and boot-registry audit | done | 0 |
-| Audit `pcb_t` lifecycle and cross-process fields | active | 1-2 |
-| Finish fd and sleep/wakeup lifecycle follow-ups | partial | 1-2 |
-| Add mutex IRQ-context guard and dedicated cleanup tests | partial | 1-2 |
-| Add concurrency stress coverage for protected subsystems | todo | 2-3 |
-| **Known remaining total** |  | **5-10** |
+| Phase 1: review and land ptrace lifecycle serialization | awaiting review | 1 |
+| Phase 1: close PCB and raw wakeup audit findings | queued | 1-2 |
+| Phase 2: add mutex IRQ-context guard and dedicated cleanup tests | deferred | 1-2 |
+| Phase 3: high-risk user conversions | done | 0 |
+| Phase 4: normalize remaining sleep/wakeup paths | deferred | 1-2 |
+| Phase 5: add concurrency stress coverage | deferred | 2-3 |
+| Phase 5: run final target matrix and record target-specific issues | deferred | 1 |
+| **Known remaining total, including current patch** |  | **7-11** |
 
 This estimate counts small, reviewable patches rather than unchecked bullet
-items.  The static-global and process-lifecycle audits may identify additional
-required fixes, so the upper bound should be revised as those inventories are
-completed.
+items.  The closing PCB audit may identify additional required fixes, so the
+upper bound should be revised after Phase 1.6 is complete.
 
 ## Known Issues And Completed Protection
 
@@ -357,6 +379,24 @@ Plan:
 
 ## Implementation Order
 
+Phase dashboard:
+
+| Phase | State | Progress | Exit condition |
+| --- | --- | --- | --- |
+| 1. Contracts And Audits | active | Static globals and registries are done; PCB lifecycle audit is in progress | Land ptrace serialization and close remaining PCB/raw-wakeup findings |
+| 2. Sleepable Mutex | partial | Primitive and process-death release are done | Add IRQ-context guard and dedicated tests |
+| 3. Convert High-Risk Users | done | x68k IOCS, fd, pipe, and tmpfs conversions are landed | Reopen only if later audits find another high-risk user |
+| 4. Normalize Sleep/Wakeup | partial | Shared helpers exist; pipe, poll, and tty use them | Audit remaining timer, process, vfork/wait, and target paths; define wakeup rule |
+| 5. Stress Testing | partial | Pico 1 multicore lane exists | Add subsystem concurrency stress and run final target matrix |
+
+Execution order:
+
+1. Complete Phase 1.
+2. Complete Phase 2.
+3. Skip Phase 3 because it is already complete.
+4. Complete Phase 4.
+5. Complete Phase 5.
+
 ### Phase 1: Contracts And Audits
 
 1. `done` Add shared comments for spinlock IDs and ownership (`9814202f`).
@@ -378,10 +418,12 @@ Plan:
    documented (`dad84f5b`).
 6. `active` Audit `pcb_t` lifecycle and cross-process fields.  The initial
    protection-rule inventory is documented (`1f372a74`); procfs PID
-   snapshots are documented (`bf5dcfb6`); signal posting serialization is the
+   snapshots are documented (`bf5dcfb6`); signal posting serialization is
    covered (`0c7a04c1`); exit/vfork wakeup publication is covered
-   (`466ec4cf`).  Waitpid zombie claiming is the current review item; ptrace
-   helper conversion remains.
+   (`466ec4cf`); waitpid zombie claiming is covered (`61d8e2ad`).  Ptrace
+   lifecycle serialization is the current uncommitted review item.  After it
+   lands, perform one closing pass over remaining cross-process PCB access and
+   raw wakeup special cases.
 
 ### Phase 2: Sleepable Mutex
 
@@ -415,11 +457,11 @@ Plan:
 
 ### Phase 5: Stress Testing
 
-`active` Add tests that create real concurrency instead of only single-thread
-syscall coverage.  The current review item adds a Pico 1 UART-captured hardware
-lane (`--test --filter=smp pico1`) and a post-scheduler Core 1 statistics smoke
-test.  `test_fs` validates basic mount pinning behavior, but does not create
-concurrent mount/unmount interleavings.
+`partial` Add tests that create real concurrency instead of only single-thread
+syscall coverage.  Pico 1 has a UART-captured hardware lane
+(`--test --filter=smp pico1`) and a post-scheduler Core 1 statistics smoke test
+(`d0586b89`).  `test_fs` validates basic mount pinning behavior, but does not
+create concurrent mount/unmount interleavings.
 
 - parallel opens/closes/dups of shared files;
 - concurrent `read()`/`lseek()` on one descriptor;

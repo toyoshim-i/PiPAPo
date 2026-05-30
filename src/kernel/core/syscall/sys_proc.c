@@ -242,7 +242,7 @@ static void trace_m68k_set_trace_bit(pcb_t *target, int enable);
 static int trace_hwbp_hit(const pcb_t *target, uint32_t pc);
 #endif
 
-static pcb_t *trace_find_tracee(pid_t tracer_pid, long pid) {
+static pcb_t *trace_find_tracee_locked(pid_t tracer_pid, long pid) {
   if (pid <= 0) return NULL;
   for (uint32_t i = 1; i < PROC_MAX; i++) {
     pcb_t *p = &proc_table[i];
@@ -253,7 +253,7 @@ static pcb_t *trace_find_tracee(pid_t tracer_pid, long pid) {
   return NULL;
 }
 
-static pcb_t *trace_find_process(long pid) {
+static pcb_t *trace_find_process_locked(long pid) {
   if (pid <= 0) return NULL;
   for (uint32_t i = 1; i < PROC_MAX; i++) {
     pcb_t *p = &proc_table[i];
@@ -263,13 +263,8 @@ static pcb_t *trace_find_process(long pid) {
   return NULL;
 }
 
-static void trace_wake_tracer(const pcb_t *tracee) {
-  for (uint32_t i = 0; i < PROC_MAX; i++) {
-    pcb_t *p = &proc_table[i];
-    if (!proc_state_is_live(p->state) || p->pid != tracee->tracer_pid) continue;
-    if (p->state == PROC_BLOCKED) p->state = PROC_RUNNABLE;
-    break;
-  }
+static void trace_wake_tracer_locked(const pcb_t *tracee) {
+  proc_wake_blocked_pid_locked(tracee->tracer_pid);
 }
 
 static void trace_fill_event(uint32_t event, uint32_t abi, uint32_t nr,
@@ -290,9 +285,12 @@ static void trace_fill_event(uint32_t event, uint32_t abi, uint32_t nr,
 }
 
 static void trace_stop_current(void) {
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+
   current->trace_wait_pending = 1;
   current->state = PROC_TRACED_STOP;
-  trace_wake_tracer(current);
+  trace_wake_tracer_locked(current);
+  spin_unlock_irqrestore(SPIN_PROC, saved);
   /* Block until the tracer flips us back to PROC_RUNNABLE (via
    * trace_resume_target or sys_kill).  This is continuation blocking —
    * no syscall_restart / PC-rewind dance — so the caller resumes inline
@@ -309,8 +307,11 @@ static void trace_reset_mode_state(pcb_t *p, uint8_t mode) {
 }
 
 static void trace_resume_target(pcb_t *target) {
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+
   target->trace_wait_pending = 0;
   if (target->state == PROC_TRACED_STOP) target->state = PROC_RUNNABLE;
+  spin_unlock_irqrestore(SPIN_PROC, saved);
   sched_switch();
 }
 
@@ -1299,9 +1300,15 @@ static long ptrace_copy_out(uintptr_t user_ptr, const void *src, size_t len) {
 }
 
 long sys_ptrace(long req, long pid, uintptr_t addr, uintptr_t data_ptr) {
+  pcb_t *target;
+  uint32_t saved;
+
   if (req == PTRACE_TRACEME) {
-    if (current->tracer_pid != 0 || current->trace_requested)
+    saved = spin_lock_irqsave(SPIN_PROC);
+    if (current->tracer_pid != 0 || current->trace_requested) {
+      spin_unlock_irqrestore(SPIN_PROC, saved);
       return -(long)EPERM;
+    }
     current->tracer_pid = current->ppid;
     current->trace_requested = 1;
     current->trace_mode = 0;
@@ -1312,14 +1319,25 @@ long sys_ptrace(long req, long pid, uintptr_t addr, uintptr_t data_ptr) {
     current->trace_step_pending = 0;
     trace_clear_breakpoints(current);
     __builtin_memset(&current->trace_event, 0, sizeof(current->trace_event));
+    spin_unlock_irqrestore(SPIN_PROC, saved);
     return 0;
   }
 
   if (req == PTRACE_ATTACH) {
-    pcb_t *target = trace_find_process(pid);
-    if (!target || target->state == PROC_ZOMBIE) return -(long)ESRCH;
-    if (target == current) return -(long)EPERM;
-    if (target->tracer_pid != 0 || target->trace_requested) return -(long)EPERM;
+    saved = spin_lock_irqsave(SPIN_PROC);
+    target = trace_find_process_locked(pid);
+    if (!target || target->state == PROC_ZOMBIE) {
+      spin_unlock_irqrestore(SPIN_PROC, saved);
+      return -(long)ESRCH;
+    }
+    if (target == current) {
+      spin_unlock_irqrestore(SPIN_PROC, saved);
+      return -(long)EPERM;
+    }
+    if (target->tracer_pid != 0 || target->trace_requested) {
+      spin_unlock_irqrestore(SPIN_PROC, saved);
+      return -(long)EPERM;
+    }
 
     target->tracer_pid = current->pid;
     target->trace_requested = 0;
@@ -1332,12 +1350,23 @@ long sys_ptrace(long req, long pid, uintptr_t addr, uintptr_t data_ptr) {
     target->trace_event.event = PPAP_TRACE_EVENT_DEBUG_STOP;
     target->trace_event.abi = PPAP_TRACE_ABI_PPAP;
     target->state = PROC_TRACED_STOP;
-    trace_wake_tracer(target);
+    trace_wake_tracer_locked(target);
+    spin_unlock_irqrestore(SPIN_PROC, saved);
     return 0;
   }
 
-  pcb_t *target = trace_find_tracee(current->pid, pid);
-  if (!target) return -(long)ESRCH;
+  saved = spin_lock_irqsave(SPIN_PROC);
+  target = trace_find_tracee_locked(current->pid, pid);
+  if (!target) {
+    spin_unlock_irqrestore(SPIN_PROC, saved);
+    return -(long)ESRCH;
+  }
+  if (target->state != PROC_TRACED_STOP) {
+    spin_unlock_irqrestore(SPIN_PROC, saved);
+    return -(long)EBUSY;
+  }
+  /* PROC_TRACED_STOP pins the PCB slot while the tracer operates on it. */
+  spin_unlock_irqrestore(SPIN_PROC, saved);
 
   switch (req) {
     case PTRACE_GETEVENT: {
