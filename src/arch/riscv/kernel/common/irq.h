@@ -39,6 +39,12 @@ static inline void arch_irq_disable(void) {
   __asm__ volatile("csrc mstatus, %0" ::"r"(MSTATUS_MIE));
 }
 
+static inline int arch_in_irq_context(void) {
+  uint32_t mstatus;
+  __asm__ volatile("csrr %0, mstatus" : "=r"(mstatus));
+  return (mstatus & MSTATUS_MIE) == 0u;
+}
+
 /* -- Preemption control ---------------------------------------------------
  *
  * Toggle the Machine Timer Interrupt Enable (mie.MTIE) so that only

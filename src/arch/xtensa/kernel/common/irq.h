@@ -48,6 +48,12 @@ static inline void arch_irq_disable(void) {
   __asm__ volatile("rsil %0, 15" : "=a"(dummy)); /* INTLEVEL=15 */
 }
 
+static inline int arch_in_irq_context(void) {
+  uint32_t ps;
+  __asm__ volatile("rsr %0, ps" : "=a"(ps));
+  return (ps & PS_INTLEVEL_MASK) != 0u;
+}
+
 /* -- Preemption control ---------------------------------------------------
  *
  * Toggle the timer interrupt (CCOMPARE0) in the INTENABLE register so

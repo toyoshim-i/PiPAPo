@@ -34,6 +34,12 @@ static inline void arch_irq_enable(void) { __asm__ volatile("cpsie i"); }
 
 static inline void arch_irq_disable(void) { __asm__ volatile("cpsid i"); }
 
+static inline int arch_in_irq_context(void) {
+  uint32_t ipsr;
+  __asm__ volatile("mrs %0, ipsr" : "=r"(ipsr));
+  return ipsr != 0u && ipsr != 11u; /* Allow process-context SVCall. */
+}
+
 /* -- Preemption control ---------------------------------------------------
  *
  * Disable/enable the preemption timer only (SysTick TICKINT).

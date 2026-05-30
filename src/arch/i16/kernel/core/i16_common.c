@@ -13,6 +13,9 @@ volatile uint16_t i16_current_ksp = 0xFFFC;
 /* Tick counter incremented by timer handler */
 volatile uint32_t i16_tick_count = 0;
 
+/* Hardware IRQ nesting depth, maintained by timer ISR entry/exit. */
+volatile uint16_t i16_irq_depth = 0;
+
 /* Declared in arch.h — see header for semantics. */
 volatile uint16_t i16_trap_frame_sp = 0;
 

@@ -33,6 +33,10 @@ static inline void arch_irq_enable(void) { __asm__ volatile("sti"); }
 
 static inline void arch_irq_disable(void) { __asm__ volatile("cli"); }
 
+extern volatile uint16_t i16_irq_depth;
+
+static inline int arch_in_irq_context(void) { return i16_irq_depth != 0u; }
+
 /* -- Preemption control ---------------------------------------------------
  *
  * TODO: implement PIT IRQ0 mask via 8259A OCW1 for fine-grained

@@ -42,6 +42,12 @@ static inline void arch_irq_disable(void) {
   __asm__ volatile("or.w    #0x0700,%%sr\n" ::: "cc");
 }
 
+static inline int arch_in_irq_context(void) {
+  uint16_t sr;
+  __asm__ volatile("move.w  %%sr,%0\n" : "=d"(sr));
+  return (sr & 0x0700u) != 0u;
+}
+
 /* -- Preemption control ---------------------------------------------------
  *
  * On single-core 68k, disabling all IRQs is sufficient and safe --

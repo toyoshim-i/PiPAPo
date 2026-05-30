@@ -88,6 +88,8 @@ i16_timer_isr:
   movw  %ax, %ds
   movw  %ax, %es
 
+  incw  %ss:i16_irq_depth
+
   /* Call kernel timer tick handler.
    * user_SS is 0 when the timer interrupted kernel code and non-zero
    * when it interrupted user mode.  After the 34-byte reserve above,
@@ -168,6 +170,8 @@ i16_timer_isr:
   movw  %ax, %ss:i16_current_ksp
 
 .Lno_switch:
+  decw  %ss:i16_irq_depth
+
   /* Restore vfork parent's saved GP+IRET frame to user stack.
    * The parent may resume via timer ISR (without passing through trap.S),
    * so restore must also run on this return path. */

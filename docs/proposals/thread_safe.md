@@ -1,7 +1,7 @@
 # Kernel Thread-Safety Plan
 
-**Status:** active.  Phase 1 is complete after the reviewed process-group
-serialization patch.  Phase 2 is the next active lane.
+**Status:** active.  Phase 1 is complete.  The Phase 2 mutex IRQ-context guard
+is the current review item.
 This is a work plan for making common kernel code safe under preemption and,
 where applicable, dual-core execution.
 
@@ -75,10 +75,10 @@ Status labels used below:
 - `partial`: useful implementation landed, but defined follow-up remains;
 - `todo`: no reviewed implementation has landed yet.
 
-Phase 1 is complete.  Its closing audit found unlocked cross-process
-`getpgid()` and `setpgid()` access; the reviewed closing patch serializes those
-paths.  The next lane is Phase 2: add a conservative IRQ-context guard for
-sleepable mutex use, then add dedicated mutex tests.
+Phase 1 is complete.  The current Phase 2 review item adds architecture
+predicates for hardware IRQ context and rejects sleepable mutex lock/unlock
+operations from IRQ handlers.  Dedicated mutex behavior tests remain after
+this patch.
 
 Current cursor:
 
@@ -86,9 +86,9 @@ Current cursor:
 | --- | --- | --- |
 | Overall plan | Common kernel thread-safety hardening | active |
 | Phase | Phase 2: Sleepable Mutex | active |
-| Step | Phase 2.5: Add IRQ-context guard | queued |
-| Review patch | Serialize cross-process process-group access | approved |
-| Next patch after commit | Add mutex IRQ-context guard | queued |
+| Step | Phase 2.5: Add IRQ-context guard | active |
+| Review patch | Reject sleepable mutex use from IRQ context | awaiting review |
+| Next patch after commit | Add dedicated mutex behavior tests | deferred |
 
 Execution rule:
 
@@ -122,25 +122,27 @@ Completed implementation commits:
 | `466ec4cf` | Exit and vfork wakeup publication |
 | `61d8e2ad` | Waitpid zombie claiming |
 | `891aa7ae` | Ptrace lifecycle serialization and phase gates |
+| `10b48aaf` | Process-group serialization and Phase 1 closure |
 
 Estimated remaining review-sized iterations:
 
 | Ordered work group | State | Estimated iterations |
 | --- | --- | ---: |
-| Phase 2: add mutex IRQ-context guard and dedicated cleanup tests | deferred | 1-2 |
+| Phase 2: review and land mutex IRQ-context guard | awaiting review | 1 |
+| Phase 2: add dedicated mutex behavior tests | deferred | 1 |
 | Phase 3: high-risk user conversions | done | 0 |
 | Phase 4: normalize remaining sleep/wakeup paths | deferred | 1-2 |
 | Phase 5: add concurrency stress coverage | deferred | 2-3 |
 | Phase 5: run final target matrix and record target-specific issues | deferred | 1 |
-| **Known remaining total after Phase 1** |  | **5-8** |
+| **Known remaining total, including current patch** |  | **6-8** |
 
 This estimate counts small, reviewable patches rather than unchecked bullet
-items.  The closing PCB audit may identify additional required fixes, so the
-upper bound should be revised after Phase 1.6 is complete.
+items.  Revise the estimate if later-phase normalization finds additional
+callers that need behavioral changes.
 
 ## Known Issues And Completed Protection
 
-### 1. Sleepable Lock Primitive Exists; IRQ Guard And Tests Remain
+### 1. Sleepable Lock Primitive Exists; IRQ Guard Is In Review
 
 Several resources need mutual exclusion across code that can block, call VFS
 callbacks, call device drivers, allocate memory, or voluntarily schedule.
@@ -164,6 +166,8 @@ void kmutex_release_owned(pcb_t *p);
 Implemented semantics:
 
 - `kmutex_lock()` blocks only in process context.
+- `kmutex_lock()` and `kmutex_unlock()` reject hardware IRQ context through
+  architecture hooks or conservative interrupt-state checks.
 - Lock acquisition and release use a spinlock only for the owner/list update.
 - Waiters block on `wait_channel == m`.
 - Unlock wakes waiters after clearing owner.
@@ -173,8 +177,6 @@ Implemented semantics:
 
 Remaining follow-up:
 
-- add a common `arch_in_irq()` or `kernel_in_irq()` helper, then make lock
-  attempts from hardware IRQ context panic or fail loudly;
 - add dedicated contention, bad-owner, recursive-lock, and process-death
   cleanup tests.
 
@@ -382,7 +384,7 @@ Phase dashboard:
 | Phase | State | Progress | Exit condition |
 | --- | --- | --- | --- |
 | 1. Contracts And Audits | done | Static globals, registries, PCB lifecycle, and process-group access are covered | Complete |
-| 2. Sleepable Mutex | active | Primitive and process-death release are done | Add IRQ-context guard and dedicated tests |
+| 2. Sleepable Mutex | active | IRQ-context guard is the current review item | Land guard and add dedicated tests |
 | 3. Convert High-Risk Users | done | x68k IOCS, fd, pipe, and tmpfs conversions are landed | Reopen only if later audits find another high-risk user |
 | 4. Normalize Sleep/Wakeup | partial | Shared helpers exist; pipe, poll, and tty use them | Audit remaining timer, process, vfork/wait, and target paths; define wakeup rule |
 | 5. Stress Testing | partial | Pico 1 multicore lane exists | Add subsystem concurrency stress and run final target matrix |
@@ -429,7 +431,7 @@ Execution order:
    `src/kernel/core/sync/kmutex.c` (`8d6b9a39`).
 3. `done` Add held-mutex list fields to `pcb_t` (`8d6b9a39`).
 4. `done` Call `kmutex_release_owned(p)` from `proc_free()` (`8d6b9a39`).
-5. `todo` Add IRQ-context detection hooks or conservative panic checks.
+5. `active` Add IRQ-context detection hooks or conservative panic checks.
 6. `todo` Add dedicated tests for contention, bad owner, recursive lock, and
    process-death cleanup.
 

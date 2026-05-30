@@ -29,6 +29,11 @@ static void kmutex_unlink_held(pcb_t *owner, kmutex_t *m) {
   }
 }
 
+static void kmutex_require_process_context(const char *op) {
+  if (arch_in_irq_context()) panic("%s in IRQ context\n", op);
+  if (!current) panic("%s without current\n", op);
+}
+
 void kmutex_init(kmutex_t *m) {
   if (!m) return;
   m->owner = NULL;
@@ -37,7 +42,7 @@ void kmutex_init(kmutex_t *m) {
 
 void kmutex_lock(kmutex_t *m) {
   if (!m) panic("kmutex_lock(NULL)\n");
-  if (!current) panic("kmutex_lock without current\n");
+  kmutex_require_process_context("kmutex_lock");
 
   for (;;) {
     uint32_t saved = spin_lock_irqsave(SPIN_PROC);
@@ -63,7 +68,7 @@ void kmutex_lock(kmutex_t *m) {
 
 void kmutex_unlock(kmutex_t *m) {
   if (!m) panic("kmutex_unlock(NULL)\n");
-  if (!current) panic("kmutex_unlock without current\n");
+  kmutex_require_process_context("kmutex_unlock");
 
   uint32_t saved = spin_lock_irqsave(SPIN_PROC);
   if (m->owner != current) {
