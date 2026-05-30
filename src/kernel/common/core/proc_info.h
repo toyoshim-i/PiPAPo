@@ -64,7 +64,12 @@ typedef enum {
   PROC_BLOCKED = 3,     /* blocked on a wait channel or process lifecycle  */
   PROC_ZOMBIE = 4,      /* exited; slot freed when parent calls waitpid()  */
   PROC_TRACED_STOP = 5, /* stopped and waiting for tracer resume          */
+  PROC_REAPING = 6,     /* waitpid claimed zombie; cleanup before FREE     */
 } proc_state_t;
+
+static inline int proc_state_is_live(proc_state_t state) {
+  return state != PROC_FREE && state != PROC_REAPING;
+}
 
 /*
  * user_page_ref_t — page-index + offset reference to user-space memory.

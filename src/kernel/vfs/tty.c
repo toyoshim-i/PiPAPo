@@ -241,7 +241,7 @@ static void dev_send_signal(tty_dev_t *t, int sig) {
   uint32_t saved = spin_lock_irqsave(SPIN_PROC);
   for (uint32_t i = 0; i < PROC_MAX; i++) {
     pcb_t *p = &proc_table[i];
-    if (p->state == PROC_FREE) continue;
+    if (!proc_state_is_live(p->state)) continue;
     /* Match foreground process group.  When fg_pgrp == 0 (no job
      * control — hush without CONFIG_HUSH_JOB never calls tcsetpgrp),
      * signal all non-init processes: on a single-terminal system

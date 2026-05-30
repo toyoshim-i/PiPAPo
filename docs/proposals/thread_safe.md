@@ -351,7 +351,9 @@ Plan:
   Signal posting now updates pending bits and blocked/sleeping wake state under
   `SPIN_PROC` in `sys_kill()` and TTY foreground-signal delivery.  Process
   exit now publishes exit status, zombie state, waitpid/tracer wakeups,
-  vfork-parent wakeups, and child reparenting under `SPIN_PROC`.
+  vfork-parent wakeups, and child reparenting under `SPIN_PROC`.  `waitpid()`
+  now scans and claims stopped/zombie children under `SPIN_PROC`; the internal
+  `PROC_REAPING` state pins a claimed zombie slot during page cleanup.
 
 ## Implementation Order
 
@@ -377,8 +379,9 @@ Plan:
 6. `active` Audit `pcb_t` lifecycle and cross-process fields.  The initial
    protection-rule inventory is documented (`1f372a74`); procfs PID
    snapshots are documented (`bf5dcfb6`); signal posting serialization is the
-   covered (`0c7a04c1`).  Exit/vfork wakeup publication is the current review
-   item; waitpid and ptrace helper conversion remains.
+   covered (`0c7a04c1`); exit/vfork wakeup publication is covered
+   (`466ec4cf`).  Waitpid zombie claiming is the current review item; ptrace
+   helper conversion remains.
 
 ### Phase 2: Sleepable Mutex
 

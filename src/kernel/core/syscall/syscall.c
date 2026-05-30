@@ -311,7 +311,7 @@ void syscall_dispatch(uint32_t *frame, uint32_t nr, uint32_t a4, uint32_t a5) {
       if (a0 != 0) {
         t = NULL;
         for (uint32_t i = 0; i < PROC_MAX; i++) {
-          if (proc_table[i].state != PROC_FREE &&
+          if (proc_state_is_live(proc_table[i].state) &&
               proc_table[i].pid == (pid_t)a0) {
             t = &proc_table[i];
             break;

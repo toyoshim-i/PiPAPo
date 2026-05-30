@@ -226,7 +226,7 @@ static void proc_wake_blocked_locked(pcb_t *p) {
 static void proc_wake_blocked_pid_locked(pid_t pid) {
   for (uint32_t i = 0; i < PROC_MAX; i++) {
     pcb_t *p = &proc_table[i];
-    if (p->state == PROC_FREE || p->pid != pid) continue;
+    if (!proc_state_is_live(p->state) || p->pid != pid) continue;
     proc_wake_blocked_locked(p);
     break;
   }
@@ -246,7 +246,7 @@ static pcb_t *trace_find_tracee(pid_t tracer_pid, long pid) {
   if (pid <= 0) return NULL;
   for (uint32_t i = 1; i < PROC_MAX; i++) {
     pcb_t *p = &proc_table[i];
-    if (p->state == PROC_FREE || p->pid != (pid_t)pid) continue;
+    if (!proc_state_is_live(p->state) || p->pid != (pid_t)pid) continue;
     if (p->tracer_pid != tracer_pid) continue;
     return p;
   }
@@ -257,7 +257,7 @@ static pcb_t *trace_find_process(long pid) {
   if (pid <= 0) return NULL;
   for (uint32_t i = 1; i < PROC_MAX; i++) {
     pcb_t *p = &proc_table[i];
-    if (p->state == PROC_FREE || p->pid != (pid_t)pid) continue;
+    if (!proc_state_is_live(p->state) || p->pid != (pid_t)pid) continue;
     return p;
   }
   return NULL;
@@ -266,7 +266,7 @@ static pcb_t *trace_find_process(long pid) {
 static void trace_wake_tracer(const pcb_t *tracee) {
   for (uint32_t i = 0; i < PROC_MAX; i++) {
     pcb_t *p = &proc_table[i];
-    if (p->state == PROC_FREE || p->pid != tracee->tracer_pid) continue;
+    if (!proc_state_is_live(p->state) || p->pid != tracee->tracer_pid) continue;
     if (p->state == PROC_BLOCKED) p->state = PROC_RUNNABLE;
     break;
   }
@@ -1568,7 +1568,8 @@ long sys_exit(long status) {
    * child is already zombie, wake init. */
   for (uint32_t i = 1; i < PROC_MAX; i++) {
     pcb_t *child = &proc_table[i];
-    if (child->state == PROC_FREE || child->ppid != current->pid) continue;
+    if (!proc_state_is_live(child->state) || child->ppid != current->pid)
+      continue;
     child->ppid = 1;
     if (child->state == PROC_ZOMBIE) proc_wake_blocked_pid_locked(1);
   }
@@ -1856,18 +1857,22 @@ long sys_waitpid(long pid, long status_ptr, long options) {
   int deferred_timer_armed = 0;
 
   for (;;) {
-    pcb_t *zombie = NULL;
-    pcb_t *stopped = NULL;
+    uint32_t stopped_slot = PROC_MAX;
+    uint32_t zombie_slot = PROC_MAX;
+    pid_t stopped_pid = 0;
+    pid_t zombie_pid = 0;
+    int zombie_status = 0;
     int has_match = 0;
     int zombie_is_child = 0;
 
     /* Scan for matching child or traced process. */
+    uint32_t saved = spin_lock_irqsave(SPIN_PROC);
     for (uint32_t i = 1; i < PROC_MAX; i++) {
       pcb_t *p = &proc_table[i];
       int is_child;
       int is_tracee;
 
-      if (p->state == PROC_FREE) continue;
+      if (!proc_state_is_live(p->state)) continue;
       is_child = (p->ppid == current->pid);
       is_tracee = (p->tracer_pid == current->pid);
       if (!is_child && !is_tracee) continue;
@@ -1877,40 +1882,63 @@ long sys_waitpid(long pid, long status_ptr, long options) {
 
       if ((options & WSTOPPED) && p->state == PROC_TRACED_STOP &&
           p->trace_wait_pending) {
-        stopped = p;
+        stopped_slot = i;
+        stopped_pid = p->pid;
         break;
       }
 
       if (p->state == PROC_ZOMBIE) {
-        zombie = p;
+        zombie_slot = i;
+        zombie_pid = p->pid;
+        zombie_status = p->exit_status;
         zombie_is_child = is_child;
         break;
       }
     }
+    spin_unlock_irqrestore(SPIN_PROC, saved);
 
-    if (stopped) {
+    if (stopped_slot < PROC_MAX) {
       if (status_ptr) {
         int status = W_STOPCODE(SIGTRAP);
         if (sys_copy_to_user((uintptr_t)status_ptr, &status, sizeof(status)) <
             0)
           return -(long)EFAULT;
       }
+
+      saved = spin_lock_irqsave(SPIN_PROC);
+      pcb_t *stopped = &proc_table[stopped_slot];
+      if (stopped->pid != stopped_pid || stopped->state != PROC_TRACED_STOP ||
+          stopped->tracer_pid != current->pid || !stopped->trace_wait_pending) {
+        spin_unlock_irqrestore(SPIN_PROC, saved);
+        continue;
+      }
       stopped->trace_wait_pending = 0;
-      return (long)stopped->pid;
+      spin_unlock_irqrestore(SPIN_PROC, saved);
+      return (long)stopped_pid;
     }
 
-    if (zombie) {
-      pid_t cpid = zombie->pid;
-
+    if (zombie_slot < PROC_MAX) {
       if (status_ptr) {
-        int status = W_EXITCODE(zombie->exit_status);
+        int status = W_EXITCODE(zombie_status);
         if (sys_copy_to_user((uintptr_t)status_ptr, &status, sizeof(status)) <
             0)
           return -(long)EFAULT;
       }
 
+      saved = spin_lock_irqsave(SPIN_PROC);
+      pcb_t *zombie = &proc_table[zombie_slot];
+      if (zombie->pid != zombie_pid || zombie->state != PROC_ZOMBIE) {
+        spin_unlock_irqrestore(SPIN_PROC, saved);
+        continue;
+      }
+
       if (!zombie_is_child) {
         /* Non-child tracees report exit but are reaped by their parent. */
+        if (zombie->tracer_pid != current->pid ||
+            zombie->ppid == current->pid) {
+          spin_unlock_irqrestore(SPIN_PROC, saved);
+          continue;
+        }
         zombie->tracer_pid = 0;
         zombie->trace_requested = 0;
         trace_reset_mode_state(zombie, 0);
@@ -1919,25 +1947,35 @@ long sys_waitpid(long pid, long status_ptr, long options) {
         zombie->trace_step_pending = 0;
         trace_clear_breakpoints(zombie);
         __builtin_memset(&zombie->trace_event, 0, sizeof(zombie->trace_event));
-        return (long)cpid;
+        spin_unlock_irqrestore(SPIN_PROC, saved);
+        return (long)zombie_pid;
       }
+
+      if (zombie->ppid != current->pid) {
+        spin_unlock_irqrestore(SPIN_PROC, saved);
+        continue;
+      }
+
+      zombie->state = PROC_REAPING;
+      page_id_t stack_page_id = zombie->stack_page_id;
+      zombie->stack_page_id = PAGE_ID_INVALID;
+      spin_unlock_irqrestore(SPIN_PROC, saved);
 
       /* Reap the zombie child. */
       /* Free zombie's stack page */
-      if (zombie->stack_page_id != PAGE_ID_INVALID) {
+      if (stack_page_id != PAGE_ID_INVALID) {
 #if defined(__ia16__)
-        page_free(zombie->stack_page_id);
+        page_free(stack_page_id);
 #else
         {
-          void *zs = page_to_ptr(zombie->stack_page_id);
+          void *zs = page_to_ptr(stack_page_id);
           proc_release_stack_page(&zs);
         }
 #endif
-        zombie->stack_page_id = PAGE_ID_INVALID;
       }
 
       proc_free(zombie);
-      return (long)cpid;
+      return (long)zombie_pid;
     }
 
     if (!has_match) return -(long)ECHILD;
@@ -2210,7 +2248,8 @@ long sys_setpgid(long pid, long pgid) {
   else {
     target = NULL;
     for (uint32_t i = 0; i < PROC_MAX; i++) {
-      if (proc_table[i].state != PROC_FREE && proc_table[i].pid == (pid_t)pid) {
+      if (proc_state_is_live(proc_table[i].state) &&
+          proc_table[i].pid == (pid_t)pid) {
         target = &proc_table[i];
         break;
       }

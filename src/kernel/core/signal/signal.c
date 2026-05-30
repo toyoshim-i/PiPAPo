@@ -95,7 +95,8 @@ long sys_kill(long pid, long sig) {
   uint32_t saved = spin_lock_irqsave(SPIN_PROC);
   int found = 0;
   for (uint32_t i = 0; i < PROC_MAX; i++) {
-    if (proc_table[i].state != PROC_FREE && proc_table[i].pid == (pid_t)pid) {
+    if (proc_state_is_live(proc_table[i].state) &&
+        proc_table[i].pid == (pid_t)pid) {
       pcb_t *target = &proc_table[i];
       found = 1;
       if (sig != 0) {

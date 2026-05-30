@@ -406,7 +406,7 @@ static int procfs_snapshot_slot(uint32_t slot, procfs_proc_snapshot_t *snap) {
 
   uint32_t proc_saved = spin_lock_irqsave(SPIN_PROC);
   const pcb_t *p = &proc_table[slot];
-  if (p->state == PROC_FREE) {
+  if (!proc_state_is_live(p->state)) {
     spin_unlock_irqrestore(SPIN_PROC, proc_saved);
     return 0;
   }
@@ -437,7 +437,7 @@ static int procfs_find_pid_slot(pid_t pid, uint32_t *slot_out) {
   uint32_t saved = spin_lock_irqsave(SPIN_PROC);
 
   for (uint32_t i = 0; i < PROC_MAX; i++) {
-    if (proc_table[i].state != PROC_FREE && proc_table[i].pid == pid) {
+    if (proc_state_is_live(proc_table[i].state) && proc_table[i].pid == pid) {
       if (slot_out) *slot_out = i;
       found = 1;
       break;
@@ -451,7 +451,7 @@ static int procfs_find_pid_slot(pid_t pid, uint32_t *slot_out) {
 static int procfs_slot_active(uint32_t slot) {
   if (slot >= PROC_MAX) return 0;
   uint32_t saved = spin_lock_irqsave(SPIN_PROC);
-  int active = proc_table[slot].state != PROC_FREE;
+  int active = proc_state_is_live(proc_table[slot].state);
   spin_unlock_irqrestore(SPIN_PROC, saved);
   return active;
 }
@@ -460,7 +460,7 @@ static uint8_t procfs_slot_subsys(uint32_t slot) {
   if (slot >= PROC_MAX) return 0;
   uint32_t saved = spin_lock_irqsave(SPIN_PROC);
   uint8_t tag =
-      (proc_table[slot].state != PROC_FREE) ? proc_table[slot].subsys : 0;
+      proc_state_is_live(proc_table[slot].state) ? proc_table[slot].subsys : 0;
   spin_unlock_irqrestore(SPIN_PROC, saved);
   return tag;
 }
@@ -478,6 +478,7 @@ static char state_char(const procfs_proc_snapshot_t *snap) {
     case PROC_TRACED_STOP:
       return 'T';
     case PROC_ZOMBIE:
+    case PROC_REAPING:
       return 'Z';
     default:
       return '?';
