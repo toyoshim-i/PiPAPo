@@ -1,7 +1,7 @@
 # Kernel Thread-Safety Plan
 
-**Status:** active.  Phase 1 is complete.  The Phase 2 mutex behavior tests
-are the current review item.
+**Status:** active.  Phases 1-3 are complete.  Phase 4 sleep/wakeup
+normalization is the current lane.
 This is a work plan for making common kernel code safe under preemption and,
 where applicable, dual-core execution.
 
@@ -75,20 +75,19 @@ Status labels used below:
 - `partial`: useful implementation landed, but defined follow-up remains;
 - `todo`: no reviewed implementation has landed yet.
 
-Phase 1 is complete.  The IRQ-context guard is landed.  The current Phase 2
-review item adds dedicated host tests for sleepable mutex behavior and moves
-CP/M signal teardown out of timer IRQ context after runtime verification
-exposed that path.
+Phases 1-3 are complete.  The current Phase 4 review item routes sleepable
+mutex waiters through the shared block-unlock-switch helper and records the
+remaining intentional scheduler state machines.
 
 Current cursor:
 
 | Level | Current position | State |
 | --- | --- | --- |
 | Overall plan | Common kernel thread-safety hardening | active |
-| Phase | Phase 2: Sleepable Mutex | active |
-| Step | Phase 2.6: Add dedicated mutex behavior tests | active |
-| Review patch | Cover mutex behavior and defer CP/M signal teardown | awaiting review |
-| Next patch after commit | Close Phase 2 and start Phase 4 audit | deferred |
+| Phase | Phase 4: Normalize Sleep/Wakeup | active |
+| Step | Phase 4.2: Convert remaining blocking callers | active |
+| Review patch | Route mutex waits through shared sleep helper | awaiting review |
+| Next patch after commit | Define the `sched_wakeup()` lock rule | deferred |
 
 Execution rule:
 
@@ -124,17 +123,18 @@ Completed implementation commits:
 | `891aa7ae` | Ptrace lifecycle serialization and phase gates |
 | `10b48aaf` | Process-group serialization and Phase 1 closure |
 | `b88c0fcb` | Sleepable mutex IRQ-context rejection |
+| `b4f62040` | Mutex behavior tests and CP/M IRQ teardown deferral |
 
 Estimated remaining review-sized iterations:
 
 | Ordered work group | State | Estimated iterations |
 | --- | --- | ---: |
-| Phase 2: review and land dedicated mutex behavior tests | awaiting review | 1 |
+| Phase 2: sleepable mutex | done | 0 |
 | Phase 3: high-risk user conversions | done | 0 |
-| Phase 4: normalize remaining sleep/wakeup paths | deferred | 1-2 |
+| Phase 4: normalize remaining sleep/wakeup paths | active | 1-2 |
 | Phase 5: add concurrency stress coverage | deferred | 2-3 |
 | Phase 5: run final target matrix and record target-specific issues | deferred | 1 |
-| **Known remaining total, including current patch** |  | **5-7** |
+| **Known remaining total, including current patch** |  | **4-6** |
 
 This estimate counts small, reviewable patches rather than unchecked bullet
 items.  Revise the estimate if later-phase normalization finds additional
@@ -142,7 +142,7 @@ callers that need behavioral changes.
 
 ## Known Issues And Completed Protection
 
-### 1. Sleepable Lock Primitive Exists; Behavior Tests Are In Review
+### 1. Sleepable Lock Primitive Is Covered
 
 Several resources need mutual exclusion across code that can block, call VFS
 callbacks, call device drivers, allocate memory, or voluntarily schedule.
@@ -175,10 +175,8 @@ Implemented semantics:
 - Unlock by a non-owner panics.
 - Recursive lock by the same owner panics.
 
-Remaining follow-up:
-
-- land dedicated contention, bad-owner, recursive-lock, and process-death
-  cleanup tests.
+Dedicated host tests cover contention, bad-owner, recursive-lock, IRQ-context,
+and process-death cleanup behavior.
 
 ### 2. `fd.c` Shared File State Needs Follow-Up Audits
 
@@ -384,9 +382,9 @@ Phase dashboard:
 | Phase | State | Progress | Exit condition |
 | --- | --- | --- | --- |
 | 1. Contracts And Audits | done | Static globals, registries, PCB lifecycle, and process-group access are covered | Complete |
-| 2. Sleepable Mutex | active | IRQ guard is landed; behavior tests are in review | Land dedicated tests |
+| 2. Sleepable Mutex | done | IRQ guard and dedicated behavior tests are landed | Complete |
 | 3. Convert High-Risk Users | done | x68k IOCS, fd, pipe, and tmpfs conversions are landed | Reopen only if later audits find another high-risk user |
-| 4. Normalize Sleep/Wakeup | partial | Shared helpers exist; pipe, poll, and tty use them | Audit remaining timer, process, vfork/wait, and target paths; define wakeup rule |
+| 4. Normalize Sleep/Wakeup | active | Shared helpers cover pipe, poll, tty, and the current mutex review item | Land mutex conversion and define wakeup rule |
 | 5. Stress Testing | partial | Pico 1 multicore lane exists | Add subsystem concurrency stress and run final target matrix |
 
 Execution order:
@@ -433,8 +431,8 @@ Execution order:
 4. `done` Call `kmutex_release_owned(p)` from `proc_free()` (`8d6b9a39`).
 5. `done` Add IRQ-context detection hooks or conservative panic checks
    (`b88c0fcb`).
-6. `active` Add dedicated tests for contention, bad owner, recursive lock,
-   and process-death cleanup.
+6. `done` Add dedicated tests for contention, bad owner, recursive lock, IRQ
+   context, and process-death cleanup (`b4f62040`).
 
 ### Phase 3: Convert High-Risk Users
 
@@ -449,8 +447,10 @@ Execution order:
 ### Phase 4: Normalize Sleep/Wakeup
 
 1. `done` Introduce sleep helper APIs (`e6a43d11`, `b7b1f1fe`).
-2. `partial` Convert blocking callers.  Pipe, poll, and tty paths use shared
-   helpers; audit the remaining timer, process, vfork/wait, and target paths.
+2. `active` Convert blocking callers.  Pipe, poll, and tty paths use shared
+   helpers.  The current review patch converts `kmutex_lock()`.  Timer sleeps
+   intentionally use `PROC_SLEEPING`; vfork, wait, trace, and signal paths
+   intentionally manage lifecycle state under `SPIN_PROC`.
 3. `todo` Define the rule for when `sched_wakeup()` may be called with or
    without the resource lock held.
 4. `todo` Add stress tests that intentionally interleave waiters and wakers.

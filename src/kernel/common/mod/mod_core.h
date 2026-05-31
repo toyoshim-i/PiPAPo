@@ -221,6 +221,8 @@ MOD_FUNC(core, void, sched_sleep_current, void *)
  *   channel   Wait channel to match in sched_wakeup().
  *   lock_num  SPIN_* lock held by the caller.
  *   saved     IRQ state returned by spin_lock_irqsave().
+ *
+ * SPIN_PROC is supported directly without recursive acquisition.
  */
 MOD_FUNC(core, void, sched_sleep_current_unlock, void *, uint32_t, uint32_t)
 

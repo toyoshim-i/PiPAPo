@@ -35,6 +35,15 @@ void sched_switch(void) {
   if (switch_hook) switch_hook();
 }
 
+void sched_sleep_current_unlock(void *channel, unsigned int lock_num,
+                                unsigned int saved) {
+  (void)lock_num;
+  (void)saved;
+  current->wait_channel = channel;
+  current->state = PROC_BLOCKED;
+  sched_switch();
+}
+
 void sched_wakeup(void *channel) {
   wakeup_count++;
   if (proc_a.state == PROC_BLOCKED && proc_a.wait_channel == channel) {

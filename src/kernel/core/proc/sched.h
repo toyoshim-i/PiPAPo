@@ -84,6 +84,7 @@ void sched_sleep_current(void *channel);
  * Block the current process on a wait channel, release a caller-held spinlock,
  * then switch away.  Use this after checking a blocking condition under the
  * same resource lock so wakeups cannot slip between the check and the block.
+ * The helper also accepts SPIN_PROC itself without recursively acquiring it.
  */
 void sched_sleep_current_unlock(void *channel, uint32_t lock_num,
                                 uint32_t saved);

@@ -59,10 +59,7 @@ void kmutex_lock(kmutex_t *m) {
       panic("recursive kmutex_lock\n");
     }
 
-    current->wait_channel = m;
-    current->state = PROC_BLOCKED;
-    spin_unlock_irqrestore(SPIN_PROC, saved);
-    sched_switch();
+    sched_sleep_current_unlock(m, SPIN_PROC, saved);
   }
 }
 
