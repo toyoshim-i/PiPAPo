@@ -240,7 +240,9 @@ MOD_FUNC(core, void, sched_switch, void)
  *   channel  Wait channel (typically &pipe, &tty_dev, &vnode).
  *
  * Marks matching PROC_BLOCKED processes RUNNABLE and triggers
- * a reschedule.
+ * a reschedule.  May be called from process or IRQ context.  The caller must
+ * not hold SPIN_PROC because this function acquires it internally.  Other
+ * resource locks are allowed, but should be released first when possible.
  */
 MOD_FUNC(core, void, sched_wakeup, void *)
 

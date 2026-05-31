@@ -93,7 +93,11 @@ void sched_sleep_current_unlock(void *channel, uint32_t lock_num,
  * Wake all processes blocked on the given channel.
  * Scans proc_table for PROC_BLOCKED processes whose wait_channel matches,
  * sets them to PROC_RUNNABLE, and clears their wait_channel.
- * Used by pipe_read/pipe_write/pipe_close to wake blocked counterparts.
+ *
+ * May be called from process or IRQ context.  The caller must not hold
+ * SPIN_PROC because this function acquires it internally.  A caller may hold
+ * another resource lock, but should release it first when the wake condition
+ * remains true after unlock so the woken process can make progress promptly.
  */
 void sched_wakeup(void *channel);
 

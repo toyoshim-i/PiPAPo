@@ -75,9 +75,8 @@ Status labels used below:
 - `partial`: useful implementation landed, but defined follow-up remains;
 - `todo`: no reviewed implementation has landed yet.
 
-Phases 1-3 are complete.  The current Phase 4 review item routes sleepable
-mutex waiters through the shared block-unlock-switch helper and records the
-remaining intentional scheduler state machines.
+Phases 1-3 are complete.  The current Phase 4 review item records the
+`sched_wakeup()` lock rule after auditing its mutex, pipe, and TTY callers.
 
 Current cursor:
 
@@ -85,9 +84,9 @@ Current cursor:
 | --- | --- | --- |
 | Overall plan | Common kernel thread-safety hardening | active |
 | Phase | Phase 4: Normalize Sleep/Wakeup | active |
-| Step | Phase 4.2: Convert remaining blocking callers | active |
-| Review patch | Route mutex waits through shared sleep helper | awaiting review |
-| Next patch after commit | Define the `sched_wakeup()` lock rule | deferred |
+| Step | Phase 4.3: Define the `sched_wakeup()` lock rule | active |
+| Review patch | Document the audited wakeup lock contract | awaiting review |
+| Next patch after commit | Add sleep/wakeup stress tests | deferred |
 
 Execution rule:
 
@@ -124,6 +123,7 @@ Completed implementation commits:
 | `10b48aaf` | Process-group serialization and Phase 1 closure |
 | `b88c0fcb` | Sleepable mutex IRQ-context rejection |
 | `b4f62040` | Mutex behavior tests and CP/M IRQ teardown deferral |
+| `ab1896bd` | Mutex waiter normalization through the shared sleep helper |
 
 Estimated remaining review-sized iterations:
 
@@ -384,7 +384,7 @@ Phase dashboard:
 | 1. Contracts And Audits | done | Static globals, registries, PCB lifecycle, and process-group access are covered | Complete |
 | 2. Sleepable Mutex | done | IRQ guard and dedicated behavior tests are landed | Complete |
 | 3. Convert High-Risk Users | done | x68k IOCS, fd, pipe, and tmpfs conversions are landed | Reopen only if later audits find another high-risk user |
-| 4. Normalize Sleep/Wakeup | active | Shared helpers cover pipe, poll, tty, and the current mutex review item | Land mutex conversion and define wakeup rule |
+| 4. Normalize Sleep/Wakeup | active | Shared helpers cover pipe, poll, tty, and mutex; the wakeup rule is under review | Define wakeup rule and add focused interleaving stress |
 | 5. Stress Testing | partial | Pico 1 multicore lane exists | Add subsystem concurrency stress and run final target matrix |
 
 Execution order:
@@ -447,12 +447,15 @@ Execution order:
 ### Phase 4: Normalize Sleep/Wakeup
 
 1. `done` Introduce sleep helper APIs (`e6a43d11`, `b7b1f1fe`).
-2. `active` Convert blocking callers.  Pipe, poll, and tty paths use shared
-   helpers.  The current review patch converts `kmutex_lock()`.  Timer sleeps
-   intentionally use `PROC_SLEEPING`; vfork, wait, trace, and signal paths
-   intentionally manage lifecycle state under `SPIN_PROC`.
-3. `todo` Define the rule for when `sched_wakeup()` may be called with or
-   without the resource lock held.
+2. `done` Convert blocking callers (`ab1896bd`).  Pipe, poll, tty, and mutex
+   paths use shared helpers.  Timer sleeps intentionally use `PROC_SLEEPING`;
+   vfork, wait, trace, and signal paths intentionally manage lifecycle state
+   under `SPIN_PROC`.
+3. `active` Define the rule for when `sched_wakeup()` may be called with or
+   without the resource lock held.  The current review patch records the
+   audited contract: it is IRQ-safe, acquires `SPIN_PROC` internally, and may
+   run while another resource lock is held.  Callers should release that
+   resource lock first when the wake condition remains true after unlock.
 4. `todo` Add stress tests that intentionally interleave waiters and wakers.
 
 ### Phase 5: Stress Testing
