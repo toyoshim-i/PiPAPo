@@ -1501,6 +1501,8 @@ int cpm_trap_handler(cpu_state_t *state, int trap_type, uint32_t param,
 #include "kernel/core/proc/sched.h"
 #include "kernel/core/subsys/subsys.h"
 
+#define CPM_SIGNAL_POLL_INSTRUCTIONS 255u
+
 /*
  * cpm_run_process — kernel-mode entry point for CP/M .COM processes.
  *
@@ -1567,8 +1569,12 @@ void cpm_run_process(void) {
       continue;
     }
 
+    /* Return to process context periodically so busy-looping CP/M programs
+     * can consume signals without running teardown from the timer ISR. */
+    z80->step_budget = CPM_SIGNAL_POLL_INSTRUCTIONS;
     ecpu_z80_ops.run((cpu_state_t *)z80);
-    break;
+    if (z80->step_trap_exit) break;
+    signal_check_kernel();
   }
 
   sys_exit(0);

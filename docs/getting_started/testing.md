@@ -86,6 +86,7 @@ Macros:
 | File | Tests |
 |------|-------|
 | `test_kmem.c` | `kmem_pool` object allocator |
+| `test_kmutex.c` | Sleepable mutex lifecycle and misuse behavior |
 | `test_h68k_path.c` | Human68k path translation and errno mapping |
 | `test_ecpu_z80.c` | Z80 emulator (85 tests: all instruction groups) |
 | `test_ecpu_m68k.c` | m68k emulator (instruction groups, addressing modes) |
@@ -576,10 +577,10 @@ rarely fire.
 
 | Target | Date | Kernel tests | User tests | Total |
 |--------|------|--------------|------------|-------|
-| `qemu_arm` | 2026-04-18 | 69 pass | 23/23 pass | All pass |
-| `qemu_m68k` | 2026-04-18 | 69 pass | 23/23 pass | All pass |
-| `qemu_rv32` | 2026-04-18 | Disabled (pre-existing blkdev crash) | 16/16 pass | User pass |
-| `pcxt` | 2026-04-18 | N/A (no ktest) | 17/17 pass | All pass |
+| `qemu_arm` | 2026-05-31 | 74 pass, 13 fail (pre-existing FAT fixture expectations) | 24/24 pass | User pass |
+| `qemu_m68k` | 2026-05-31 | N/A (run stops during user suite) | Fails reproducibly in `test_orphan` with a kernel privilege fault | Known pre-existing regression |
+| `qemu_rv32` | 2026-05-31 | Disabled (pre-existing blkdev crash) | 23/23 pass | User pass |
+| `pcxt` | 2026-05-31 | N/A (no ktest) | 18/18 pass | All pass |
 | `xtensa_cc` | 2026-05-12 | 62 pass, 7 fail | 13/13 pass | User pass |
 | `pico1` | 2026-05-27 | 67 pass, 2 fail (assumed pre-existing fstab/VFAT expectations) | 25/25 pass, including `test_smp` | Focused SMP pass |
 
@@ -591,6 +592,11 @@ its pre-scheduler kernel suite reported failures for `fstab_parse >= 4
 entries` and `/mnt/sd mounted (vfat)`.  These are treated as pre-existing:
 Pico 1 is documented as romfs-only with no SD card, while those kernel
 assertions require the SD/VFAT configuration used by `qemu_arm`/PicoCalc.
+
+The May 31, 2026 `qemu_m68k` failure reproduces at `10b48aaf`, before the
+sleepable-mutex IRQ-context guard landed.  `test_orphan` reaches a kernel
+privilege fault in `arch_irq_save()` through `klogf()`.  Treat it as an
+existing m68k regression until its first bad commit is isolated.
 
 ```bash
 ./scripts/run.sh --test              # ARM (default)

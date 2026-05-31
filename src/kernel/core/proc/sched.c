@@ -25,7 +25,6 @@
 #include "kernel/core/arch.h"
 #include "kernel/core/mm/page.h" /* PAGE_SIZE */
 #include "kernel/core/mm/region.h"
-#include "kernel/core/signal/signal.h"
 #include "target/target.h"
 
 /* ── Tick counter ─────────────────────────────────────────────────────────────
@@ -147,16 +146,6 @@ int sched_idle_poll(void) {
  * Called from the architecture-specific timer ISR.
  * from_user: 1 if interrupted from user mode, 0 if from kernel/supervisor. */
 void sched_timer_tick(int from_user) {
-  /* CP/M processes run inside a kernel-resident emulator loop, so they
-   * do not naturally return through the normal user-mode signal delivery
-   * path.  Consume pending default/ignored signals at timer-preemption
-   * boundaries on real hardware. */
-  if (current && current->state == PROC_RUNNABLE &&
-      current->subsys == SUBSYS_CPM &&
-      (current->sig_pending & ~current->sig_blocked)) {
-    signal_check_kernel();
-  }
-
   uint32_t cid = core_id();
   uint32_t ticks = 0u;
   pcb_t *acct_proc = NULL;

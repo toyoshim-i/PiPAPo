@@ -27,6 +27,18 @@ add_executable(test_kmem
 target_include_directories(test_kmem PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME kmem COMMAND test_kmem)
 
+# ── test_kmutex ───────────────────────────────────────────────────────────────
+# kmutex.c is tested with narrow host overlays for IRQ, process, and scheduler
+# state.  The production implementation is compiled directly into the test.
+add_executable(test_kmutex
+    ${SRC}/kernel/core/sync/kmutex.c
+    test_kmutex.c
+)
+target_include_directories(test_kmutex BEFORE PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(test_kmutex PRIVATE ${SRC} ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME kmutex COMMAND test_kmutex)
+
 # ── test_alloc ────────────────────────────────────────────────────────────
 # alloc.c operates purely on caller-supplied memory — no syscalls,
 # no arch dependencies — so it compiles cleanly on the host.
