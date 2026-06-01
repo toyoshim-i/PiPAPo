@@ -1,7 +1,7 @@
 # Kernel Thread-Safety Plan
 
-**Status:** active.  Phases 1-3 are complete.  Phase 4 sleep/wakeup
-normalization is the current lane.
+**Status:** active.  Phases 1-4 are complete.  Phase 5 concurrency stress
+coverage is the current lane.
 This is a work plan for making common kernel code safe under preemption and,
 where applicable, dual-core execution.
 
@@ -75,25 +75,25 @@ Status labels used below:
 - `partial`: useful implementation landed, but defined follow-up remains;
 - `todo`: no reviewed implementation has landed yet.
 
-Phases 1-3 are complete.  The current Phase 4 review item adds repeated
-pipe waiter/waker interleavings through the shared sleep and wakeup helpers.
+Phases 1-4 are complete.  The current Phase 5 review patch adds concurrent
+descriptor refcount churn and shared-offset reads through inherited files.
 
 Current cursor:
 
 | Level | Current position | State |
 | --- | --- | --- |
 | Overall plan | Common kernel thread-safety hardening | active |
-| Phase | Phase 4: Normalize Sleep/Wakeup | active |
-| Step | Phase 4.4: Add sleep/wakeup stress coverage | active |
-| Review patch | Repeat pipe waiter/waker rendezvous rounds | awaiting review |
-| Next patch after commit | Close Phase 4 and enter Phase 5 stress work | deferred |
+| Phase | Phase 5: Stress Testing | active |
+| Step | Phase 5.2: Stress shared file offsets | active |
+| Review patch | Churn inherited refs and interleave shared-offset reads | awaiting review |
+| Next patch after commit | Add tmpfs metadata interleaving stress | deferred |
 
 Execution rule:
 
 - `next` selects work only from the active phase.
 - A phase transition requires its exit condition to be met and recorded below.
 - Findings for later phases are recorded as deferred work, not pulled forward.
-- Phase 3 is already complete, so execution moves from Phase 2 to Phase 4.
+- Phases 1-4 are complete, so execution continues in Phase 5.
 
 Completed implementation commits:
 
@@ -125,6 +125,7 @@ Completed implementation commits:
 | `b4f62040` | Mutex behavior tests and CP/M IRQ teardown deferral |
 | `ab1896bd` | Mutex waiter normalization through the shared sleep helper |
 | `ade4a24e` | Audited scheduler wakeup locking contract |
+| `3d45921e` | Repeated pipe waiter/waker rendezvous stress |
 
 Estimated remaining review-sized iterations:
 
@@ -132,10 +133,10 @@ Estimated remaining review-sized iterations:
 | --- | --- | ---: |
 | Phase 2: sleepable mutex | done | 0 |
 | Phase 3: high-risk user conversions | done | 0 |
-| Phase 4: normalize remaining sleep/wakeup paths | active | 1 |
-| Phase 5: add concurrency stress coverage | deferred | 2-3 |
+| Phase 4: normalize remaining sleep/wakeup paths | done | 0 |
+| Phase 5: add concurrency stress coverage | active | 3-5 |
 | Phase 5: run final target matrix and record target-specific issues | deferred | 1 |
-| **Known remaining total, including current patch** |  | **4-5** |
+| **Known remaining total, including current patch** |  | **4-6** |
 
 This estimate counts small, reviewable patches rather than unchecked bullet
 items.  Revise the estimate if later-phase normalization finds additional
@@ -385,8 +386,8 @@ Phase dashboard:
 | 1. Contracts And Audits | done | Static globals, registries, PCB lifecycle, and process-group access are covered | Complete |
 | 2. Sleepable Mutex | done | IRQ guard and dedicated behavior tests are landed | Complete |
 | 3. Convert High-Risk Users | done | x68k IOCS, fd, pipe, and tmpfs conversions are landed | Reopen only if later audits find another high-risk user |
-| 4. Normalize Sleep/Wakeup | active | Shared helpers and the wakeup rule are covered; focused pipe waiter/waker stress is under review | Land focused interleaving stress |
-| 5. Stress Testing | partial | Pico 1 multicore lane exists | Add subsystem concurrency stress and run final target matrix |
+| 4. Normalize Sleep/Wakeup | done | Shared helpers, the wakeup rule, and focused pipe waiter/waker stress are landed | Complete |
+| 5. Stress Testing | active | Pico 1 multicore lane exists; descriptor stress is under review | Add subsystem concurrency stress and run final target matrix |
 
 Execution order:
 
@@ -457,26 +458,36 @@ Execution order:
    `SPIN_PROC` internally, and may run while another resource lock is held.
    Callers should release that resource lock first when the wake condition
    remains true after unlock.
-4. `active` Add stress tests that intentionally interleave waiters and wakers.
-   The current review patch repeats the pipe child-reader block and parent
-   wakeup rendezvous 16 times on every normal target test run.
+4. `done` Add stress tests that intentionally interleave waiters and wakers
+   (`3d45921e`).  `test_pipe` repeats the child-reader block and parent wakeup
+   rendezvous 16 times on every normal target test run.
 
 ### Phase 5: Stress Testing
 
-`partial` Add tests that create real concurrency instead of only single-thread
-syscall coverage.  Pico 1 has a UART-captured hardware lane
+`active` Add tests that create real concurrency instead of only single-thread
+syscall coverage.  The current review patch starts with concurrent inherited
+file-reference churn and shared-offset reads.  Pico 1 has a UART-captured
+hardware lane
 (`--test --filter=smp pico1`) and a post-scheduler Core 1 statistics smoke test
 (`d0586b89`).  `test_fs` validates basic mount pinning behavior, but does not
 create concurrent mount/unmount interleavings.
 
-- parallel opens/closes/dups of shared files;
-- concurrent `read()`/`lseek()` on one descriptor;
-- pipe reader/writer/closer interleavings;
-- tmpfs create/unlink/rename/read stress;
-- forced process kill while holding a `kmutex_t`;
-- repeated multi-getty startup on x68k;
-- optional qemu timer-frequency increase to expose preemption races.
-- Pico 1/Pico 2 UART-captured runs for TTY and UART IRQ behavior.
+1. `active` Add parallel opens/closes/dups of shared files.  The current review
+   patch makes `test_fd` churn one inherited file object from a parent and
+   child while independently opening and closing files.
+2. `active` Add concurrent `read()`/`lseek()` stress on one descriptor.  The
+   current review patch verifies that parent and child consume each byte
+   exactly once while both probe their inherited shared offset with
+   `lseek(SEEK_CUR)`.
+3. `done` Add pipe reader/writer interleavings (`3d45921e`).
+4. `todo` Add tmpfs create/unlink/rename/read stress.
+5. `partial` Cover forced process death while holding a `kmutex_t`.  Host
+   behavior coverage exists (`b4f62040`); add a production-path stress case if
+   a suitable holder can be exercised without a test-only syscall.
+6. `todo` Run repeated multi-getty startup on x68k.
+7. `todo` Run Pico 1/Pico 2 UART-captured tests for TTY and UART IRQ behavior.
+8. `optional` Increase QEMU timer frequency if the normal stress runs do not
+   expose enough preemption interleavings.
 
 ## Acceptance Criteria
 
