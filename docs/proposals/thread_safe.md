@@ -75,8 +75,8 @@ Status labels used below:
 - `partial`: useful implementation landed, but defined follow-up remains;
 - `todo`: no reviewed implementation has landed yet.
 
-Phases 1-4 are complete.  The current Phase 5 review patch adds concurrent
-tmpfs create, write, rename, read, and unlink churn.
+Phases 1-4 are complete.  The current Phase 5 review patch strengthens
+process-death mutex cleanup stress coverage.
 
 Current cursor:
 
@@ -84,9 +84,9 @@ Current cursor:
 | --- | --- | --- |
 | Overall plan | Common kernel thread-safety hardening | active |
 | Phase | Phase 5: Stress Testing | active |
-| Step | Phase 5.4: Stress tmpfs metadata | active |
-| Review patch | Interleave parent and child tmpfs metadata churn | awaiting review |
-| Next patch after commit | Assess production process-death mutex stress | deferred |
+| Step | Phase 5.5: Stress process-death mutex cleanup | active |
+| Review patch | Repeat owner cleanup and waiter reacquisition | awaiting review |
+| Next patch after commit | Run repeated multi-getty startup on x68k | deferred |
 
 Execution rule:
 
@@ -127,6 +127,7 @@ Completed implementation commits:
 | `ade4a24e` | Audited scheduler wakeup locking contract |
 | `3d45921e` | Repeated pipe waiter/waker rendezvous stress |
 | `d8884d92` | Shared file-reference and offset stress |
+| `9dd96491` | Concurrent tmpfs metadata stress |
 
 Estimated remaining review-sized iterations:
 
@@ -135,9 +136,9 @@ Estimated remaining review-sized iterations:
 | Phase 2: sleepable mutex | done | 0 |
 | Phase 3: high-risk user conversions | done | 0 |
 | Phase 4: normalize remaining sleep/wakeup paths | done | 0 |
-| Phase 5: add concurrency stress coverage | active | 2-4 |
+| Phase 5: add concurrency stress coverage | active | 2-3 |
 | Phase 5: run final target matrix and record target-specific issues | deferred | 1 |
-| **Known remaining total, including current patch** |  | **3-5** |
+| **Known remaining total, including current patch** |  | **3-4** |
 
 This estimate counts small, reviewable patches rather than unchecked bullet
 items.  Revise the estimate if later-phase normalization finds additional
@@ -466,8 +467,8 @@ Execution order:
 ### Phase 5: Stress Testing
 
 `active` Add tests that create real concurrency instead of only single-thread
-syscall coverage.  The current review patch adds concurrent tmpfs metadata
-churn.  Pico 1 has a UART-captured hardware lane
+syscall coverage.  The current review patch repeats process-death mutex cleanup
+and waiter reacquisition.  Pico 1 has a UART-captured hardware lane
 (`--test --filter=smp pico1`) and a post-scheduler Core 1 statistics smoke test
 (`d0586b89`).  `test_fs` validates basic mount pinning behavior, but does not
 create concurrent mount/unmount interleavings.
@@ -476,12 +477,14 @@ create concurrent mount/unmount interleavings.
 2. `done` Add concurrent `read()`/`lseek()` stress on one descriptor
    (`d8884d92`).
 3. `done` Add pipe reader/writer interleavings (`3d45921e`).
-4. `active` Add tmpfs create/unlink/rename/read stress.  The current review
-   patch makes a parent and exec'd child repeatedly create, write, rename,
-   reopen, read, and unlink distinct tmpfs files after a shared rendezvous.
-5. `partial` Cover forced process death while holding a `kmutex_t`.  Host
-   behavior coverage exists (`b4f62040`); add a production-path stress case if
-   a suitable holder can be exercised without a test-only syscall.
+4. `done` Add tmpfs create/unlink/rename/read stress (`9dd96491`).  A parent
+   and exec'd child repeatedly create, write, rename, reopen, read, and unlink
+   distinct tmpfs files after a shared rendezvous.
+5. `active` Cover forced process death while holding a `kmutex_t`.  The
+   current review patch repeats host-side cleanup and waiter reacquisition.
+   Production callers release their mutexes while unwinding controllable
+   signal interruptions; forcing death inside a held kernel mutex would need
+   a test-only hook.  Keep that hook out of the production syscall surface.
 6. `todo` Run repeated multi-getty startup on x68k.
 7. `todo` Run Pico 1/Pico 2 UART-captured tests for TTY and UART IRQ behavior.
 8. `optional` Increase QEMU timer frequency if the normal stress runs do not

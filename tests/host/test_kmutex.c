@@ -23,6 +23,8 @@ static int wakeup_count;
 static jmp_buf panic_env;
 static void (*switch_hook)(void);
 
+#define OWNER_DEATH_STRESS_ROUNDS 32
+
 void panic(const char *fmt, ...) {
   (void)fmt;
   panic_seen = 1;
@@ -123,28 +125,39 @@ static void test_waiter_acquires_after_handoff(void) {
   ASSERT_NULL(proc_b.wait_channel);
 }
 
-static void test_release_owned_wakes_waiter(void) {
-  kmutex_t first;
-  kmutex_t second;
+static void test_release_owned_handoff_stress(void) {
+  for (int i = 0; i < OWNER_DEATH_STRESS_ROUNDS; i++) {
+    kmutex_t first;
+    kmutex_t second;
 
-  reset_test();
-  kmutex_init(&first);
-  kmutex_init(&second);
-  kmutex_lock(&first);
-  kmutex_lock(&second);
-  proc_b.state = PROC_BLOCKED;
-  proc_b.wait_channel = &first;
+    reset_test();
+    kmutex_init(&first);
+    kmutex_init(&second);
+    kmutex_lock(&first);
+    kmutex_lock(&second);
+    proc_b.state = PROC_BLOCKED;
+    proc_b.wait_channel = &first;
 
-  kmutex_release_owned(&proc_a);
+    kmutex_release_owned(&proc_a);
 
-  ASSERT_NULL(proc_a.kmutex_held);
-  ASSERT_NULL(first.owner);
-  ASSERT_NULL(second.owner);
-  ASSERT_NULL(first.next_held);
-  ASSERT_NULL(second.next_held);
-  ASSERT(proc_b.state == PROC_RUNNABLE, "owner death should wake waiter");
-  ASSERT_NULL(proc_b.wait_channel);
-  ASSERT_EQ(wakeup_count, 2);
+    ASSERT_NULL(proc_a.kmutex_held);
+    ASSERT_NULL(first.owner);
+    ASSERT_NULL(second.owner);
+    ASSERT_NULL(first.next_held);
+    ASSERT_NULL(second.next_held);
+    ASSERT(proc_b.state == PROC_RUNNABLE, "owner death should wake waiter");
+    ASSERT_NULL(proc_b.wait_channel);
+    ASSERT_EQ(wakeup_count, 2);
+
+    current = &proc_b;
+    kmutex_lock(&first);
+    ASSERT(first.owner == &proc_b, "woken waiter should acquire released mutex");
+    ASSERT(proc_b.kmutex_held == &first,
+           "woken waiter should track released mutex");
+    kmutex_unlock(&first);
+    ASSERT_NULL(proc_b.kmutex_held);
+    ASSERT_EQ(wakeup_count, 3);
+  }
 }
 
 static void test_recursive_lock_panics(void) {
@@ -180,7 +193,7 @@ int main(void) {
   printf("=== test_kmutex ===\n");
   RUN_TEST(test_lock_unlock_tracks_owner);
   RUN_TEST(test_waiter_acquires_after_handoff);
-  RUN_TEST(test_release_owned_wakes_waiter);
+  RUN_TEST(test_release_owned_handoff_stress);
   RUN_TEST(test_recursive_lock_panics);
   RUN_TEST(test_unlock_by_non_owner_panics);
   RUN_TEST(test_irq_context_lock_unlock_panics);
