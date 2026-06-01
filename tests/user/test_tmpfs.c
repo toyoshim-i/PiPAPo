@@ -2,7 +2,16 @@
  * test_tmpfs.c — mkdir, unlink, rmdir on /tmp (tmpfs)
  */
 
+#include "common/time.h"
 #include "utest.h"
+
+#define TMPFS_STRESS_ROUNDS 16
+
+#define CHILD_OK 0
+#define CHILD_BAD_ARGS 11
+#define CHILD_READY_WRITE_FAIL 12
+#define CHILD_START_READ_FAIL 13
+#define CHILD_STRESS_FAIL 14
 
 /* Helper: compare two strings */
 static int streq(const char *a, const char *b)
@@ -11,8 +20,152 @@ static int streq(const char *a, const char *b)
     return *a == *b;
 }
 
-int main(void)
+static int parse_fd(const char *s)
 {
+    int v = 0;
+    if (!s || !*s) return -1;
+    while (*s) {
+        if (*s < '0' || *s > '9') return -1;
+        v = v * 10 + (*s - '0');
+        s++;
+    }
+    return v;
+}
+
+static void fd_to_arg(int fd, char out[4])
+{
+    if (fd >= 100) {
+        out[0] = '0';
+        out[1] = 0;
+    } else if (fd >= 10) {
+        out[0] = (char)('0' + fd / 10);
+        out[1] = (char)('0' + fd % 10);
+        out[2] = 0;
+    } else {
+        out[0] = (char)('0' + fd);
+        out[1] = 0;
+    }
+}
+
+static void short_sleep(void)
+{
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = 1000000;
+    nanosleep(&ts, (void *)0);
+}
+
+static int churn_tmpfs_file(const char *old_path, const char *new_path,
+                            char marker)
+{
+    for (int i = 0; i < TMPFS_STRESS_ROUNDS; i++) {
+        int fd = open(old_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) return -1;
+        if (write(fd, &marker, 1) != 1) return -1;
+        if (close(fd) < 0) return -1;
+
+        if (rename(old_path, new_path) < 0) return -1;
+
+        fd = open(new_path, O_RDONLY, 0);
+        if (fd < 0) return -1;
+        char ch = 0;
+        if (read(fd, &ch, 1) != 1 || ch != marker) return -1;
+        if (close(fd) < 0) return -1;
+
+        if (unlink(new_path) < 0) return -1;
+        short_sleep();
+    }
+    return 0;
+}
+
+static int tmpfs_worker_child(int argc, char **argv)
+{
+    if (argc < 6) return CHILD_BAD_ARGS;
+
+    int ready_r = parse_fd(argv[2]);
+    int ready_w = parse_fd(argv[3]);
+    int start_r = parse_fd(argv[4]);
+    int start_w = parse_fd(argv[5]);
+    if (ready_r < 0 || ready_w < 0 || start_r < 0 || start_w < 0)
+        return CHILD_BAD_ARGS;
+
+    close(ready_r);
+    close(start_w);
+
+    char ch = 'R';
+    if (write(ready_w, &ch, 1) != 1) return CHILD_READY_WRITE_FAIL;
+    close(ready_w);
+
+    if (read(start_r, &ch, 1) != 1 || ch != 'S') return CHILD_START_READ_FAIL;
+    close(start_r);
+
+    return churn_tmpfs_file("/tmp/stress_child_a", "/tmp/stress_child_b", 'C')
+               ? CHILD_STRESS_FAIL
+               : CHILD_OK;
+}
+
+static void run_tmpfs_stress(void)
+{
+    int ready[2];
+    int start[2];
+    ready[0] = ready[1] = start[0] = start[1] = -1;
+
+    int ready_rc = pipe(ready);
+    UT_ASSERT_EQ(ready_rc, 0);
+    int start_rc = pipe(start);
+    UT_ASSERT_EQ(start_rc, 0);
+
+    if (ready_rc == 0 && start_rc == 0) {
+        char ready_r_arg[4], ready_w_arg[4];
+        char start_r_arg[4], start_w_arg[4];
+        fd_to_arg(ready[0], ready_r_arg);
+        fd_to_arg(ready[1], ready_w_arg);
+        fd_to_arg(start[0], start_r_arg);
+        fd_to_arg(start[1], start_w_arg);
+        char *child_argv[] = {
+            (char *)"/bin/test_tmpfs", (char *)"--tmpfs-worker",
+            ready_r_arg, ready_w_arg, start_r_arg, start_w_arg, (char *)0};
+
+        pid_t pid = vfork();
+        if (pid == 0) {
+            execve("/bin/test_tmpfs", child_argv, (void *)0);
+            _exit(127);
+        }
+
+        close(ready[1]);
+        close(start[0]);
+
+        char ch = 0;
+        int handshake_ok = read(ready[0], &ch, 1) == 1 && ch == 'R';
+        close(ready[0]);
+        ch = 'S';
+        if (write(start[1], &ch, 1) != 1) handshake_ok = 0;
+        close(start[1]);
+
+        UT_ASSERT(handshake_ok, "tmpfs stress worker rendezvous");
+        UT_ASSERT_EQ(churn_tmpfs_file("/tmp/stress_parent_a",
+                                      "/tmp/stress_parent_b", 'P'), 0);
+
+        int status = 0;
+        UT_ASSERT_EQ(waitpid(pid, &status, 0), pid);
+        UT_ASSERT(WIFEXITED(status), "tmpfs stress worker exited normally");
+        UT_ASSERT_EQ(WEXITSTATUS(status), CHILD_OK);
+        UT_ASSERT(access("/tmp/stress_parent_a", F_OK) < 0,
+                  "parent tmpfs stress source cleaned up");
+        UT_ASSERT(access("/tmp/stress_parent_b", F_OK) < 0,
+                  "parent tmpfs stress target cleaned up");
+        UT_ASSERT(access("/tmp/stress_child_a", F_OK) < 0,
+                  "child tmpfs stress source cleaned up");
+        UT_ASSERT(access("/tmp/stress_child_b", F_OK) < 0,
+                  "child tmpfs stress target cleaned up");
+    }
+}
+
+int main(int argc, char **argv)
+{
+    if (argc > 1 && streq(argv[1], "--tmpfs-worker"))
+        return tmpfs_worker_child(argc, argv);
+
     /* 1. /tmp should exist and be a directory */
     struct stat st;
     int ret = stat("/tmp", &st);
@@ -80,10 +233,10 @@ int main(void)
     UT_ASSERT(ret < 0, "rmdir nonexistent fails");
 
     /* 13. Large write + read (4096 bytes, full tmpfs file capacity).
-     * The user buffer may span a page boundary depending on stack
-     * alignment, exercising the vfs_bridge page-walk loop. */
+     * Keep both full-page buffers in BSS so this test does not consume the
+     * entire user stack page.  The next test covers page-boundary walking. */
     {
-        char wbuf[4096];
+        static char wbuf[4096];
         int i;
         for (i = 0; i < (int)sizeof(wbuf); i++)
             wbuf[i] = (char)(i & 0x7f);
@@ -302,6 +455,9 @@ int main(void)
         ret = chmod("/dev/null", 0700);
         UT_ASSERT(ret < 0, "chmod on devfs returns error");
     }
+
+    /* 21. Parent and exec'd child churn separate tmpfs metadata concurrently. */
+    run_tmpfs_stress();
 
     UT_SUMMARY("test_tmpfs");
 }
