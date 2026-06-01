@@ -75,8 +75,8 @@ Status labels used below:
 - `partial`: useful implementation landed, but defined follow-up remains;
 - `todo`: no reviewed implementation has landed yet.
 
-Phases 1-3 are complete.  The current Phase 4 review item records the
-`sched_wakeup()` lock rule after auditing its mutex, pipe, and TTY callers.
+Phases 1-3 are complete.  The current Phase 4 review item adds repeated
+pipe waiter/waker interleavings through the shared sleep and wakeup helpers.
 
 Current cursor:
 
@@ -84,9 +84,9 @@ Current cursor:
 | --- | --- | --- |
 | Overall plan | Common kernel thread-safety hardening | active |
 | Phase | Phase 4: Normalize Sleep/Wakeup | active |
-| Step | Phase 4.3: Define the `sched_wakeup()` lock rule | active |
-| Review patch | Document the audited wakeup lock contract | awaiting review |
-| Next patch after commit | Add sleep/wakeup stress tests | deferred |
+| Step | Phase 4.4: Add sleep/wakeup stress coverage | active |
+| Review patch | Repeat pipe waiter/waker rendezvous rounds | awaiting review |
+| Next patch after commit | Close Phase 4 and enter Phase 5 stress work | deferred |
 
 Execution rule:
 
@@ -124,6 +124,7 @@ Completed implementation commits:
 | `b88c0fcb` | Sleepable mutex IRQ-context rejection |
 | `b4f62040` | Mutex behavior tests and CP/M IRQ teardown deferral |
 | `ab1896bd` | Mutex waiter normalization through the shared sleep helper |
+| `ade4a24e` | Audited scheduler wakeup locking contract |
 
 Estimated remaining review-sized iterations:
 
@@ -131,10 +132,10 @@ Estimated remaining review-sized iterations:
 | --- | --- | ---: |
 | Phase 2: sleepable mutex | done | 0 |
 | Phase 3: high-risk user conversions | done | 0 |
-| Phase 4: normalize remaining sleep/wakeup paths | active | 1-2 |
+| Phase 4: normalize remaining sleep/wakeup paths | active | 1 |
 | Phase 5: add concurrency stress coverage | deferred | 2-3 |
 | Phase 5: run final target matrix and record target-specific issues | deferred | 1 |
-| **Known remaining total, including current patch** |  | **4-6** |
+| **Known remaining total, including current patch** |  | **4-5** |
 
 This estimate counts small, reviewable patches rather than unchecked bullet
 items.  Revise the estimate if later-phase normalization finds additional
@@ -384,7 +385,7 @@ Phase dashboard:
 | 1. Contracts And Audits | done | Static globals, registries, PCB lifecycle, and process-group access are covered | Complete |
 | 2. Sleepable Mutex | done | IRQ guard and dedicated behavior tests are landed | Complete |
 | 3. Convert High-Risk Users | done | x68k IOCS, fd, pipe, and tmpfs conversions are landed | Reopen only if later audits find another high-risk user |
-| 4. Normalize Sleep/Wakeup | active | Shared helpers cover pipe, poll, tty, and mutex; the wakeup rule is under review | Define wakeup rule and add focused interleaving stress |
+| 4. Normalize Sleep/Wakeup | active | Shared helpers and the wakeup rule are covered; focused pipe waiter/waker stress is under review | Land focused interleaving stress |
 | 5. Stress Testing | partial | Pico 1 multicore lane exists | Add subsystem concurrency stress and run final target matrix |
 
 Execution order:
@@ -451,12 +452,14 @@ Execution order:
    paths use shared helpers.  Timer sleeps intentionally use `PROC_SLEEPING`;
    vfork, wait, trace, and signal paths intentionally manage lifecycle state
    under `SPIN_PROC`.
-3. `active` Define the rule for when `sched_wakeup()` may be called with or
-   without the resource lock held.  The current review patch records the
-   audited contract: it is IRQ-safe, acquires `SPIN_PROC` internally, and may
-   run while another resource lock is held.  Callers should release that
-   resource lock first when the wake condition remains true after unlock.
-4. `todo` Add stress tests that intentionally interleave waiters and wakers.
+3. `done` Define the rule for when `sched_wakeup()` may be called with or
+   without the resource lock held (`ade4a24e`).  It is IRQ-safe, acquires
+   `SPIN_PROC` internally, and may run while another resource lock is held.
+   Callers should release that resource lock first when the wake condition
+   remains true after unlock.
+4. `active` Add stress tests that intentionally interleave waiters and wakers.
+   The current review patch repeats the pipe child-reader block and parent
+   wakeup rendezvous 16 times on every normal target test run.
 
 ### Phase 5: Stress Testing
 

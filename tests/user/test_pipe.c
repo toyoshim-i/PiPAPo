@@ -15,6 +15,8 @@
 #define CHILD_DATA_FAIL 14
 #define CHILD_MARKER_FAIL 15
 
+#define BLOCK_WAKE_ROUNDS 16
+
 static int streq(const char *a, const char *b) {
     while (*a && *b && *a == *b) {
         a++;
@@ -62,19 +64,17 @@ static int pipe_reader_child(int argc, char **argv) {
     close(ready_r);
 
     volatile uint32_t marker = 0x13579BDFu;
-    char ready = 'R';
-    if (write(ready_w, &ready, 1) != 1) return CHILD_READY_WRITE_FAIL;
-    close(ready_w);
+    for (int i = 0; i < BLOCK_WAKE_ROUNDS; i++) {
+        char ready = 'R';
+        if (write(ready_w, &ready, 1) != 1) return CHILD_READY_WRITE_FAIL;
 
-    char buf[8];
-    for (int i = 0; i < 8; i++) buf[i] = 0;
-    ssize_t n = read(data_r, buf, sizeof(buf));
+        char ch = 0;
+        if (read(data_r, &ch, 1) != 1) return CHILD_READ_COUNT_FAIL;
+        if (ch != (char)('A' + i)) return CHILD_DATA_FAIL;
+    }
+    close(ready_w);
     close(data_r);
 
-    if (n != 6) return CHILD_READ_COUNT_FAIL;
-    for (int i = 0; i < 6; i++) {
-        if (buf[i] != "BLOCK!"[i]) return CHILD_DATA_FAIL;
-    }
     if (marker != 0x13579BDFu) return CHILD_MARKER_FAIL;
 
     return CHILD_OK;
@@ -161,7 +161,7 @@ int main(int argc, char **argv) {
         close(fds3[0]);
     }
 
-    /* 4. Empty-pipe read blocks in the child, then resumes after write. */
+    /* 4. Repeatedly block a child reader, then wake it with one byte. */
     {
         int data[2];
         int ready[2];
@@ -195,16 +195,19 @@ int main(int argc, char **argv) {
         close(data[0]);
         close(ready[1]);
 
-        char ready_ch = 0;
-        ssize_t rn = read(ready[0], &ready_ch, 1);
-        UT_ASSERT_EQ(rn, 1);
-        UT_ASSERT(ready_ch == 'R', "blocking reader reached read path");
+        int handshake_ok = 1;
+        for (i = 0; i < BLOCK_WAKE_ROUNDS; i++) {
+            char ready_ch = 0;
+            ssize_t rn = read(ready[0], &ready_ch, 1);
+            if (rn != 1 || ready_ch != 'R') handshake_ok = 0;
+
+            short_sleep();
+
+            char ch = (char)('A' + i);
+            if (write(data[1], &ch, 1) != 1) handshake_ok = 0;
+        }
+        UT_ASSERT(handshake_ok, "blocking reader completed wakeup rounds");
         close(ready[0]);
-
-        short_sleep();
-
-        ssize_t wn = write(data[1], "BLOCK!", 6);
-        UT_ASSERT_EQ(wn, 6);
         close(data[1]);
 
         int status = 0;
