@@ -577,11 +577,11 @@ rarely fire.
 
 | Target | Date | Kernel tests | User tests | Total |
 |--------|------|--------------|------------|-------|
-| `qemu_arm` | 2026-06-02 | 74 pass, 13 fail (pre-existing FAT fixture expectations) | 24/24 pass | User pass |
-| `qemu_m68k` | 2026-06-02 | N/A (run stops during user suite) | Passes through `test_vfork`, then fails reproducibly in `test_orphan` with a kernel privilege fault | Known pre-existing regression |
-| `qemu_rv32` | 2026-06-02 | Disabled (pre-existing blkdev crash) | 23/23 pass | User pass |
-| `pcxt` | 2026-06-02 | N/A (no ktest) | 18/18 pass with `--hdd` | All pass |
-| `x68k` | 2026-06-03 | N/A | Fresh XEiJ packaged boot reaches scheduler startup, `init started`, and the serial getty prompt with the pending m68k IRQ-depth fix | Startup smoke pass |
+| `qemu_arm` | 2026-06-03 | 74 pass, 13 fail (pre-existing FAT fixture expectations) | 24/24 pass | User pass |
+| `qemu_m68k` | 2026-06-03 | N/A (run stops during user suite) | Passes through `test_vfork`, then fails reproducibly in `test_orphan` with a kernel privilege fault | Known pre-existing regression |
+| `qemu_rv32` | 2026-06-03 | Disabled (pre-existing blkdev crash) | 23/23 pass | User pass |
+| `pcxt` | 2026-06-03 | N/A (no ktest) | 18/18 pass with `--hdd` | All pass |
+| `x68k` | 2026-06-03 | N/A | Three fresh XEiJ packaged boots reach scheduler startup, `init started`, and one serial getty prompt with the pending UFS and m68k return-path fixes | Startup smoke pass |
 | `xtensa_cc` | 2026-05-12 | 62 pass, 7 fail | 13/13 pass | User pass |
 | `pico1` | 2026-05-27 | 67 pass, 2 fail (assumed pre-existing fstab/VFAT expectations) | 25/25 pass, including `test_smp` | Focused SMP pass |
 
@@ -607,6 +607,13 @@ logging.  The pending fix uses an explicit timer-ISR depth counter, matching
 the i16 model.  Verify x68k changes with `./scripts/run.sh --build x68k`;
 `./scripts/build.sh x68k` updates the kernel binary but does not repack the
 bootable XDF.
+
+Further x68k repetition on June 3, 2026 exposed intermittent zero-GOT `getty`
+loads during concurrent startup.  UFS serialized its global sector scratch
+buffer with `spin_lock()`, which is a no-op on single-core builds while the
+x68k IOCS floppy path temporarily enables interrupts.  The pending follow-up
+uses a sleepable UFS mutex and closes missed native-m68k vfork resume paths.
+Three freshly packaged XEiJ boots completed without `SIGBUS`.
 
 ```bash
 ./scripts/run.sh --test              # ARM (default)

@@ -84,6 +84,9 @@ m68k_trap1_handler:
 
     jsr     m68k_ctx_switch
 
+    | Restore a blocked vfork parent's saved resume frame before user return.
+    jsr     m68k_vfork_restore_frame
+
     | Restore all registers (a1 overwritten by movem from saved frame)
     movem.l %sp@+,%d0-%d7/%a0-%a6
 

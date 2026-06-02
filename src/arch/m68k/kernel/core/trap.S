@@ -106,11 +106,12 @@ m68k_trap0_handler:
 .Lexec_restore:
     | --- sys_execve: full context restore from new process image ---
     move.l  current_core,%a0
-    clr.b   %a0@(PCB_EXEC_RESTORE_PENDING_OFFSET)
 
     | Load current->sp (points to the new frame built by execve).
-    | Switch stack to the new process's frame and restore from there.
+    | Switch stack before clearing exec_restore_pending.  A timer interrupt
+    | must not save the old trap SSP over the replacement frame.
     move.l  %a0@(PCB_SP_OFFSET),%sp
+    clr.b   %a0@(PCB_EXEC_RESTORE_PENDING_OFFSET)
 
     | Restore USP for the new process (set before movem/rte)
     move.l  current_core,%a0

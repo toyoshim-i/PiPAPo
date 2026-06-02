@@ -51,7 +51,8 @@ Some common subsystems already have reasonable locking boundaries:
   `SPIN_TIME`.
 - `sched.c` and `procfs.c` use `SPIN_SCHED` for global tick and CPU
   accounting snapshots.
-- `ufs.c` and `vfat.c` serialize shared filesystem buffers with `SPIN_FS`.
+- `ufs.c` serializes its shared scratch buffer with a sleepable mutex.
+  `vfat.c` serializes its shared filesystem buffers with `SPIN_FS`.
 - `klog.c` serializes log output with `SPIN_UART`.
 
 Recent neutral hardening work started covering:
@@ -75,8 +76,9 @@ Status labels used below:
 - `partial`: useful implementation landed, but defined follow-up remains;
 - `todo`: no reviewed implementation has landed yet.
 
-Phases 1-4 are complete.  The current Phase 5 review patch fixes the
-PCB ownership of m68k exec-restore state found by repeated x68k startup.
+Phases 1-4 are complete.  The current Phase 5 review patch fixes UFS scratch
+serialization and closes missed native-m68k vfork resume paths found by
+repeated x68k startup.
 
 Current cursor:
 
@@ -85,8 +87,8 @@ Current cursor:
 | Overall plan | Common kernel thread-safety hardening | active |
 | Phase | Phase 5: Stress Testing | active |
 | Step | Phase 5.6: Repeat multi-getty startup on x68k | active |
-| Review patch | Keep m68k exec-restore state on its owning PCB and track real m68k IRQ depth | awaiting review |
-| Next patch after commit | Repeat multi-getty startup on x68k | deferred |
+| Review patch | Serialize UFS scratch with a sleepable mutex and restore native-m68k vfork frames on every user return | awaiting review |
+| Next patch after commit | Pico UART-captured TTY and IRQ verification | deferred |
 
 Execution rule:
 
@@ -468,9 +470,9 @@ Execution order:
 ### Phase 5: Stress Testing
 
 `active` Add tests that create real concurrency instead of only single-thread
-syscall coverage.  The current review patch fixes PCB ownership of m68k
-exec-restore state found by repeated x68k multi-getty startup.  Pico 1 has a
-UART-captured hardware lane
+syscall coverage.  Repeated x68k multi-getty startup exposed PCB ownership,
+IRQ-context, UFS serialization, and native-m68k vfork-return issues.  Pico 1
+has a UART-captured hardware lane
 (`--test --filter=smp pico1`) and a post-scheduler Core 1 statistics smoke test
 (`d0586b89`).  `test_fs` validates basic mount pinning behavior, but does not
 create concurrent mount/unmount interleavings.
@@ -487,17 +489,17 @@ create concurrent mount/unmount interleavings.
    Production callers release their mutexes while unwinding controllable
    signal interruptions; forcing death inside a held kernel mutex would need
    a test-only hook.  Keep that hook out of the production syscall surface.
-6. `active` Run repeated multi-getty startup on x68k.  One of the first three
-   XEiJ boots intermittently restored a new `getty` without its m68k `a5` GOT
-   base.  The current review patch moves exec-restore state from the shared
-   CPU-global flag to the owning m68k PCB.  `qemu_m68k` reaches and passes
-   `test_vfork` with that patch before reproducing its documented
-   `test_orphan` fault.  A fresh packaged XEiJ boot also exposed an existing
-   m68k IRQ-context predicate bug: raised process-context IPL was mistaken for
-   hardware IRQ context, so x68k IOCS logging recursively panicked.  The
-   current review patch tracks explicit m68k timer-ISR depth, matching i16.
-   The combined XEiJ image reaches scheduler startup, `init started`, and the
-   serial getty prompt.
+6. `active` Run repeated multi-getty startup on x68k.  The landed repair moves
+   exec-restore state from the shared CPU-global flag to the owning m68k PCB
+   and tracks explicit m68k timer-ISR depth, matching i16.  Further repetition
+   exposed intermittent zero-GOT `getty` loads: UFS used a global sector
+   buffer behind `spin_lock()`, which is a no-op on single-core builds while
+   the x68k IOCS floppy path temporarily enables interrupts.  The current
+   review patch serializes UFS with `kmutex_t`, switches to the replacement
+   exec stack before clearing its pending flag, and adds missed native-m68k
+   vfork restore hooks on cooperative-yield, Human68k, and fault-reschedule
+   returns.  Three freshly packaged XEiJ boots reach scheduler startup,
+   `init started`, and one serial getty prompt without `SIGBUS`.
 7. `todo` Run Pico 1/Pico 2 UART-captured tests for TTY and UART IRQ behavior.
 8. `optional` Increase QEMU timer frequency if the normal stress runs do not
    expose enough preemption interleavings.

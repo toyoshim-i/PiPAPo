@@ -27,7 +27,7 @@
 #include "kernel/common/mem_region_kbuf.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
-#include "kernel/common/spinlock.h" /* SPIN_FS */
+#include "kernel/common/sync/kmutex.h"
 #include "kernel/vfs/driver/blkdev.h"
 #include "kernel/vfs/klog.h"
 #include "kernel/vfs/ufs_format.h"
@@ -53,9 +53,11 @@ typedef struct {
 } ufs_priv_t;
 
 static ufs_priv_t ufs_priv;
+static kmutex_t ufs_mutex;
+static uint8_t ufs_mutex_initialized;
 
 /* ── Sector I/O buffer ────────────────────────────────────────────────── */
-/* Protected by SPIN_FS for dual-core safety — acquired at VFS entry points. */
+/* Protected by ufs_mutex, acquired at VFS entry points. */
 
 /* Aligned so it never straddles a page boundary — the blkdev
  * single-page contract requires that off + 512 <= PAGE_SIZE for the
@@ -1809,119 +1811,129 @@ static int ufs_statfs(mount_entry_t *mnt, struct kernel_statfs *buf) {
   return 0;
 }
 
-/* ── SPIN_FS wrappers ─────────────────────────────────────────────────── */
+/* ── Mutex wrappers ───────────────────────────────────────────────────── */
 /*
- * Each VFS entry point acquires SPIN_FS to serialize access to ufs_buf.
+ * Each VFS entry point acquires ufs_mutex to serialize access to ufs_buf.
+ * Block drivers may sleep or temporarily enable interrupts, so this must be
+ * a process-owned mutex rather than a spinlock.
  * ufs_statfs uses only cached values, but wrapped for consistency.
  */
 
+static void ufs_lock(void) { mod_core.kmutex_lock(&ufs_mutex); }
+
+static void ufs_unlock(void) { mod_core.kmutex_unlock(&ufs_mutex); }
+
 static int ufs_mount_locked(mount_entry_t *mnt, const void *dev_data) {
-  spin_lock(SPIN_FS);
+  if (!ufs_mutex_initialized) {
+    mod_core.kmutex_init(&ufs_mutex);
+    ufs_mutex_initialized = 1;
+  }
+  ufs_lock();
   int r = ufs_mount(mnt, dev_data);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static int ufs_lookup_locked(vnode_t *dir, const char *name, vnode_t **result) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   int r = ufs_lookup(dir, name, result);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static long ufs_read_locked(vnode_t *vn, page_id_t page, uint16_t page_off,
                             size_t n, uint32_t off) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   long r = ufs_read(vn, page, page_off, n, off);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static long ufs_write_locked(vnode_t *vn, page_id_t page, uint16_t page_off,
                              size_t n, uint32_t off) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   long r = ufs_write(vn, page, page_off, n, off);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static int ufs_readdir_locked(vnode_t *dir, struct dirent *entries,
                               size_t max_entries, uint32_t *cookie) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   int r = ufs_readdir(dir, entries, max_entries, cookie);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static int ufs_stat_locked(vnode_t *vn, struct stat *st) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   int r = ufs_stat(vn, st);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static long ufs_readlink_locked(vnode_t *vn, char *buf, size_t bufsiz) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   long r = ufs_readlink(vn, buf, bufsiz);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static int ufs_create_locked(vnode_t *dir, const char *name, uint32_t mode,
                              vnode_t **result) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   int r = ufs_create(dir, name, mode, result);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static int ufs_mkdir_locked(vnode_t *dir, const char *name, uint32_t mode) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   int r = ufs_mkdir(dir, name, mode);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static int ufs_unlink_locked(vnode_t *dir, const char *name) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   int r = ufs_unlink(dir, name);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static int ufs_truncate_locked(vnode_t *vn, uint32_t length) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   int r = ufs_truncate(vn, length);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static int ufs_utimes_locked(vnode_t *vn, uint32_t atime, uint32_t mtime) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   int r = ufs_utimes(vn, atime, mtime);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static int ufs_chmod_locked(vnode_t *vn, uint32_t mode) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   int r = ufs_chmod(vn, mode);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static int ufs_link_locked(vnode_t *new_parent, const char *new_name,
                            vnode_t *target) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   int r = ufs_link(new_parent, new_name, target);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 
 static int ufs_statfs_locked(mount_entry_t *mnt, struct kernel_statfs *buf) {
-  spin_lock(SPIN_FS);
+  ufs_lock();
   int r = ufs_statfs(mnt, buf);
-  spin_unlock(SPIN_FS);
+  ufs_unlock();
   return r;
 }
 

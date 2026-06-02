@@ -317,6 +317,7 @@ m68k_fline_handler:
     move.l  %a0@(PCB_USP_OFFSET),%a1
     move.l  %a1,%usp                  | restore user SP
 .Lfline_rte:
+    jsr     m68k_vfork_restore_frame
     movem.l %sp@+,%d0-%d7/%a0-%a6   | restore all regs (60 bytes)
     rte                              | return (SR+PC on stack)
 .Lfline_halt:
@@ -348,6 +349,7 @@ m68k_trap15_handler:
     move.l  %a0@(PCB_USP_OFFSET),%a1
     move.l  %a1,%usp                  | restore user SP
 .Ltrap15_rte:
+    jsr     m68k_vfork_restore_frame
     movem.l %sp@+,%d0-%d7/%a0-%a6   | restore all regs (60 bytes)
     rte                              | return (SR+PC on stack)
 
@@ -366,6 +368,7 @@ m68k_schedule_next:
     move.l  44(%a0),%sp              | PCB_SP_OFFSET = 44
     move.l  48(%a0),%a1              | PCB_USP_OFFSET = 48
     move.l  %a1,%usp
+    jsr     m68k_vfork_restore_frame
     | Restore all registers (d0-d7/a0-a6) and return via RTE
     movem.l %sp@+,%d0-%d7/%a0-%a6
     rte
