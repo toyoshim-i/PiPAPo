@@ -583,11 +583,13 @@ rarely fire.
 | `pcxt` | 2026-06-03 | N/A (no ktest) | 18/18 pass with `--hdd` | All pass |
 | `x68k` | 2026-06-03 | N/A | Three fresh XEiJ packaged boots reach scheduler startup, `init started`, and one serial getty prompt with the pending UFS and m68k return-path fixes | Startup smoke pass |
 | `xtensa_cc` | 2026-05-12 | 62 pass, 7 fail | 13/13 pass | User pass |
-| `pico1` | 2026-05-27 | 67 pass, 2 fail (assumed pre-existing fstab/VFAT expectations) | 25/25 pass, including `test_smp` | Focused SMP pass |
+| `pico1` | 2026-06-03 | Kernel tests skipped by active user filter | 1/1 pass with `--filter=smp`, `test_smp` 5/5 | Focused SMP pass |
 
-`pico1` verification on May 27, 2026 used the Debug Probe UART capture lane.
+`pico1` verification on June 3, 2026 used the Debug Probe UART capture lane.
 `./scripts/run.sh --test --filter=smp pico1` passed with `test_smp` reporting
-5 tests and 0 failures after Core 1 launched.  The unfiltered
+5 tests and 0 failures after Core 1 launched and the Core 1 scheduler started.
+The focused lane uses the normal kernel feature profile; Pico 1's
+`FLASH_KERNEL` budget is 208 KB as of this data point.  The earlier unfiltered
 `./scripts/run.sh --test pico1` run reached the same user-space success, but
 its pre-scheduler kernel suite reported failures for `fstab_parse >= 4
 entries` and `/mnt/sd mounted (vfat)`.  These are treated as pre-existing:

@@ -86,9 +86,9 @@ Current cursor:
 | --- | --- | --- |
 | Overall plan | Common kernel thread-safety hardening | active |
 | Phase | Phase 5: Stress Testing | active |
-| Step | Phase 5.6: Repeat multi-getty startup on x68k | active |
-| Review patch | Serialize UFS scratch with a sleepable mutex and restore native-m68k vfork frames on every user return | awaiting review |
-| Next patch after commit | Pico UART-captured TTY and IRQ verification | deferred |
+| Step | Phase 5.7: Pico UART-captured hardware verification | active |
+| Review patch | Grow Pico 1 kernel flash budget and record UART-captured SMP pass | awaiting review |
+| Next patch after commit | Decide whether Pico 2 is required, then close Phase 5 or run the second board | deferred |
 
 Execution rule:
 
@@ -489,7 +489,7 @@ create concurrent mount/unmount interleavings.
    Production callers release their mutexes while unwinding controllable
    signal interruptions; forcing death inside a held kernel mutex would need
    a test-only hook.  Keep that hook out of the production syscall surface.
-6. `active` Run repeated multi-getty startup on x68k.  The landed repair moves
+6. `done` Run repeated multi-getty startup on x68k.  The landed repair moves
    exec-restore state from the shared CPU-global flag to the owning m68k PCB
    and tracks explicit m68k timer-ISR depth, matching i16.  Further repetition
    exposed intermittent zero-GOT `getty` loads: UFS used a global sector
@@ -500,7 +500,15 @@ create concurrent mount/unmount interleavings.
    vfork restore hooks on cooperative-yield, Human68k, and fault-reschedule
    returns.  Three freshly packaged XEiJ boots reach scheduler startup,
    `init started`, and one serial getty prompt without `SIGBUS`.
-7. `todo` Run Pico 1/Pico 2 UART-captured tests for TTY and UART IRQ behavior.
+7. `partial` Run Pico 1/Pico 2 UART-captured tests for TTY and UART IRQ
+   behavior.  Pico 1 passed the focused UART-captured hardware lane on
+   June 3, 2026: `./scripts/run.sh --test --filter=smp pico1` flashed through
+   the Debug Probe, captured `/dev/ttyS0` output, launched Core 1, started the
+   Core 1 scheduler, and passed `/bin/test_smp` 5/5.  Pico 1's
+   `FLASH_KERNEL` budget is now 208 KB so the focused lane uses the normal
+   full subsystem profile.  There is no dedicated tty user test yet, so tty/IRQ
+   coverage remains indirect through UART capture, scheduler ticks, and logger
+   output.  Pico 2 remains optional/pending if a second board check is required.
 8. `optional` Increase QEMU timer frequency if the normal stress runs do not
    expose enough preemption interleavings.
 
