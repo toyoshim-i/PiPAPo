@@ -38,6 +38,7 @@ typedef void (*sighandler_t)(int);
 #define PCB_SP_OFFSET 44u
 #define PCB_USP_OFFSET 48u
 #define PCB_KERNEL_SP_OFFSET 52u
+#define PCB_EXEC_RESTORE_PENDING_OFFSET 1375u
 #elif defined(__riscv)
 #define PCB_SP_OFFSET 48u
 #elif defined(__xtensa__)
@@ -103,10 +104,10 @@ static inline user_page_ref_t user_to_page(page_id_t base, uint32_t user_off) {
  *   before making a process runnable, or while the process is blocked in a
  *   lifecycle path such as vfork.
  * - identity/lifecycle: pid, ppid, state, wait_channel, sleep_until,
- *   running_on_core, vfork_parent, vfork_frame_saved, exit_status, and
- *   clear_child_tid are shared with scheduler, wait, exit, signal, or procfs
- *   paths.  Read or write them under SPIN_PROC unless the caller proves the
- *   target is current-only or not runnable yet.
+ *   running_on_core, vfork_parent, vfork_frame_saved, exec_restore_pending,
+ *   exit_status, and clear_child_tid are shared with scheduler, wait, exit,
+ *   signal, or procfs paths.  Read or write them under SPIN_PROC unless the
+ *   caller proves the target is current-only or not runnable yet.
  * - process-owned runtime state: fd_map, cwd, brk, signal masks/handlers,
  *   trace state, subsystem state, CPU state, TLS, comm, pgid/sid, umask, and
  *   memory-image/page-tracking fields are normally mutated by the owning
@@ -216,17 +217,18 @@ typedef struct pcb {
   uint8_t is_idle;          /* 1 = idle thread (ticks count as idle)      */
 
   /* ── vfork / waitpid: lifecycle-shared, protect with SPIN_PROC ─────── */
-  struct pcb *vfork_parent;   /* non-NULL while child shares parent's space */
-  uint8_t vfork_frame_saved;  /* 1 if a parent-resume slice was saved during
-                                 vfork and must be restored before this PCB
-                                 returns to user mode.  The saved slice size
-                                 and storage are arch-specific (see Phase 0
-                                 in docs/proposals/no_stack_copy_on_vfork.md).
-                               */
-  int exit_status;            /* set by _exit(), read by waitpid()          */
-  uintptr_t got_base;         /* r9 value (GOT SRAM address) for PIC       */
-  void *wait_channel;         /* sleep/wakeup target (e.g. pipe_t*)        */
-  struct kmutex *kmutex_held; /* process-owned sleepable mutex list        */
+  struct pcb *vfork_parent;     /* non-NULL while child shares parent's space */
+  uint8_t vfork_frame_saved;    /* 1 if a parent-resume slice was saved during
+                                   vfork and must be restored before this PCB
+                                   returns to user mode.  The saved slice size
+                                   and storage are arch-specific (see Phase 0
+                                   in docs/proposals/no_stack_copy_on_vfork.md).
+                                 */
+  uint8_t exec_restore_pending; /* replacement frame awaits restore */
+  int exit_status;              /* set by _exit(), read by waitpid()          */
+  uintptr_t got_base;           /* r9 value (GOT SRAM address) for PIC       */
+  void *wait_channel;           /* sleep/wakeup target (e.g. pipe_t*)        */
+  struct kmutex *kmutex_held;   /* process-owned sleepable mutex list        */
 
   /* ── Heap (brk): owning process mutates through sys_brk() ─────────── */
   uintptr_t brk_base;    /* initial break = end of .data+.bss         */

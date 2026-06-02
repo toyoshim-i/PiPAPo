@@ -75,8 +75,8 @@ Status labels used below:
 - `partial`: useful implementation landed, but defined follow-up remains;
 - `todo`: no reviewed implementation has landed yet.
 
-Phases 1-4 are complete.  The current Phase 5 review patch strengthens
-process-death mutex cleanup stress coverage.
+Phases 1-4 are complete.  The current Phase 5 review patch fixes the
+PCB ownership of m68k exec-restore state found by repeated x68k startup.
 
 Current cursor:
 
@@ -84,9 +84,9 @@ Current cursor:
 | --- | --- | --- |
 | Overall plan | Common kernel thread-safety hardening | active |
 | Phase | Phase 5: Stress Testing | active |
-| Step | Phase 5.5: Stress process-death mutex cleanup | active |
-| Review patch | Repeat owner cleanup and waiter reacquisition | awaiting review |
-| Next patch after commit | Run repeated multi-getty startup on x68k | deferred |
+| Step | Phase 5.6: Repeat multi-getty startup on x68k | active |
+| Review patch | Keep m68k exec-restore state on its owning PCB and track real m68k IRQ depth | awaiting review |
+| Next patch after commit | Repeat multi-getty startup on x68k | deferred |
 
 Execution rule:
 
@@ -128,6 +128,7 @@ Completed implementation commits:
 | `3d45921e` | Repeated pipe waiter/waker rendezvous stress |
 | `d8884d92` | Shared file-reference and offset stress |
 | `9dd96491` | Concurrent tmpfs metadata stress |
+| `9cfb89af` | Repeated mutex owner-cleanup handoff stress |
 
 Estimated remaining review-sized iterations:
 
@@ -467,8 +468,9 @@ Execution order:
 ### Phase 5: Stress Testing
 
 `active` Add tests that create real concurrency instead of only single-thread
-syscall coverage.  The current review patch repeats process-death mutex cleanup
-and waiter reacquisition.  Pico 1 has a UART-captured hardware lane
+syscall coverage.  The current review patch fixes PCB ownership of m68k
+exec-restore state found by repeated x68k multi-getty startup.  Pico 1 has a
+UART-captured hardware lane
 (`--test --filter=smp pico1`) and a post-scheduler Core 1 statistics smoke test
 (`d0586b89`).  `test_fs` validates basic mount pinning behavior, but does not
 create concurrent mount/unmount interleavings.
@@ -480,12 +482,22 @@ create concurrent mount/unmount interleavings.
 4. `done` Add tmpfs create/unlink/rename/read stress (`9dd96491`).  A parent
    and exec'd child repeatedly create, write, rename, reopen, read, and unlink
    distinct tmpfs files after a shared rendezvous.
-5. `active` Cover forced process death while holding a `kmutex_t`.  The
-   current review patch repeats host-side cleanup and waiter reacquisition.
+5. `done` Cover forced process death while holding a `kmutex_t` (`9cfb89af`).
+   The host test repeats cleanup and waiter reacquisition.
    Production callers release their mutexes while unwinding controllable
    signal interruptions; forcing death inside a held kernel mutex would need
    a test-only hook.  Keep that hook out of the production syscall surface.
-6. `todo` Run repeated multi-getty startup on x68k.
+6. `active` Run repeated multi-getty startup on x68k.  One of the first three
+   XEiJ boots intermittently restored a new `getty` without its m68k `a5` GOT
+   base.  The current review patch moves exec-restore state from the shared
+   CPU-global flag to the owning m68k PCB.  `qemu_m68k` reaches and passes
+   `test_vfork` with that patch before reproducing its documented
+   `test_orphan` fault.  A fresh packaged XEiJ boot also exposed an existing
+   m68k IRQ-context predicate bug: raised process-context IPL was mistaken for
+   hardware IRQ context, so x68k IOCS logging recursively panicked.  The
+   current review patch tracks explicit m68k timer-ISR depth, matching i16.
+   The combined XEiJ image reaches scheduler startup, `init started`, and the
+   serial getty prompt.
 7. `todo` Run Pico 1/Pico 2 UART-captured tests for TTY and UART IRQ behavior.
 8. `optional` Increase QEMU timer frequency if the normal stress runs do not
    expose enough preemption interleavings.

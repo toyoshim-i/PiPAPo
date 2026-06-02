@@ -613,7 +613,7 @@ move.l  %a0@(PCB_USP_OFFSET),%a1
 move.l  %a1,%usp                      | restore USP
 ```
 
-### 7.6 exec_pending Protection
+### 7.6 Exec-Restore Protection
 
 During `execve()`, there is a critical window between constructing the
 new process's exception frame and the trap return path restoring it.  If
@@ -621,7 +621,8 @@ the timer ISR fires in this window and performs a context switch, it would
 save the kernel's SSP into `current->sp`, overwriting the carefully
 constructed exec frame.
 
-The solution uses an `exec_pending` flag:
+The solution uses a PCB-local `exec_restore_pending` flag so one process
+cannot clear another process's pending restore:
 
 ```c
 // In execve(), with interrupts disabled:
@@ -630,19 +631,22 @@ proc_setup_stack(p, entry, m68k_user_sp);
 p->usp = m68k_user_sp;
 // Patch GOT base in frame...
 if (p == current)
-    exec_pending[0] = 1;      // protect the frame
+    p->exec_restore_pending = 1;  // protect the frame
 arch_irq_restore(irq_save);
 ```
 
 The timer ISR in `switch.S` checks this flag:
 
 ```asm
-tst.l   exec_pending
+move.l  current_core,%a0
+tst.b   %a0@(PCB_EXEC_RESTORE_PENDING_OFFSET)
 bne.s   .Lno_switch            | skip context switch if exec in progress
 ```
 
-The flag is cleared by `trap.S`'s `.Lexec_restore` path after the new
-process context has been successfully restored.
+The PCB flag is cleared by `trap.S`'s `.Lexec_restore` path after the new
+process context has been successfully restored.  Keeping this state on the
+PCB matters when init starts multiple getties close together: a shared
+CPU-global flag can be consumed by the wrong process.
 
 ---
 

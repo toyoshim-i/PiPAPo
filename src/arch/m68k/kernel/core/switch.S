@@ -33,6 +33,7 @@
 
     .equ PCB_SP_OFFSET,  44      | offsetof(pcb_t, sp)  — see proc.h
     .equ PCB_USP_OFFSET, 48      | offsetof(pcb_t, usp) — see proc.h
+    .equ PCB_EXEC_RESTORE_PENDING_OFFSET, 1375
 
     .text
     .even
@@ -136,6 +137,8 @@ m68k_timer_isr:
     | Save ALL registers
     movem.l %d0-%d7/%a0-%a6,%sp@-
 
+    addq.w  #1,m68k_irq_depth
+
     | Call C handler: clear IRQ, set next alarm, sched_timer_tick()
     jsr     m68k_timer_handler_c
 
@@ -146,16 +149,19 @@ m68k_timer_isr:
     | ── Context switch ────────────────────────────────────────────────────
     clr.l   switch_pending
 
-    | exec_pending: execve has set current->sp to the new process frame
-    | and is about to return to trap.S .Lexec_restore.  Saving the kernel
-    | SSP here would overwrite the new frame pointer and corrupt exec.
-    | Skip the sp-save; trap.S handles the context restore on exec return.
-    tst.l   exec_pending
+    | exec_restore_pending: execve has set current->sp to the new process
+    | frame and is about to return to trap.S .Lexec_restore.  Saving the
+    | kernel SSP here would overwrite the new frame pointer and corrupt
+    | exec.  Keep this state on the PCB so another process cannot clear it.
+    move.l  current_core,%a0
+    tst.b   %a0@(PCB_EXEC_RESTORE_PENDING_OFFSET)
     bne.s   .Lno_switch
 
     jsr     m68k_ctx_switch
 
 .Lno_switch:
+    subq.w  #1,m68k_irq_depth
+
     | Restore vfork parent slice on every user-mode rte path.
     jsr     m68k_vfork_restore_frame
 

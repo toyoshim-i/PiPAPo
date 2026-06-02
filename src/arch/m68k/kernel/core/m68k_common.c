@@ -22,6 +22,9 @@
 /* Declared in arch.h — see header for semantics. */
 volatile uint32_t m68k_trap_frame_sp = 0;
 
+/* Hardware IRQ nesting depth, maintained by timer ISR entry/exit. */
+volatile uint16_t m68k_irq_depth = 0;
+
 /* ── Crash handler ─────────────────────────────────────────────────────── *
  *
  * Called from boot.S fault handlers with:

@@ -1862,10 +1862,11 @@ long sys_vfork(uint32_t *frame) {
    * so it will not be selected again until the child exits or execs. */
   sched_switch();
 
-  /* Clear stale exec_pending left by the child's execve.  exec_pending is
-   * global (not per-process), so a child's execve can leave a flag that
-   * would corrupt our return. */
+  /* Clear stale exec_pending left by the child's execve on architectures
+   * that still publish the replacement frame through a per-core flag. */
+#if !defined(__m68k__)
   exec_pending[core_id()] = 0;
+#endif
 
   return (long)child->pid;
 }
@@ -2215,7 +2216,11 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
    *
    * We cannot set r9 via inline asm here because the C compiler's
    * function epilogue (callee-saved register restores) would undo it. */
+#if defined(__m68k__)
+  current->exec_restore_pending = 1;
+#else
   exec_pending[core_id()] = 1;
+#endif
 
   return 0;
 }

@@ -15,6 +15,7 @@
 #include "kernel/core/mm/page.h"
 #include "kernel/core/mm/region.h"
 #include "kernel/core/proc/proc.h"
+#include "kernel/core/syscall/syscall.h"
 
 static int elf_detect(const uint8_t *header, uint32_t header_len,
                       uint32_t file_size, const char *path) {
@@ -778,7 +779,6 @@ static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
   sp = argv_sp;
 
   if (cpu_ops->arch_id == CPU_ARCH_M68K) {
-    extern volatile int exec_pending[2];
     uint32_t irq_save = arch_irq_save();
     proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, argv_sp);
 #if defined(__m68k__)
@@ -789,7 +789,11 @@ static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
       sw[13] = got_sram_addr;
     }
     p->got_base = got_sram_addr;
+#if defined(__m68k__)
+    if (p == current) p->exec_restore_pending = 1;
+#else
     if (p == current) exec_pending[0] = 1;
+#endif
     arch_irq_restore(irq_save);
   } else {
     proc_setup_stack(p, (void (*)(void))(uintptr_t)entry, argv_sp);

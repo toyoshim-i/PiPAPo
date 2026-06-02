@@ -577,10 +577,11 @@ rarely fire.
 
 | Target | Date | Kernel tests | User tests | Total |
 |--------|------|--------------|------------|-------|
-| `qemu_arm` | 2026-05-31 | 74 pass, 13 fail (pre-existing FAT fixture expectations) | 24/24 pass | User pass |
-| `qemu_m68k` | 2026-05-31 | N/A (run stops during user suite) | Fails reproducibly in `test_orphan` with a kernel privilege fault | Known pre-existing regression |
-| `qemu_rv32` | 2026-05-31 | Disabled (pre-existing blkdev crash) | 23/23 pass | User pass |
-| `pcxt` | 2026-05-31 | N/A (no ktest) | 18/18 pass | All pass |
+| `qemu_arm` | 2026-06-02 | 74 pass, 13 fail (pre-existing FAT fixture expectations) | 24/24 pass | User pass |
+| `qemu_m68k` | 2026-06-02 | N/A (run stops during user suite) | Passes through `test_vfork`, then fails reproducibly in `test_orphan` with a kernel privilege fault | Known pre-existing regression |
+| `qemu_rv32` | 2026-06-02 | Disabled (pre-existing blkdev crash) | 23/23 pass | User pass |
+| `pcxt` | 2026-06-02 | N/A (no ktest) | 18/18 pass with `--hdd` | All pass |
+| `x68k` | 2026-06-03 | N/A | Fresh XEiJ packaged boot reaches scheduler startup, `init started`, and the serial getty prompt with the pending m68k IRQ-depth fix | Startup smoke pass |
 | `xtensa_cc` | 2026-05-12 | 62 pass, 7 fail | 13/13 pass | User pass |
 | `pico1` | 2026-05-27 | 67 pass, 2 fail (assumed pre-existing fstab/VFAT expectations) | 25/25 pass, including `test_smp` | Focused SMP pass |
 
@@ -598,11 +599,20 @@ sleepable-mutex IRQ-context guard landed.  `test_orphan` reaches a kernel
 privilege fault in `arch_irq_save()` through `klogf()`.  Treat it as an
 existing m68k regression until its first bad commit is isolated.
 
+On June 3, 2026, a freshly packaged XEiJ boot exposed an early access fault
+before the `PROC:` line.  The m68k IRQ-context predicate treated any raised IPL
+as hardware IRQ context, including process-context `klogf()` output.  Once
+`current` became valid, the x68k IOCS mutex guard recursively panicked while
+logging.  The pending fix uses an explicit timer-ISR depth counter, matching
+the i16 model.  Verify x68k changes with `./scripts/run.sh --build x68k`;
+`./scripts/build.sh x68k` updates the kernel binary but does not repack the
+bootable XDF.
+
 ```bash
 ./scripts/run.sh --test              # ARM (default)
 ./scripts/run.sh --test qemu_rv32    # RISC-V
 ./scripts/run.sh --test qemu_m68k    # m68k
-./scripts/run.sh --test pcxt         # PC/XT (i16)
+./scripts/run.sh --test --hdd pcxt   # PC/XT (i16)
 ./scripts/run.sh --test xtensa_cc    # Xtensa hardware
 ./scripts/run.sh --test --filter=smp pico1 # Pico 1 real multicore lane
 ```
