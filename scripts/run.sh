@@ -157,7 +157,8 @@ ELF="$BUILD_DIR/${CMAKE_TARGET}.elf"
 # ── Merge filter/flaky/slow into an overlay dir ─────────────────────────────
 TEMP_OVERLAY=""
 if [[ -n "$FILTER" || $RUN_FLAKY -eq 1 || $RUN_SLOW -eq 1 ||
-      ( "$TARGET" == "pico1" && $DO_TEST -eq 1 ) ]]; then
+      ( ( "$TARGET" == "pico1" || "$TARGET" == "pico2" ) &&
+        $DO_TEST -eq 1 ) ]]; then
     mkdir -p "$PROJECT_DIR/build"
     TEMP_OVERLAY=$(mktemp -d "$PROJECT_DIR/build/test_overlay.XXXXXX")
     # Copy any user-supplied overlay first so test controls take precedence
@@ -175,7 +176,8 @@ if [[ -n "$FILTER" || $RUN_FLAKY -eq 1 || $RUN_SLOW -eq 1 ||
     if [[ $RUN_SLOW -eq 1 ]]; then
         touch "$TEMP_OVERLAY/etc/test_run_slow"
     fi
-    if [[ "$TARGET" == "pico1" && $DO_TEST -eq 1 ]]; then
+    if [[ ( "$TARGET" == "pico1" || "$TARGET" == "pico2" ) &&
+          $DO_TEST -eq 1 ]]; then
         touch "$TEMP_OVERLAY/etc/test_smp_hardware"
     fi
     OVERLAY="$TEMP_OVERLAY"
@@ -408,9 +410,140 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
             "$OPENOCD_BIN" "$@"
     }
 
+    # Flash the ELF via the primary debug config.  On RP2350 the chip may
+    # currently be running the other architecture, so its primary debug port
+    # won't attach — fall back to the alternate config (ARM↔RISC-V).  Flashing
+    # the image through the alternate port is sufficient: the bootrom reads the
+    # IMAGE_DEF on reset and selects the matching arch.  The OpenOCD config
+    # scripts are arch-independent, so the same Docker image serves both.
+    flash_target() {
+        if run_openocd \
+            "${OPENOCD_ARGS[@]}" \
+            -c "program \"$DOCKER_ELF\" verify reset exit" 2>&1; then
+            return 0
+        fi
+
+        if [[ "$TARGET" == pico2 || "$TARGET" == pico2rv ]]; then
+            local alt_cfg
+            if [[ "$TARGET" == pico2 ]]; then
+                alt_cfg="target/rp2350-riscv.cfg"
+                echo "[run] ARM target failed — retrying via RISC-V debug port..."
+                echo "      (chip may still be in RISC-V mode from a previous flash)"
+            else
+                alt_cfg="target/rp2350.cfg"
+                echo "[run] RISC-V target failed — retrying via ARM debug port..."
+                echo "      (chip may still be in ARM mode from a previous flash)"
+            fi
+            if run_openocd \
+                -s "$OPENOCD_SCRIPTS" \
+                -f interface/cmsis-dap.cfg \
+                -f "$alt_cfg" \
+                -c "adapter speed 5000" \
+                -c "program \"$DOCKER_ELF\" verify reset exit" 2>&1; then
+                echo "[run] Done (flashed via alternate debug port)."
+                return 0
+            fi
+            echo "[run] Error: both ARM and RISC-V debug ports failed."
+            echo "      Try: hold BOOTSEL, power cycle, then copy the UF2:"
+            echo "        cp ${ELF%.elf}.uf2 /media/\$USER/RP2350/"
+        fi
+        return 1
+    }
+
+    run_pico2_semihost_test() {
+        TEST_TIMEOUT_S=180
+        TEST_OUTPUT_LOG="$BUILD_DIR/test_output.log"
+
+        echo "[run] Capturing pico2 test output via ARM semihosting"
+        echo "      (up to ${TEST_TIMEOUT_S}s) -> $TEST_OUTPUT_LOG"
+        if ! flash_target >"$TEST_OUTPUT_LOG" 2>&1; then
+            sed -n '1,220p' "$TEST_OUTPUT_LOG"
+            echo ""
+            echo "[test] FAIL — pico2 flashing failed"
+            exit 1
+        fi
+        set +e
+        docker run --rm --privileged \
+            -v /dev/bus/usb:/dev/bus/usb \
+            -v "$PROJECT_DIR:/ppap" -w /ppap \
+            "$DOCKER_IMAGE" sh -c "
+                set -u
+                LOG=/tmp/openocd.log
+                GDB_LOG=/tmp/gdb.log
+                /opt/ppap/bin/openocd \
+                    -s '$OPENOCD_SCRIPTS' \
+                    -f interface/cmsis-dap.cfg \
+                    -c 'set USE_CORE cm0' \
+                    -f '$OPENOCD_TARGET_CFG' \
+                    -c 'adapter speed 5000' \
+                    -c init \
+                    -c 'targets rp2350.cm0' \
+                    -c 'reset halt' \
+                    -c 'arm semihosting enable' \
+                    -c 'arm semihosting_fileio enable' \
+                    >\"\$LOG\" 2>&1 &
+                OPENOCD_PID=\$!
+                sleep 1
+                arm-none-eabi-gdb -q '$DOCKER_ELF' \
+                    -ex 'set pagination off' \
+                    -ex 'target remote :3333' \
+                    -ex continue \
+                    >\"\$GDB_LOG\" 2>&1 &
+                GDB_PID=\$!
+
+                STATUS=3
+                DEADLINE=\$((\$(date +%s) + $TEST_TIMEOUT_S))
+                while kill -0 \"\$GDB_PID\" 2>/dev/null; do
+                    if grep -q 'KERNEL TESTS FAILED\|SOME TESTS FAILED' \
+                        \"\$GDB_LOG\" 2>/dev/null; then
+                        STATUS=2
+                        break
+                    fi
+                    if grep -q 'ALL TESTS PASSED' \"\$GDB_LOG\" 2>/dev/null; then
+                        STATUS=0
+                        break
+                    fi
+                    if [ \"\$(date +%s)\" -ge \"\$DEADLINE\" ]; then
+                        break
+                    fi
+                    sleep 1
+                done
+                kill \"\$GDB_PID\" 2>/dev/null
+                kill \"\$OPENOCD_PID\" 2>/dev/null
+                wait \"\$GDB_PID\" 2>/dev/null
+                wait \"\$OPENOCD_PID\" 2>/dev/null
+                cat \"\$GDB_LOG\"
+                cat \"\$LOG\" >&2
+                exit \$STATUS
+            " >>"$TEST_OUTPUT_LOG" 2>&1
+        TEST_STATUS=$?
+        set -e
+
+        sed -n '1,220p' "$TEST_OUTPUT_LOG"
+        if [[ $TEST_STATUS -eq 0 ]] ||
+           { [[ $TEST_STATUS -eq 143 ]] &&
+             grep -q "ALL TESTS PASSED" "$TEST_OUTPUT_LOG"; }; then
+            echo ""
+            echo "[test] PASS — pico2 tests passed"
+            exit 0
+        fi
+        echo ""
+        case "$TEST_STATUS" in
+            2) echo "[test] FAIL — pico2 semihost output contains failures" ;;
+            3) echo "[test] FAIL — pico2 semihost test timed out" ;;
+            4) echo "[test] FAIL — pico2 OpenOCD semihost session exited" ;;
+            *) echo "[test] FAIL — pico2 tests did not all pass" ;;
+        esac
+        exit 1
+    }
+
     echo "[run] Flashing $ELF ..."
     DOCKER_ELF="/ppap/${ELF#"$PROJECT_DIR/"}"
-    if [[ "$TARGET" == pico1 && $DO_TEST -eq 1 ]]; then
+    if [[ "$TARGET" == pico2 && $DO_TEST -eq 1 ]]; then
+        run_pico2_semihost_test
+    fi
+    if [[ ( "$TARGET" == pico1 || "$TARGET" == pico2rv ) &&
+          $DO_TEST -eq 1 ]]; then
         TEST_TIMEOUT_S=180
         TEST_OUTPUT_LOG="$BUILD_DIR/test_output.log"
         PPAP_PICO_PORT="${PPAP_PICO_PORT:-}"
@@ -427,7 +560,7 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
             echo "      Set PPAP_PICO_PORT to the GP0/GP1 serial adapter."
             exit 1
         fi
-        echo "[run] Capturing Pico 1 SMP test output from $PPAP_PICO_PORT"
+        echo "[run] Capturing $TARGET test output from $PPAP_PICO_PORT"
         echo "      (up to ${TEST_TIMEOUT_S}s) -> $TEST_OUTPUT_LOG"
         set +e
         python3 "$SCRIPT_DIR/serial_test_monitor.py" \
@@ -435,9 +568,7 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
             2>&1 | tee "$TEST_OUTPUT_LOG" &
         MONITOR_PID=$!
         sleep 1
-        run_openocd \
-            "${OPENOCD_ARGS[@]}" \
-            -c "program \"$DOCKER_ELF\" verify reset exit" 2>&1
+        flash_target
         FLASH_STATUS=$?
         if [[ $FLASH_STATUS -ne 0 ]]; then
             kill "$MONITOR_PID" 2>/dev/null
@@ -446,7 +577,7 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
         set -e
         if [[ $FLASH_STATUS -ne 0 ]]; then
             echo ""
-            echo "[test] FAIL — Pico 1 flashing failed"
+            echo "[test] FAIL — $TARGET flashing failed"
             exit 1
         fi
         if grep -q "KERNEL TESTS FAILED\|SOME TESTS FAILED" "$TEST_OUTPUT_LOG"; then
@@ -456,41 +587,16 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
         fi
         if grep -q "ALL TESTS PASSED" "$TEST_OUTPUT_LOG"; then
             echo ""
-            echo "[test] PASS — Pico 1 multicore tests passed"
+            echo "[test] PASS — $TARGET tests passed"
             exit 0
         fi
         echo ""
         echo "[test] FAIL — tests did not all pass (or hardware timed out)"
         exit 1
     fi
-    if run_openocd \
-        "${OPENOCD_ARGS[@]}" \
-        -c "program \"$DOCKER_ELF\" verify reset exit" 2>&1; then
+    if flash_target; then
         echo "[run] Done."
         exit 0
-    fi
-
-    # RP2350: if primary config failed, the chip may be in the other arch mode.
-    # Try the alternate config (ARM↔RISC-V) before giving up.
-    if [[ "$TARGET" == pico2 || "$TARGET" == pico2rv ]]; then
-        if [[ "$TARGET" == pico2 ]]; then
-            ALT_CFG="target/rp2350-riscv.cfg"
-            echo "[run] ARM target failed — retrying via RISC-V debug port..."
-        else
-            ALT_CFG="target/rp2350.cfg"
-            echo "[run] RISC-V target failed — retrying via ARM debug port..."
-            echo "      (chip may still be in ARM mode from a previous flash)"
-        fi
-        if run_openocd -s "$OPENOCD_SCRIPTS" \
-            -f interface/cmsis-dap.cfg -f "$ALT_CFG" \
-            -c "adapter speed 5000" \
-            -c "program \"$DOCKER_ELF\" verify reset exit" 2>&1; then
-            echo "[run] Done (flashed via alternate debug port)."
-            exit 0
-        fi
-        echo "[run] Error: both ARM and RISC-V debug ports failed."
-        echo "      Try: hold BOOTSEL, power cycle, then copy the UF2:"
-        echo "        cp ${ELF%.elf}.uf2 /media/\$USER/RP2350/"
     fi
     exit 1
 fi

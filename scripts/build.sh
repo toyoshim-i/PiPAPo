@@ -229,6 +229,9 @@ case "$TARGET" in
         EXTRA_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain_m68k.cmake")
         ;;
 esac
+if [[ "$TARGET" == "pico2" && "$TESTS" == "ON" ]]; then
+    EXTRA_ARGS+=(-DPPAP_SEMIHOST=ON)
+fi
 
 # ── ESP-IDF build (xtensa_cc) ────────────────────────────────────────────────
 if [[ "$TARGET" == "xtensa_cc" ]]; then

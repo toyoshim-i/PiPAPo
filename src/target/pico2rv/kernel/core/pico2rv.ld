@@ -1,7 +1,8 @@
 /*
  * pico2rv.ld — Linker script for Pico 2 RISC-V mode (4 MB flash)
  *
- * Same flash and SRAM layout as pico2.ld (ARM mode).  Differences:
+ * Similar SRAM layout to pico2.ld (ARM mode), with a larger RISC-V kernel
+ * flash window for Hazard3 code size.  Differences:
  *   - ENTRY(_start) instead of Reset_Handler
  *   - __kernel_entry instead of __kernel_vtor (RISC-V has no VTOR)
  *   - __global_pointer$ for RISC-V gp-relative addressing
@@ -13,10 +14,10 @@
  *   0x10000000  +-----------------------+  <- FLASH_BOOT  (4 KB)
  *               | stage1 code           |     Sets mtvec, jumps to kernel
  *               | picobin IMAGE_DEF     |     RP2350 boot ROM metadata
- *   0x10001000  +-----------------------+  <- FLASH_KERNEL (208 KB)
+ *   0x10001000  +-----------------------+  <- FLASH_KERNEL (240 KB)
  *               | Kernel .text/.rodata  |     _trap_vector at 0x10001000,
  *               | (trap vector first)   |     then kernel code + data
- *   0x10035000  +-----------------------+  <- FLASH_ROMFS  (~3.8 MB remainder)
+ *   0x1003d000  +-----------------------+  <- FLASH_ROMFS  (~3.7 MB remainder)
  *               | romfs image           |     Populated by mkromfs
  *               +-----------------------+
  *
@@ -30,8 +31,8 @@ MEMORY {
     /* External QSPI Flash — XIP mapped at 0x10000000
      * 4 MB total */
     FLASH_BOOT   (rx)  : ORIGIN = 0x10000000, LENGTH = 4K
-    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 208K
-    FLASH_ROMFS  (r)   : ORIGIN = 0x10035000, LENGTH = 4M - 0x35000
+    FLASH_KERNEL (rx)  : ORIGIN = 0x10001000, LENGTH = 240K
+    FLASH_ROMFS  (r)   : ORIGIN = 0x1003d000, LENGTH = 4M - 0x3d000
 
     /* On-chip SRAM — 520KB total */
     RAM_KERNEL   (rwx) : ORIGIN = 0x20000000, LENGTH = 32K
