@@ -199,8 +199,10 @@ int uart_rx_avail(void) {
 
 void uart_tx_drain(void) {
   /* Polled driver — nothing in a ring to drain.
-   * Just wait for the shift register to finish. */
-  while (UART0_FR & UART_FR_BUSY);
+   * Just wait for the shift register to finish.  Keep this bounded because
+   * RP2350 Hazard3 can report BUSY spuriously after some failed boots. */
+  for (uint32_t timeout = 200000u; (UART0_FR & UART_FR_BUSY) && timeout;
+       timeout--);
 }
 
 void uart_reinit_pll(void) {

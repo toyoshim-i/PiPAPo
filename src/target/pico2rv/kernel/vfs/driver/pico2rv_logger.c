@@ -26,10 +26,9 @@ void vfs_notify(int event) {
     case VFS_EVENT_WILL_PLL_CHANGE:
       /* uart_init() inside klog_init_logger() enables XOSC, which
        * clock_init_pll() needs as its PLL reference.  Run it before
-       * draining TX so the PLL transition has a stable XOSC.
-       * On Hazard3, UART_FR.BUSY can remain set spuriously and hang boot
-       * if we spin on uart_tx_drain() before the first write — skip drain. */
+       * draining TX so the PLL transition has a stable XOSC. */
       klog_init_logger();
+      uart_tx_drain();
       break;
     case VFS_EVENT_PLL_CHANGED:
       uart_reinit_pll();
