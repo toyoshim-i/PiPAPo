@@ -1925,9 +1925,8 @@ long sys_waitpid(long pid, long status_ptr, long options) {
         break;
       }
     }
-    spin_unlock_irqrestore(SPIN_PROC, saved);
-
     if (stopped_slot < PROC_MAX) {
+      spin_unlock_irqrestore(SPIN_PROC, saved);
       if (status_ptr) {
         int status = W_STOPCODE(SIGTRAP);
         if (sys_copy_to_user((uintptr_t)status_ptr, &status, sizeof(status)) <
@@ -1948,6 +1947,7 @@ long sys_waitpid(long pid, long status_ptr, long options) {
     }
 
     if (zombie_slot < PROC_MAX) {
+      spin_unlock_irqrestore(SPIN_PROC, saved);
       if (status_ptr) {
         int status = W_EXITCODE(zombie_status);
         if (sys_copy_to_user((uintptr_t)status_ptr, &status, sizeof(status)) <
@@ -2008,19 +2008,30 @@ long sys_waitpid(long pid, long status_ptr, long options) {
       return (long)zombie_pid;
     }
 
-    if (!has_match) return -(long)ECHILD;
+    if (!has_match) {
+      spin_unlock_irqrestore(SPIN_PROC, saved);
+      return -(long)ECHILD;
+    }
 
-    if (options & WNOHANG) return 0;
+    if (options & WNOHANG) {
+      spin_unlock_irqrestore(SPIN_PROC, saved);
+      return 0;
+    }
 
-    if (current->sig_pending & ~current->sig_blocked) return -(long)EINTR;
+    if (current->sig_pending & ~current->sig_blocked) {
+      spin_unlock_irqrestore(SPIN_PROC, saved);
+      return -(long)EINTR;
+    }
 
     if (!deferred_timer_armed) {
       target_enable_deferred_timer();
       deferred_timer_armed = 1;
     }
 
-    /* Block until sys_exit / sys_kill / trace_stop sets PROC_RUNNABLE. */
-    sched_sleep_current(NULL);
+    /* Block atomically with releasing SPIN_PROC.  Otherwise a short-lived
+     * child can exit after the scan but before the parent is marked blocked,
+     * losing the wakeup forever. */
+    sched_sleep_current_unlock(NULL, SPIN_PROC, saved);
   }
 }
 
