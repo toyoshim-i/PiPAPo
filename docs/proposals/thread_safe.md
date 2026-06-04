@@ -1,7 +1,7 @@
 # Kernel Thread-Safety Plan
 
-**Status:** active.  Phases 1-4 are complete.  Phase 5 concurrency stress
-coverage is the current lane.
+**Status:** active.  Phases 1-5 stress coverage are complete.  The current
+lane is the final target matrix and target-specific issue recording.
 This is a work plan for making common kernel code safe under preemption and,
 where applicable, dual-core execution.
 
@@ -76,9 +76,8 @@ Status labels used below:
 - `partial`: useful implementation landed, but defined follow-up remains;
 - `todo`: no reviewed implementation has landed yet.
 
-Phases 1-4 are complete.  The current Phase 5 review patch fixes UFS scratch
-serialization and closes missed native-m68k vfork resume paths found by
-repeated x68k startup.
+Phases 1-5 stress coverage are complete.  The current lane is the final target
+matrix and target-specific issue recording.
 
 Current cursor:
 
@@ -86,16 +85,17 @@ Current cursor:
 | --- | --- | --- |
 | Overall plan | Common kernel thread-safety hardening | active |
 | Phase | Phase 5: Stress Testing | active |
-| Step | Phase 5.7: Pico UART-captured hardware verification | active |
-| Review patch | Grow Pico 1 kernel flash budget and record UART-captured SMP pass | awaiting review |
-| Next patch after commit | Decide whether Pico 2 is required, then close Phase 5 or run the second board | deferred |
+| Step | Phase 5.8: Final target matrix | active |
+| Review patch | Close Pico 1 hardware lane and move cursor to final matrix | awaiting review |
+| Next patch after commit | Run final normal target matrix and record target-specific issues | deferred |
 
 Execution rule:
 
 - `next` selects work only from the active phase.
 - A phase transition requires its exit condition to be met and recorded below.
 - Findings for later phases are recorded as deferred work, not pulled forward.
-- Phases 1-4 are complete, so execution continues in Phase 5.
+- Phases 1-5 stress coverage are complete, so execution continues with the
+  final Phase 5 matrix.
 
 Completed implementation commits:
 
@@ -139,9 +139,9 @@ Estimated remaining review-sized iterations:
 | Phase 2: sleepable mutex | done | 0 |
 | Phase 3: high-risk user conversions | done | 0 |
 | Phase 4: normalize remaining sleep/wakeup paths | done | 0 |
-| Phase 5: add concurrency stress coverage | active | 2-3 |
-| Phase 5: run final target matrix and record target-specific issues | deferred | 1 |
-| **Known remaining total, including current patch** |  | **3-4** |
+| Phase 5: add concurrency stress coverage | done | 0 |
+| Phase 5: run final target matrix and record target-specific issues | active | 1 |
+| **Known remaining total after this cursor update** |  | **1** |
 
 This estimate counts small, reviewable patches rather than unchecked bullet
 items.  Revise the estimate if later-phase normalization finds additional
@@ -392,7 +392,7 @@ Phase dashboard:
 | 2. Sleepable Mutex | done | IRQ guard and dedicated behavior tests are landed | Complete |
 | 3. Convert High-Risk Users | done | x68k IOCS, fd, pipe, and tmpfs conversions are landed | Reopen only if later audits find another high-risk user |
 | 4. Normalize Sleep/Wakeup | done | Shared helpers, the wakeup rule, and focused pipe waiter/waker stress are landed | Complete |
-| 5. Stress Testing | active | Pico 1 multicore lane exists; descriptor stress is under review | Add subsystem concurrency stress and run final target matrix |
+| 5. Stress Testing | active | Stress coverage is complete; final target matrix remains | Run final target matrix |
 
 Execution order:
 
@@ -500,7 +500,7 @@ create concurrent mount/unmount interleavings.
    vfork restore hooks on cooperative-yield, Human68k, and fault-reschedule
    returns.  Three freshly packaged XEiJ boots reach scheduler startup,
    `init started`, and one serial getty prompt without `SIGBUS`.
-7. `partial` Run Pico 1/Pico 2 UART-captured tests for TTY and UART IRQ
+7. `done` Run Pico 1/Pico 2 UART-captured tests for TTY and UART IRQ
    behavior.  Pico 1 passed the focused UART-captured hardware lane on
    June 3, 2026: `./scripts/run.sh --test --filter=smp pico1` flashed through
    the Debug Probe, captured `/dev/ttyS0` output, launched Core 1, started the
@@ -508,9 +508,12 @@ create concurrent mount/unmount interleavings.
    `FLASH_KERNEL` budget is now 208 KB so the focused lane uses the normal
    full subsystem profile.  There is no dedicated tty user test yet, so tty/IRQ
    coverage remains indirect through UART capture, scheduler ticks, and logger
-   output.  Pico 2 remains optional/pending if a second board check is required.
+   output.  Pico 2 is not required for this phase because the acceptance
+   criterion requires Pico 1 or Pico 2 real multicore coverage.
 8. `optional` Increase QEMU timer frequency if the normal stress runs do not
    expose enough preemption interleavings.
+9. `active` Run the final normal target matrix and record target-specific
+   issues.
 
 ## Acceptance Criteria
 
