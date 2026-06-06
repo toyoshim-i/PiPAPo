@@ -568,11 +568,11 @@ rarely fire.
 
 | Target | Date | Kernel tests | User tests | Total | Notes |
 |--------|------|--------------|------------|-------|-------|
-| `qemu_arm` | 2026-06-06 | 74 pass, 13 fail | 24/24 pass | User pass | Kernel failures are pre-existing FAT fixture expectations |
-| `qemu_m68k` | 2026-06-06 | N/A | 23/23 pass | User pass | `test_orphan` disabled |
-| `qemu_rv32` | 2026-06-06 | Disabled | 23/23 pass | User pass | Kernel tests disabled for pre-existing blkdev/FAT expectation mismatch |
-| `pcxt` | 2026-06-06 | N/A | 18/18 pass | All pass | Run with `--hdd`; no ktest |
-| `x68k` | 2026-06-06 | N/A | N/A | Startup pass | Fresh XEiJ packaged boot reaches scheduler startup, `init started`, and one serial getty prompt |
+| `qemu_arm` | 2026-06-07 | 74 pass, 13 fail | 24/24 pass | User pass | Kernel failures are pre-existing FAT fixture expectations |
+| `qemu_m68k` | 2026-06-07 | Disabled | 23/23 pass | User pass | Target post-mount skips ktest; `test_orphan` disabled |
+| `qemu_rv32` | 2026-06-07 | Disabled | 23/23 pass | User pass | Kernel tests disabled for pre-existing blkdev/FAT expectation mismatch |
+| `pcxt` | 2026-06-07 | No ktest lane | 18/18 pass | All pass | Run with `--hdd`; user-suite lane only |
+| `x68k` | 2026-06-06 | Startup only | Startup only | Startup pass | Fresh XEiJ packaged boot reaches scheduler startup, `init started`, and one serial getty prompt |
 | `xtensa_cc` | 2026-05-12 | 62 pass, 7 fail | 13/13 pass | User pass | Hardware lane |
 | `pico1` | 2026-06-03 | Skipped | 1/1 pass | Focused SMP pass | `--filter=smp`; `test_smp` 5/5 over Debug Probe UART capture |
 | `pico2` | 2026-06-06 | No ktest data | Not ready | Not ready; startup pass | `--test` builds/flashes, then blocks before runner at `SYS_READC`; normal boot reaches shell and runs apps interactively |
