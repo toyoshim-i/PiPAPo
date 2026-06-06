@@ -83,19 +83,18 @@ Current cursor:
 
 | Level | Current position | State |
 | --- | --- | --- |
-| Overall plan | Common kernel thread-safety hardening | active |
-| Phase | Phase 5: Stress Testing | active |
-| Step | Phase 5.9: Final target matrix | active |
-| Review patch | Refresh runtime matrix after startup hook cleanup | in progress |
-| Next patch after commit | Close Phase 5 if no additional hardware smoke is required | deferred |
+| Overall plan | Common kernel thread-safety hardening | complete at documented baselines |
+| Phase | Phase 5: Stress Testing | done |
+| Step | Phase 5.9: Final target matrix | done |
+| Review patch | Close Phase 5 after runtime matrix refresh | in progress |
+| Next patch after commit | Follow deferred target-specific issues separately | deferred |
 
 Execution rule:
 
 - `next` selects work only from the active phase.
 - A phase transition requires its exit condition to be met and recorded below.
 - Findings for later phases are recorded as deferred work, not pulled forward.
-- Phases 1-5 stress coverage are complete, so execution continues with the
-  final Phase 5 matrix.
+- Phases 1-5 stress coverage and final matrix recording are complete.
 
 Completed implementation commits:
 
@@ -140,8 +139,8 @@ Estimated remaining review-sized iterations:
 | Phase 3: high-risk user conversions | done | 0 |
 | Phase 4: normalize remaining sleep/wakeup paths | done | 0 |
 | Phase 5: add concurrency stress coverage | done | 0 |
-| Phase 5: run final target matrix and record target-specific issues | active | 1 |
-| **Known remaining total after this cursor update** |  | **1** |
+| Phase 5: run final target matrix and record target-specific issues | done | 0 |
+| **Known remaining total after this cursor update** |  | **0** |
 
 This estimate counts small, reviewable patches rather than unchecked bullet
 items.  Revise the estimate if later-phase normalization finds additional
@@ -512,7 +511,7 @@ create concurrent mount/unmount interleavings.
    criterion requires Pico 1 or Pico 2 real multicore coverage.
 8. `optional` Increase QEMU timer frequency if the normal stress runs do not
    expose enough preemption interleavings.
-9. `active` Run the final normal target matrix and record target-specific
+9. `done` Run the final normal target matrix and record target-specific
    issues.  June 7, 2026 after the common startup-hook cleanup:
    `qemu_arm` remains at the documented user-pass baseline with pre-existing
    FAT fixture kernel failures; `qemu_rv32` passes 23/23 user tests;
@@ -524,9 +523,14 @@ create concurrent mount/unmount interleavings.
    semihost-fileio support; Pico 2 normal boot reaches an interactive shell
    and runs apps; Pico2RV `--test` flashes with the Debug Probe UART closed,
    captures serial output after reset, and reports 67 kernel tests passed with
-   two SD/VFAT fixture failures before user tests are reached.  Remaining
-   matrix work is any connected hardware smoke lane that is relevant to the
-   final sign-off.
+   two SD/VFAT fixture failures before user tests are reached.  Phase 5 closes
+   at these documented baselines; remaining target-specific blockers are
+   tracked outside this common thread-safety phase.
+
+Phase 5 exit record: closed on June 7, 2026.  The common runtime matrix was
+refreshed after the target startup-hook cleanup, no new regression was found,
+and the remaining Pico 2/Pico2RV/x68k items are target or harness follow-ups
+rather than open common-kernel thread-safety work.
 
 ## Acceptance Criteria
 
