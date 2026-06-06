@@ -563,17 +563,27 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
         echo "[run] Capturing $TARGET test output from $PPAP_PICO_PORT"
         echo "      (up to ${TEST_TIMEOUT_S}s) -> $TEST_OUTPUT_LOG"
         set +e
-        python3 "$SCRIPT_DIR/serial_test_monitor.py" \
-            --port "$PPAP_PICO_PORT" --timeout "$TEST_TIMEOUT_S" \
-            2>&1 | tee "$TEST_OUTPUT_LOG" &
-        MONITOR_PID=$!
-        sleep 1
-        flash_target
-        FLASH_STATUS=$?
-        if [[ $FLASH_STATUS -ne 0 ]]; then
-            kill "$MONITOR_PID" 2>/dev/null
+        if [[ "$TARGET" == pico2rv ]]; then
+            flash_target 2>&1 | tee "$TEST_OUTPUT_LOG"
+            FLASH_STATUS=${PIPESTATUS[0]}
+            if [[ $FLASH_STATUS -eq 0 ]]; then
+                python3 "$SCRIPT_DIR/serial_test_monitor.py" \
+                    --port "$PPAP_PICO_PORT" --timeout "$TEST_TIMEOUT_S" \
+                    2>&1 | tee -a "$TEST_OUTPUT_LOG"
+            fi
+        else
+            python3 "$SCRIPT_DIR/serial_test_monitor.py" \
+                --port "$PPAP_PICO_PORT" --timeout "$TEST_TIMEOUT_S" \
+                2>&1 | tee "$TEST_OUTPUT_LOG" &
+            MONITOR_PID=$!
+            sleep 1
+            flash_target
+            FLASH_STATUS=$?
+            if [[ $FLASH_STATUS -ne 0 ]]; then
+                kill "$MONITOR_PID" 2>/dev/null
+            fi
+            wait "$MONITOR_PID"
         fi
-        wait "$MONITOR_PID"
         set -e
         if [[ $FLASH_STATUS -ne 0 ]]; then
             echo ""
@@ -582,7 +592,7 @@ if [[ "$TARGET" == pico1 || "$TARGET" == pico1calc || "$TARGET" == pico2 || "$TA
         fi
         if grep -q "KERNEL TESTS FAILED\|SOME TESTS FAILED" "$TEST_OUTPUT_LOG"; then
             echo ""
-            echo "[test] FAIL — Pico 1 test output contains failures"
+            echo "[test] FAIL — $TARGET test output contains failures"
             exit 1
         fi
         if grep -q "ALL TESTS PASSED" "$TEST_OUTPUT_LOG"; then

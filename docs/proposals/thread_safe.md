@@ -85,9 +85,9 @@ Current cursor:
 | --- | --- | --- |
 | Overall plan | Common kernel thread-safety hardening | active |
 | Phase | Phase 5: Stress Testing | active |
-| Step | Phase 5.8: Final target matrix | active |
-| Review patch | Close Pico 1 hardware lane and move cursor to final matrix | awaiting review |
-| Next patch after commit | Run final normal target matrix and record target-specific issues | deferred |
+| Step | Phase 5.9: Final target matrix | active |
+| Review patch | Refresh final matrix and fix Pico2RV test capture | in progress |
+| Next patch after commit | Finish remaining x68k/hardware smoke recording | deferred |
 
 Execution rule:
 
@@ -513,7 +513,18 @@ create concurrent mount/unmount interleavings.
 8. `optional` Increase QEMU timer frequency if the normal stress runs do not
    expose enough preemption interleavings.
 9. `active` Run the final normal target matrix and record target-specific
-   issues.
+   issues.  June 6, 2026: `qemu_arm` remains at the documented user-pass
+   baseline with pre-existing FAT fixture kernel failures; `qemu_rv32` passes
+   23/23 user tests; `qemu_m68k` now completes 23/23 with `test_orphan`
+   disabled; `pcxt` passes 18/18 with `--hdd`; x68k reaches scheduler startup,
+   `init started`, and a serial getty prompt in a freshly packaged XEiJ boot.
+   Pico 2 semihost `--test` builds and flashes but is currently blocked before
+   the runner by OpenOCD `SYS_READC` semihost-fileio support; Pico 2 normal
+   boot reaches an interactive shell and runs apps.  Pico2RV `--test` now
+   flashes with the Debug Probe UART closed, captures serial output after
+   reset, and reports 67 kernel tests passed with two SD/VFAT fixture
+   failures before user tests are reached.  Remaining matrix work is any
+   connected hardware smoke lane that is relevant to the final sign-off.
 
 ## Acceptance Criteria
 

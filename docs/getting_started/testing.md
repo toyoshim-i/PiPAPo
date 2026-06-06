@@ -404,22 +404,13 @@ coverage is not exhaustive yet.
   random-record variants, and several disk/attribute vector functions.
   CP/M test coverage is therefore good for bootstrapping and basic file I/O,
   but not yet complete for directory iteration and random-record compatibility.
-- **`qemu_rv32`: kernel tests disabled, user 16/16 pass.**
+- **`qemu_rv32`: kernel tests disabled, user 23/23 pass.**
   Kernel tests are disabled because blkdev/VFAT tests expect a FAT32
-  ramblk that rv32 does not provide; the 18 failures corrupt state and
-  crash init startup.
-  User: 16 tests pass (vfork, pipe, fd, poll, id, rw, iov, stat, float,
-  libc, exec, brk, fs, signal, sleep_intr, signal_float).  Seven are
-  still `TEST_DISABLED` on RISC-V with per-test comments in
-  `tests/user/runtests.c`: `test_elf` (ELF parser rejects inputs with
-  -ENOEXEC), `test_fault` (kernel trap handler terminates the whole
-  system on illegal-instruction instead of delivering SIGILL),
-  `test_orphan` (leak-check assertion at line 105 fails — more than
-  12 KB of user_pages unaccounted for after orphans exit),
-  `test_time` (`clock_gettime` returns -EINVAL), `test_tmpfs` (line
-  115 errno mismatch with corrupted summary counters), `test_cpm` /
-  `test_sos` (Z80 eCPU path takes a load-access fault early and
-  brings the kernel down).
+  ramblk that rv32 does not provide.  The normal user suite passed on
+  June 6, 2026, including `test_elf`, `test_fault`, `test_vfork`
+  (`36/36`), `test_orphan`, `test_tmpfs`, `test_cpm`, and `test_sos`.
+  The remaining skipped entries are target-specific, slow, or flaky lanes
+  recorded in `tests/user/runtests.c`.
 - **`xtensa_cc` (CardComputer hardware): 13 user tests pass cleanly
   after the vfork user-stack-page leak fix.**
   Ten tests are `TEST_DISABLED` / `TEST_UNSUPPORTED` on `__xtensa__`
@@ -575,17 +566,17 @@ rarely fire.
 
 **Current test results:**
 
-| Target | Date | Kernel tests | User tests | Total |
-|--------|------|--------------|------------|-------|
-| `qemu_arm` | 2026-06-03 | 74 pass, 13 fail (pre-existing FAT fixture expectations) | 24/24 pass | User pass |
-| `qemu_m68k` | 2026-06-03 | N/A (run stops during user suite) | Passes through `test_vfork`, then fails reproducibly in `test_orphan` with a kernel privilege fault | Known pre-existing regression |
-| `qemu_rv32` | 2026-06-06 | Disabled (pre-existing blkdev crash) | 23/23 pass | User pass |
-| `pcxt` | 2026-06-03 | N/A (no ktest) | 18/18 pass with `--hdd` | All pass |
-| `x68k` | 2026-06-03 | N/A | Three fresh XEiJ packaged boots reach scheduler startup, `init started`, and one serial getty prompt with the pending UFS and m68k return-path fixes | Startup smoke pass |
-| `xtensa_cc` | 2026-05-12 | 62 pass, 7 fail | 13/13 pass | User pass |
-| `pico1` | 2026-06-03 | Kernel tests skipped by active user filter | 1/1 pass with `--filter=smp`, `test_smp` 5/5 | Focused SMP pass |
-| `pico2` | 2026-06-06 | N/A | Normal boot reaches shell; several shell apps run interactively | Startup smoke pass |
-| `pico2rv` | 2026-06-06 | N/A | Normal flash/run reaches `init` plus shell process state; serial shell remains hardware-dependent | Startup smoke pass |
+| Target | Date | Kernel tests | User tests | Total | Notes |
+|--------|------|--------------|------------|-------|-------|
+| `qemu_arm` | 2026-06-06 | 74 pass, 13 fail | 24/24 pass | User pass | Kernel failures are pre-existing FAT fixture expectations |
+| `qemu_m68k` | 2026-06-06 | N/A | 23/23 pass | User pass | `test_orphan` disabled |
+| `qemu_rv32` | 2026-06-06 | Disabled | 23/23 pass | User pass | Kernel tests disabled for pre-existing blkdev/FAT expectation mismatch |
+| `pcxt` | 2026-06-06 | N/A | 18/18 pass | All pass | Run with `--hdd`; no ktest |
+| `x68k` | 2026-06-06 | N/A | N/A | Startup pass | Fresh XEiJ packaged boot reaches scheduler startup, `init started`, and one serial getty prompt |
+| `xtensa_cc` | 2026-05-12 | 62 pass, 7 fail | 13/13 pass | User pass | Hardware lane |
+| `pico1` | 2026-06-03 | Skipped | 1/1 pass | Focused SMP pass | `--filter=smp`; `test_smp` 5/5 over Debug Probe UART capture |
+| `pico2` | 2026-06-06 | No ktest data | Not ready | Not ready; startup pass | `--test` builds/flashes, then blocks before runner at `SYS_READC`; normal boot reaches shell and runs apps interactively |
+| `pico2rv` | 2026-06-07 | 67 pass, 2 fail | Not reached | Kernel blocked; startup pass | `--test` flashes before opening UART capture; kernel failures are SD/VFAT fixture expectations; normal flash/run previously reached `init` plus shell process state |
 
 `pico1` verification on June 3, 2026 used the Debug Probe UART capture lane.
 `./scripts/run.sh --test --filter=smp pico1` passed with `test_smp` reporting
@@ -598,6 +589,19 @@ entries` and `/mnt/sd mounted (vfat)`.  These are treated as pre-existing:
 Pico 1 is documented as romfs-only with no SD card, while those kernel
 assertions require the SD/VFAT configuration used by `qemu_arm`/PicoCalc.
 
+Pico 2 automated semihost coverage was attempted on June 6, 2026 with
+`./scripts/run.sh --test pico2`.  The image built, flashed, and started under
+OpenOCD/GDB semihosting, but the run stopped before the test runner because
+OpenOCD reported `SYS_READC not supported by semihosting fileio`.  Keep this
+as a harness blocker, not a target test pass.
+
+Pico2RV automated serial coverage was refreshed on June 7, 2026 with
+`./scripts/run.sh --test pico2rv`.  The test harness now keeps the Debug Probe
+UART closed while flashing, then starts `serial_test_monitor.py` after reset.
+The image built, flashed, booted, and reported 67 kernel tests passed with two
+kernel failures: `fstab_parse >= 4 entries` and `/mnt/sd mounted (vfat)`.
+Treat this as a target-fixture blocker, not a user-test pass rate.
+
 Pico 2 and Pico2RV normal-boot smoke coverage was refreshed on June 6, 2026.
 The same common vfork publication repair that fixed Pico2RV also allowed Pico
 2 to boot to an interactive shell and run several shell apps.  Pico2RV was
@@ -606,10 +610,11 @@ verified by normal flash/run plus OpenOCD process inspection: PID 1 reached
 a single-core initial port (`TARGET_CAP_CORE1` is not advertised), so this
 does not replace a future RP2350 multicore verification lane.
 
-The May 31, 2026 `qemu_m68k` failure reproduces at `10b48aaf`, before the
-sleepable-mutex IRQ-context guard landed.  `test_orphan` reaches a kernel
-privilege fault in `arch_irq_save()` through `klogf()`.  Treat it as an
-existing m68k regression until its first bad commit is isolated.
+The May 31, 2026 `qemu_m68k` `test_orphan` failure reproduces at `10b48aaf`,
+before the sleepable-mutex IRQ-context guard landed.  It reached a kernel
+privilege fault in `arch_irq_save()` through `klogf()`.  As of June 6, 2026,
+the normal `qemu_m68k` user suite completes with `test_orphan` disabled; keep
+the disabled test tracked separately from normal target-regression status.
 
 On June 3, 2026, a freshly packaged XEiJ boot exposed an early access fault
 before the `PROC:` line.  The m68k IRQ-context predicate treated any raised IPL
@@ -644,11 +649,12 @@ by the test runner. The `runtests` binary redirects stdout to
 (The redirect is unconditional — on other targets `/dev/ttyS0` open
 either succeeds harmlessly or fails and is skipped.)
 
-The pcxt user suite runs 17 of the shared user tests today. The
+The pcxt user suite runs 18 of the shared user tests today. The
 remaining entries fall into two buckets visible in the summary:
-- `skipped` (2): `test_sleep_intr` (nanosleep-interruption path not
+- `skipped` (3): `test_sleep_intr` (nanosleep-interruption path not
   implemented on ia16) and `test_fault` (ia16 routes CPU faults to
-  kernel panic).  Both are `TEST_DISABLED`, not `TEST_UNSUPPORTED` —
+  kernel panic), plus disabled target-specific coverage.  These are
+  `TEST_DISABLED`, not `TEST_UNSUPPORTED` —
   they can be lit up when the underlying features land.
 - `n/a` (12): tests that exercise features pcxt does not have — no
   FPU, no Z80/CP/M/S-OS subsystems, no setjmp (so `test_libc` is
@@ -711,7 +717,7 @@ Full CI pipeline:
 `test.sh --all` currently runs only the ARM and m68k lanes; the
 RISC-V (`qemu_rv32`) and PC/XT (`pcxt`) regression sweeps must be
 run manually via `./scripts/run.sh --test qemu_rv32` and
-`./scripts/run.sh --test pcxt` until they are folded into the
+`./scripts/run.sh --test --hdd pcxt` until they are folded into the
 script.  All four QEMU lanes are required before a commit lands —
 see [Required QEMU regression targets](#required-qemu-regression-targets).
 
