@@ -15,6 +15,14 @@
  */
 __attribute__((weak)) int target_mount_rootfs(void) { return -1; }
 
+__attribute__((weak)) void ktest_run_all(void) {}
+
+__attribute__((weak)) void target_post_mount(void) { ktest_run_all(); }
+
+__attribute__((weak)) const char *target_init_path(void) {
+  return PPAP_DEFAULT_INIT_PATH;
+}
+
 __attribute__((weak)) void target_enable_deferred_timer(void) {}
 
 __attribute__((weak)) void target_idle_poll(void) {}

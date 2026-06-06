@@ -95,6 +95,7 @@ endif()
 if(PPAP_ENABLE_ECPU_Z80)
     target_compile_definitions(ppap_qemu_rv32 PRIVATE PPAP_ENABLE_ECPU_Z80=1)
 endif()
+ppap_target_default_init_path(ppap_qemu_rv32)
 
 # Test support
 if(PPAP_TESTS)

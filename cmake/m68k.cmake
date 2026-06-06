@@ -41,6 +41,7 @@ function(ppap_m68k_target_common target)
         # TODO: shrink to 1 KB after fixed-kstack high-water measurements.
         PROC_KSTACK_SIZE=2048u
     )
+    ppap_target_default_init_path(${target})
     
     # Subsystem and eCPU build flags
     if(PPAP_ENABLE_HUMAN68K)

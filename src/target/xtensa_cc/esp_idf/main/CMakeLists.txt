@@ -23,9 +23,9 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     PAGE_COUNT_MAX=48u
 )
 
-# target_xtensa_cc.c's target_init_path() switches between /sbin/init
-# and /bin/runtests based on these defines (forwarded by build.sh's
-# --test path through idf.py -D PPAP_TESTS=ON).  When tests are on we
+# target_default.c switches between /sbin/init and /bin/runtests based on
+# these defines (forwarded by build.sh's --test path through idf.py
+# -D PPAP_TESTS=ON).  When tests are on we
 # also pull tests/kernel/ktest.c into the build and add its header
 # directory, mirroring what cmake/{arm_m,m68k,riscv,xtensa}.cmake do
 # for non-IDF targets.

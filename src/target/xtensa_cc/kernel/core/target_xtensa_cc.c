@@ -38,10 +38,6 @@
 #define SYSTIMER_INT_ENA_REG    (*(volatile uint32_t *)(SYSTIMER_BASE + 0x068u))
 #define SYSTIMER_INT_CLR_REG    (*(volatile uint32_t *)(SYSTIMER_BASE + 0x06Cu))
 
-#ifdef PPAP_TESTS
-#include "ktest.h"
-#endif
-
 /* ── app_main — ESP-IDF entry point ─────────────────────────────────────── *
  *
  * ESP-IDF calls app_main() after completing its own initialization:
@@ -147,28 +143,6 @@ void target_late_init(void)
             }
         }
     }
-}
-
-void target_post_mount(void)
-{
-#ifdef PPAP_TESTS
-    ktest_run_all();
-#endif
-}
-
-const char *target_init_path(void)
-{
-    /* No user-mode binaries on minimal builds — kmain() will enter the
-     * idle loop directly when no PID 1 launches. */
-#ifdef PPAP_TESTS
-#ifdef PPAP_TESTS_EXTENDED
-    return "/bin/runtests_ext";
-#else
-    return "/bin/runtests";
-#endif
-#else
-    return "/sbin/init";
-#endif
 }
 
 const char *target_name(void)

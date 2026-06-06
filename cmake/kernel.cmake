@@ -15,6 +15,8 @@ include_guard(GLOBAL)
 
 get_filename_component(_KS_ROOT ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
 
+include(${CMAKE_CURRENT_LIST_DIR}/target_defaults.cmake)
+
 # ── Architecture-specific sources ───────────────────────────────────────────
 
 set(ARCH_ARM_M_SOURCES

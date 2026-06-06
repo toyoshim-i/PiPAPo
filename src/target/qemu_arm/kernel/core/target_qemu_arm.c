@@ -20,10 +20,6 @@
 #include "kernel/vfs/driver/ramblk.h"
 #include "target/target.h"
 
-#ifdef PPAP_TESTS
-#include "ktest.h"
-#endif
-
 void target_early_init(void) {
   /* Boot banner printed from klog_init_logger() (VFS side) */
 }
@@ -59,24 +55,6 @@ void target_late_init(void) {
     }
   }
   /* No MPU, no Core 1 on QEMU */
-}
-
-void target_post_mount(void) {
-#ifdef PPAP_TESTS
-  ktest_run_all();
-#endif
-}
-
-const char *target_init_path(void) {
-#ifdef PPAP_TESTS
-#ifdef PPAP_TESTS_EXTENDED
-  return "/bin/runtests_ext";
-#else
-  return "/bin/runtests";
-#endif
-#else
-  return "/sbin/init";
-#endif
 }
 
 const char *target_name(void) { return "qemu_arm"; }

@@ -35,6 +35,7 @@ function(ppap_xtensa_target_common target)
 
     # Core kernel definitions
     target_compile_definitions(${target} PRIVATE PPAP_KERNEL=1)
+    ppap_target_default_init_path(${target})
 
     # Subsystem and eCPU build flags
     if(PPAP_ENABLE_HUMAN68K)

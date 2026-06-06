@@ -22,6 +22,7 @@ cmake_minimum_required(VERSION 3.13)
 # -- Locate ia16-elf-gcc ---------------------------------------------------
 
 set(PPAP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
+include(${PPAP_ROOT}/cmake/target_defaults.cmake)
 
 if(EXISTS "/opt/ppap/ia16-elf/bin/ia16-elf-gcc")
   set(IA16_TC "/opt/ppap/ia16-elf")
@@ -407,6 +408,7 @@ target_compile_definitions(ppap_pcxt PRIVATE
   PPAP_ENABLE_MSDOS=1
   PPAP_HAS_SUBSYS=1
 )
+ppap_target_default_init_path(ppap_pcxt)
 if(PPAP_TESTS)
   target_compile_definitions(ppap_pcxt PRIVATE PPAP_TESTS=1)
 endif()

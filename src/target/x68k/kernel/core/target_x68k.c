@@ -150,18 +150,6 @@ void target_post_mount(void) {
   /* Nothing target-specific needed after rootfs mount */
 }
 
-const char *target_init_path(void) {
-#ifdef PPAP_TESTS
-#ifdef PPAP_TESTS_EXTENDED
-  return "/bin/runtests_ext";
-#else
-  return "/bin/runtests";
-#endif
-#else
-  return "/sbin/init";
-#endif
-}
-
 const char *target_name(void) { return "x68k"; }
 
 uint32_t target_caps(void) {

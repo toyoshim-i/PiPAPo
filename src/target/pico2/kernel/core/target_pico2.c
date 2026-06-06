@@ -11,10 +11,6 @@
 #include "pico2.h"
 #include "target/target.h"
 
-#ifdef PPAP_TESTS
-#include "ktest.h"
-#endif
-
 void target_early_init(void) {
   mod_vfs.notify(VFS_EVENT_WILL_PLL_CHANGE);
   clock_init_pll();
@@ -25,24 +21,6 @@ void target_early_init(void) {
 void target_late_init(void) {
   mod_vfs.notify(VFS_EVENT_LATE_INIT);
   mpu_init();
-}
-
-void target_post_mount(void) {
-#ifdef PPAP_TESTS
-  ktest_run_all();
-#endif
-}
-
-const char *target_init_path(void) {
-#ifdef PPAP_TESTS
-#ifdef PPAP_TESTS_EXTENDED
-  return "/bin/runtests_ext";
-#else
-  return "/bin/runtests";
-#endif
-#else
-  return "/sbin/init";
-#endif
 }
 
 const char *target_name(void) { return "pico2"; }

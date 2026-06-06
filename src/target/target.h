@@ -57,11 +57,13 @@ void target_late_init(void);
 /*
  * target_post_mount() — called after VFS + fstab mount, before sched_start().
  *
- * Default build (PPAP_TESTS off): empty (no-op).
- * Test build  (PPAP_TESTS on):   runs kernel integration tests via
- *                                 ktest_run_all().
+ * Default build (PPAP_TESTS off): empty (weak ktest_run_all() no-op).
+ * Test build  (PPAP_TESTS on):   runs kernel integration tests when the real
+ *                                 ktest_run_all() object is linked.
  *
- * Each target implements this with #ifdef PPAP_TESTS in its own .c file.
+ * The common weak implementation in target_default.c applies this policy for
+ * all targets.  Targets may override when they intentionally skip kernel tests
+ * or need target-specific post-mount work.
  */
 void target_post_mount(void);
 
@@ -73,8 +75,8 @@ void target_post_mount(void);
  * Extended test build
  * (PPAP_TESTS_EXTENDED on):      "/bin/runtests_ext" (extended test runner).
  *
- * Each target implements this with #ifdef PPAP_TESTS and
- * #ifdef PPAP_TESTS_EXTENDED in its own .c file.
+ * target_default.c returns PPAP_DEFAULT_INIT_PATH, supplied by the build for
+ * all targets.  Targets may override only when they need a different PID 1.
  */
 const char *target_init_path(void);
 

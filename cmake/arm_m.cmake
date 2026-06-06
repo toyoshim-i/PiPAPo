@@ -48,6 +48,7 @@ function(ppap_arm_target_common target)
         # TODO: reduce after CP/M/deep subsystem stack paths are optimized.
         PROC_KSTACK_SIZE=2048u
     )
+    ppap_target_default_init_path(${target})
     
     # Subsystem and eCPU build flags
     if(PPAP_ENABLE_HUMAN68K)

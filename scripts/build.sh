@@ -176,7 +176,7 @@ case "$TARGET" in
 esac
 
 # Separate build dirs for test vs non-test to avoid stale cached objects
-# when PPAP_TESTS changes (target_init_path depends on the define).
+# when PPAP_TESTS changes (the default init path depends on the define).
 if [[ "$TESTS" == "ON" ]]; then
     BUILD_DIR="${BUILD_DIR}_test"
 fi

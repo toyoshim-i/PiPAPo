@@ -52,10 +52,11 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     PPAP_ENABLE_SOS=1
     PPAP_ENABLE_ECPU_Z80=1
 )
+ppap_target_default_init_path(${COMPONENT_LIB})
 
 # scripts/build.sh forwards --test as -DPPAP_TESTS=ON via idf.py.
-# target_init_path() in target_xtensa_cc.c switches to /bin/runtests
-# (or /bin/runtests_ext) when this is defined.
+# target_default.c switches to /bin/runtests (or /bin/runtests_ext)
+# when this is defined.
 if(PPAP_TESTS)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE PPAP_TESTS=1)
 endif()
