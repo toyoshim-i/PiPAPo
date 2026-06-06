@@ -579,11 +579,13 @@ rarely fire.
 |--------|------|--------------|------------|-------|
 | `qemu_arm` | 2026-06-03 | 74 pass, 13 fail (pre-existing FAT fixture expectations) | 24/24 pass | User pass |
 | `qemu_m68k` | 2026-06-03 | N/A (run stops during user suite) | Passes through `test_vfork`, then fails reproducibly in `test_orphan` with a kernel privilege fault | Known pre-existing regression |
-| `qemu_rv32` | 2026-06-03 | Disabled (pre-existing blkdev crash) | 23/23 pass | User pass |
+| `qemu_rv32` | 2026-06-06 | Disabled (pre-existing blkdev crash) | 23/23 pass | User pass |
 | `pcxt` | 2026-06-03 | N/A (no ktest) | 18/18 pass with `--hdd` | All pass |
 | `x68k` | 2026-06-03 | N/A | Three fresh XEiJ packaged boots reach scheduler startup, `init started`, and one serial getty prompt with the pending UFS and m68k return-path fixes | Startup smoke pass |
 | `xtensa_cc` | 2026-05-12 | 62 pass, 7 fail | 13/13 pass | User pass |
 | `pico1` | 2026-06-03 | Kernel tests skipped by active user filter | 1/1 pass with `--filter=smp`, `test_smp` 5/5 | Focused SMP pass |
+| `pico2` | 2026-06-06 | N/A | Normal boot reaches shell; several shell apps run interactively | Startup smoke pass |
+| `pico2rv` | 2026-06-06 | N/A | Normal flash/run reaches `init` plus shell process state; serial shell remains hardware-dependent | Startup smoke pass |
 
 `pico1` verification on June 3, 2026 used the Debug Probe UART capture lane.
 `./scripts/run.sh --test --filter=smp pico1` passed with `test_smp` reporting
@@ -595,6 +597,14 @@ its pre-scheduler kernel suite reported failures for `fstab_parse >= 4
 entries` and `/mnt/sd mounted (vfat)`.  These are treated as pre-existing:
 Pico 1 is documented as romfs-only with no SD card, while those kernel
 assertions require the SD/VFAT configuration used by `qemu_arm`/PicoCalc.
+
+Pico 2 and Pico2RV normal-boot smoke coverage was refreshed on June 6, 2026.
+The same common vfork publication repair that fixed Pico2RV also allowed Pico
+2 to boot to an interactive shell and run several shell apps.  Pico2RV was
+verified by normal flash/run plus OpenOCD process inspection: PID 1 reached
+`init` and PID 2 reached `sh`, both blocked waiting for input.  Pico2RV remains
+a single-core initial port (`TARGET_CAP_CORE1` is not advertised), so this
+does not replace a future RP2350 multicore verification lane.
 
 The May 31, 2026 `qemu_m68k` failure reproduces at `10b48aaf`, before the
 sleepable-mutex IRQ-context guard landed.  `test_orphan` reaches a kernel

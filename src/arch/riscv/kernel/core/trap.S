@@ -62,6 +62,7 @@
 .equ TF_MEPC,    120
 .equ TF_MSTATUS, 124
 .equ TF_USER_SP, 128
+.equ PCB_EXEC_RESTORE_PENDING_OFFSET, 621
 
 # mcause bit 31: interrupt flag
 .equ MCAUSE_INT_BIT, 31
@@ -228,16 +229,16 @@ _trap_entry:
     mv      a0, sp                  # regs = &trap_frame
     call    signal_check
 
-    # ── Check exec_pending (execve replaces the process image) ──────
+    # ── Check exec_restore_pending (execve replaces the process image) ───
     # After execve, this trap frame is stale — proc_setup_stack already built
-    # a fresh frame at p->sp.  Reload SP from current->sp.
-    la      t0, exec_pending
-    lw      t1, 0(t0)
-    beqz    t1, .Lno_exec
-    sw      zero, 0(t0)
+    # a fresh frame at p->sp.  Keep this marker in the current PCB so a
+    # vfork parent cannot clear a child's pending restore on real hardware.
     la      t0, current_core
     lw      t0, 0(t0)              # t0 = current (pcb_t *)
+    lbu     t1, PCB_EXEC_RESTORE_PENDING_OFFSET(t0)
+    beqz    t1, .Lno_exec
     lw      sp, 48(t0)             # sp = current->sp (PCB_SP_OFFSET=48)
+    sb      zero, PCB_EXEC_RESTORE_PENDING_OFFSET(t0)
     lw      t1, 52(t0)             # t1 = current->kernel_sp
     csrw    mscratch, t1           # update mscratch for new kernel stack
     j       .Ltrap_return
@@ -307,6 +308,14 @@ _trap_entry:
     la      t0, switch_pending
     lw      t1, 0(t0)
     beqz    t1, .Ltrap_return   # no switch needed
+
+    # If sys_execve() has already installed a replacement frame for the
+    # interrupted process, do not save this stale trap SP over current->sp.
+    la      t2, current_core
+    lw      t2, 0(t2)
+    lbu     t3, PCB_EXEC_RESTORE_PENDING_OFFSET(t2)
+    bnez    t3, .Ltrap_return
+
     sw      zero, 0(t0)         # clear the flag
 
     # Call the context switch: riscv_context_switch(old_sp_ptr, new_sp)

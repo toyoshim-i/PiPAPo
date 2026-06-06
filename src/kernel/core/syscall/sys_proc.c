@@ -1853,9 +1853,16 @@ long sys_vfork(uint32_t *frame) {
   arm_vfork_save_parent_frame(current, frame);
 #endif
 
-  /* 8. Block parent, make child runnable */
-  sched_block_current(NULL);
-  child->state = PROC_RUNNABLE;
+  /* 8. Block parent, make child runnable.  Keep these state transitions
+   * atomic so a timer interrupt cannot schedule between them and observe no
+   * runnable child for the blocked vfork parent. */
+  {
+    uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+    current->wait_channel = NULL;
+    current->state = PROC_BLOCKED;
+    child->state = PROC_RUNNABLE;
+    spin_unlock_irqrestore(SPIN_PROC, saved);
+  }
 
   /* 9. Yield to the child.  Some architectures switch immediately here;
    * others switch from the syscall/trap return path.  The parent is BLOCKED,
@@ -1864,7 +1871,7 @@ long sys_vfork(uint32_t *frame) {
 
   /* Clear stale exec_pending left by the child's execve on architectures
    * that still publish the replacement frame through a per-core flag. */
-#if !defined(__m68k__)
+#if !defined(__m68k__) && !defined(__riscv)
   exec_pending[core_id()] = 0;
 #endif
 
@@ -2227,7 +2234,7 @@ long sys_execve(page_id_t path_page, uint16_t path_off, uintptr_t argv_ptr,
    *
    * We cannot set r9 via inline asm here because the C compiler's
    * function epilogue (callee-saved register restores) would undo it. */
-#if defined(__m68k__)
+#if defined(__m68k__) || defined(__riscv)
   current->exec_restore_pending = 1;
 #else
   exec_pending[core_id()] = 1;

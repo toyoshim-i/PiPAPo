@@ -41,6 +41,7 @@ typedef void (*sighandler_t)(int);
 #define PCB_EXEC_RESTORE_PENDING_OFFSET 1375u
 #elif defined(__riscv)
 #define PCB_SP_OFFSET 48u
+#define PCB_EXEC_RESTORE_PENDING_OFFSET 621u
 #elif defined(__xtensa__)
 #define PCB_SP_OFFSET 0u
 #define PCB_KERNEL_SP_OFFSET 4u

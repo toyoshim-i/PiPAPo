@@ -789,7 +789,7 @@ static int elf_load_from_buffer(pcb_t *p, const uint8_t *file_buf,
       sw[13] = got_sram_addr;
     }
     p->got_base = got_sram_addr;
-#if defined(__m68k__)
+#if defined(__m68k__) || defined(__riscv)
     if (p == current) p->exec_restore_pending = 1;
 #else
     if (p == current) exec_pending[0] = 1;

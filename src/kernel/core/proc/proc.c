@@ -81,6 +81,12 @@ _Static_assert(offsetof(pcb_t, exec_restore_pending) ==
                "PCB_EXEC_RESTORE_PENDING_OFFSET must match trap.S/switch.S");
 #endif
 
+#if defined(__riscv)
+_Static_assert(offsetof(pcb_t, exec_restore_pending) ==
+                   PCB_EXEC_RESTORE_PENDING_OFFSET,
+               "PCB_EXEC_RESTORE_PENDING_OFFSET must match trap.S");
+#endif
+
 #if defined(__xtensa__)
 _Static_assert(offsetof(pcb_t, kernel_sp) == PCB_KERNEL_SP_OFFSET,
                "PCB_KERNEL_SP_OFFSET must match proc_info.h");

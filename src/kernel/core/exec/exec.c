@@ -72,10 +72,14 @@ int exec_execve(pcb_t *p, const exec_args_t *args) {
   uint8_t header[LOADER_HEADER_MAX];
   uint32_t header_len =
       file_size < LOADER_HEADER_MAX ? file_size : LOADER_HEADER_MAX;
-  long nread = exec_read_from(vn, header, header_len);
-  if (nread < 0 || (uint32_t)nread != header_len) {
-    mod_vfs.vnode_release(vn);
-    return (nread < 0) ? (int)nread : -(int)ENOEXEC;
+  if (vn->xip_addr) {
+    memcpy(header, vn->xip_addr, header_len);
+  } else {
+    long nread = exec_read_from(vn, header, header_len);
+    if (nread < 0 || (uint32_t)nread != header_len) {
+      mod_vfs.vnode_release(vn);
+      return (nread < 0) ? (int)nread : -(int)ENOEXEC;
+    }
   }
 
   /* ── 3. Find a matching loader and resolve its CPU ops ─────────────── */
