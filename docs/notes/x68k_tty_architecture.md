@@ -30,7 +30,7 @@ Init spawns `/bin/sh` on tty1 (auto-login, no prompt) and
   └───────────────────────────┘
 ```
 
-The kernel TTY layer (`src/kernel/fd/tty.c`) is target-agnostic.
+The kernel TTY layer (`src/kernel/vfs/tty.c`) is target-agnostic.
 `target_late_init()` plugs in the X68000-specific backends via
 `tty_set_backend()`.
 
@@ -100,7 +100,9 @@ Possible causes under investigation:
 
 2. **Serial**: SCC channel B RR0 is polled for Rx availability.  IOCS
    `_ISNS232C`/`_INP232C` are used for actual reads.  The SCC interrupt
-   handler (autovector 29, level 5) is preserved by stage2.
+   handler (autovector 29, level 5) is preserved by stage2.  `_INP232C` is
+   function `0x32` and `_ISNS232C` is function `0x33` per the local XEiJ IOCS
+   definitions.
 
 3. **Timer-C takeover**: Replacing the IPL ROM's Timer-C handler may
    break internal IOCS timing that keyboard or serial subsystems depend
@@ -113,10 +115,10 @@ Possible causes under investigation:
 
 | File | Role |
 |------|------|
-| `src/target/x68k/drivers/uart_x68k.c` | IOCS wrappers, VT100 converter, serial I/O |
-| `src/target/x68k/drivers/timer_x68k.c` | MFP Timer-C configuration |
-| `src/target/x68k/target_x68k.c` | TTY backend wiring, vector patching |
+| `src/target/x68k/kernel/vfs/driver/uart_x68k.c` | IOCS wrappers, VT100 converter, serial I/O |
+| `src/target/x68k/kernel/core/driver/timer_x68k.c` | MFP Timer-C configuration |
+| `src/target/x68k/kernel/vfs/driver/x68k_logger.c` | TTY backend wiring |
 | `src/target/x68k/boot/stage2.c` | Vector preservation during kernel load |
 | `src/target/x68k/romfs/etc/inittab` | Init config: sh on tty1, getty on ttyS0 |
-| `src/kernel/fd/tty.c` | Target-agnostic TTY line discipline |
-| `src/arch/m68k/switch.S` | Timer ISR, context switch |
+| `src/kernel/vfs/tty.c` | Target-agnostic TTY line discipline |
+| `src/arch/m68k/kernel/core/switch.S` | Timer ISR, context switch |
