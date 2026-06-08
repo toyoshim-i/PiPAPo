@@ -27,6 +27,13 @@
 ./scripts/run.sh --build x68k           # build kernel + floppy image + launch XEiJ
 ```
 
+For XEiJ-specific debugging, pass extra emulator arguments through
+`XEIJ_EXTRA_ARGS`:
+
+```sh
+XEIJ_EXTRA_ARGS='-pastepipe=on' ./scripts/run.sh --build x68k
+```
+
 ## Direct CMake Usage
 
 All target builds normally run inside Docker containers.  To run CMake

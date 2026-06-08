@@ -344,10 +344,12 @@ if [[ "$TARGET" == "x68k" ]]; then
     XEIJ_RS232C="TCP%2FIP+%E2%87%94+AUX"
 
     echo "[run] Launching XEiJ with $XDF (serial on TCP port $XEIJ_TCP_PORT) ..."
+    read -r -a XEIJ_EXTRA_ARGV <<< "${XEIJ_EXTRA_ARGS:-}"
     "$JAVA_BIN" -jar "$XEIJ_JAR" \
         -fd0="$XDF" -boot=fd0 -memory=2 -model=Hybrid -mpu=68000 \
         -rs232cconnection="$XEIJ_RS232C" \
-        -tcpipport="$XEIJ_TCP_PORT" &
+        -tcpipport="$XEIJ_TCP_PORT" \
+        "${XEIJ_EXTRA_ARGV[@]}" &
     XEIJ_PID=$!
 
     # Wait for XEiJ TCP server to become ready, then stream serial to stdout
