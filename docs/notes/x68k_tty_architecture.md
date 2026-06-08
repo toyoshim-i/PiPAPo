@@ -111,6 +111,26 @@ Possible causes under investigation:
    switch path).  Using IOCS `_B_INTVCS` to hook the vector also caused
    hangs — the IOCS call itself appears to have side effects.
 
+## XEiJ Inspection Helpers
+
+The XEiJ display can be captured from the host X11 window:
+
+```sh
+xwininfo -root -tree | rg 'X68000|sun-awt-X11-XCanvasPeer'
+xwd -silent -id <canvas-window-id> -out /tmp/xeij_canvas.xwd
+ffmpeg -y -f xwd_pipe -i /tmp/xeij_canvas.xwd -frames:v 1 -update 1 /tmp/xeij_canvas.png
+```
+
+XEiJ-specific options can be passed through the normal run path with
+`XEIJ_EXTRA_ARGS`, for example:
+
+```sh
+XEIJ_EXTRA_ARGS='-pastepipe=on' ./scripts/run.sh --build x68k
+```
+
+With pastepipe enabled, XEiJ accepts control commands such as `interrupt`,
+`reset`, and X68000 key names through `/tmp/XEiJControl`.
+
 ## File Map
 
 | File | Role |
