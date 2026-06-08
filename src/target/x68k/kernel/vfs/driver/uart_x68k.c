@@ -25,6 +25,8 @@
  *   _B_CLRST   (d0=0x2A, d1.w=2)     Clear entire screen
  *   _B_CLRST   (d0=0x2A, d1.w=0)     Clear from cursor to end of screen
  *   _B_ERA_AL  (d0=0x2B)             Clear from cursor to end of line
+ *   _INP232C   (d0=0x32)             Input one RS-232C serial character
+ *   _ISNS232C  (d0=0x33)             RS-232C serial input status
  *   _OUT232C   (d0=0x35, d1.b=char)  Output one character to RS-232C serial
  */
 
@@ -340,15 +342,15 @@ int uart_rx_avail_hw(void) {
 /* ── RS-232C serial input via IOCS ───────────────────────────────────────── */
 
 static inline int iocs_isns232c(void) {
-  register int32_t d0 asm("d0") = 0x32;
+  register int32_t d0 asm("d0") = 0x33;
   asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
   return d0;
 }
 
 static inline int iocs_inp232c(void) {
-  register int32_t d0 asm("d0") = 0x33;
+  register int32_t d0 asm("d0") = 0x32;
   asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
-  return d0 & 0xFF;
+  return d0;
 }
 
 int uart_serial_getc(void) {
