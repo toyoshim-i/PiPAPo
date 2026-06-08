@@ -215,25 +215,25 @@ int vfs_fd_open(const char *path, int flags, int mode) {
   /* TTY device detection */
   if (vn->type == VNODE_DEV && vn->fs_priv) {
     const char *devname = *(const char **)vn->fs_priv;
-    int tty_idx = -1;
+    void *tty_dev = NULL;
     if (devname) {
       if (strcmp(devname, "ttyS0") == 0)
-        tty_idx = TTY_SERIAL;
+        tty_dev = tty_get_dev(TTY_SERIAL);
       else if (strcmp(devname, "tty1") == 0)
-        tty_idx = TTY_DISPLAY;
+        tty_dev = tty_get_dev(TTY_DISPLAY);
       else if (strcmp(devname, "console") == 0)
-        tty_idx = TTY_SERIAL;
+        tty_dev = tty_get_console_dev();
       else if (strcmp(devname, "tty") == 0)
-        tty_idx = TTY_SERIAL;
+        tty_dev = tty_get_console_dev();
     }
-    if (tty_idx >= 0) {
+    if (tty_dev) {
       int desc = fd_pool_alloc();
       if (desc < 0) {
         mod_vfs.vnode_release(vn);
         return -ENOMEM;
       }
       fd_pool[desc].ops = &tty_fops;
-      fd_pool[desc].priv = tty_get_dev(tty_idx);
+      fd_pool[desc].priv = tty_dev;
       fd_pool[desc].flags = (uint32_t)flags;
       fd_pool[desc].vnode = NULL;
       fd_pool[desc].offset = 0;
@@ -622,5 +622,7 @@ void *vfs_fd_get_priv(int desc) {
  */
 
 void fd_stdio_init(pcb_t *p) {
+  void *console = tty_get_console_dev();
+  for (int i = 0; i < 3; i++) fd_pool[stdio_descs[i]].priv = console;
   for (int i = 0; i < 3; i++) p->fd_map[i] = (int16_t)vfs_fd_stdio_desc(i);
 }

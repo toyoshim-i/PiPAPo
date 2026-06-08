@@ -10,7 +10,7 @@
  *   tty_stdout — write-only
  *   tty_stderr — write-only
  *
- * These default objects have priv = &tty_devs[0] (set in fd_stdio_init).
+ * These default objects have priv set from the selected console TTY.
  * When getty/askfirst opens /dev/ttyXX, sys_fs.c allocates a new file
  * from file_pool with priv = tty_get_dev(idx).
  */
