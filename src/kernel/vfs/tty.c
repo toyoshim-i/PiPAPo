@@ -181,6 +181,8 @@ void tty_set_console(int idx) {
   if ((unsigned)idx < TTY_MAX) console_tty_idx = idx;
 }
 
+int tty_get_console_idx(void) { return console_tty_idx; }
+
 void *tty_get_console_dev(void) {
   /* tx_wakeup is wired by tty_set_backend() at registration time. */
   return tty_get_dev(console_tty_idx);

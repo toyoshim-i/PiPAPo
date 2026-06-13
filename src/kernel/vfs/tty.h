@@ -79,6 +79,9 @@ int tty_backend_ready(int idx);
  * Default: TTY_SERIAL (0).  pico1calc and x68k use TTY_DISPLAY (1). */
 void tty_set_console(int idx);
 
+/* Return the current console TTY instance index. */
+int tty_get_console_idx(void);
+
 /* Raw byte I/O against the registered backend, bypassing line
  * discipline.  Used by devfs to back /dev/ttyS0 / /dev/tty1 read/
  * write paths without dragging in the UART driver header.  All return
