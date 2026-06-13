@@ -197,3 +197,66 @@ thin and the per-arch implementations would still hold most of
 the delivery logic — the abstraction adds layering overhead
 without much consolidation.  Lowest ROI of the refactoring
 items; revisit only if a new arch port surfaces friction.
+
+## 10. Thread-safety follow-ups
+
+The common kernel thread-safety plan completed its Phase 1-5
+hardening and target-matrix baseline.  These are deferred cleanup
+items that were explicitly not required to keep that proposal open.
+
+### 10.1 File descriptor edge cases
+
+`fd.c` now protects descriptor allocation/refcounts with `SPIN_FD`
+and open-file state with per-file `kmutex_t`, but a few behavioral
+edges remain worth auditing:
+
+- killed-process cleanup when descriptor pins are held by interrupted
+  blocking file operations;
+- whether `fcntl(F_SETFL)` should update nonblocking mode while another
+  operation on the same shared file is asleep;
+- whether any driver needs to split long blocking I/O from file-state
+  mutation so concurrent operations on one open-file instance can make
+  progress.
+
+### 10.2 Sleep and wakeup documentation
+
+Blocking paths use shared sleep helpers, but the surrounding contract
+could be made easier to audit:
+
+- document which wakeups are level-triggered by rechecking a condition
+  and which, if any, are edge-triggered;
+- consider a debug assertion for `sched_sleep_current_unlock()` callers
+  that pass an invalid spinlock ID;
+- consider helper APIs for process teardown paths that currently make
+  direct `PROC_BLOCKED` state changes under `SPIN_PROC`.
+
+### 10.3 Filesystem locking refinements
+
+`tmpfs` intentionally uses one coarse sleepable mutex today.  Revisit
+only if requirements grow:
+
+- split the lock per mount if multiple tmpfs instances become supported;
+- split per-inode locks only if contention becomes meaningful;
+- add a concurrent mount/unmount stress test once process-level
+  concurrency helpers exist.
+
+### 10.4 x68k IOCS and crash logging
+
+The x68k IOCS path is serialized with `kmutex_t`.  Remaining target-local
+hardening ideas:
+
+- add an IRQ-context assertion once there is a common arch helper for it;
+- preserve same-owner crash-output bypass behavior;
+- consider a hardware-level serial fallback for crash logs that fault
+  while IOCS is already held.
+
+### 10.5 Allocator and boot-only registry guards
+
+`kmem_alloc()` / `kmem_free()` remain intentionally unlocked low-level
+APIs, with callers responsible for subsystem locking.
+
+- prefer subsystem wrapper APIs if additional pools appear;
+- optionally add debug assertions for known pools if lock tracking
+  becomes available;
+- add a guard or lock if any boot-only registry gains a runtime
+  registration user.
