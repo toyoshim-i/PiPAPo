@@ -172,7 +172,7 @@ See [docs/getting_started/debugging.md](/docs/getting_started/debugging.md) for 
 ## Architecture-Specific Notes
 
 - **ARM Cortex-M** — [docs/targets/arm_m.md](/docs/targets/arm_m.md) — flash/SRAM layouts, RP2040/RP2350 details, PicoCalc UF2 bootloader
-- **Motorola 68000** — [docs/targets/68000.md](/docs/targets/68000.md) — QEMU virt memory map, X68000 floppy boot
+- **Motorola 68000** — [docs/targets/m68k.md](/docs/targets/m68k.md) — QEMU virt memory map, X68000 floppy boot
 - **RISC-V** — [docs/targets/rv32.md](/docs/targets/rv32.md) — RV32IMAC specifics, XIP limitations, known test failures
 - **Xtensa** — [docs/targets/xtensa.md](/docs/targets/xtensa.md) — ESP-IDF integration, IRAM/DRAM split, call0 ABI
 - **Intel 8086** — [docs/targets/ia16.md](/docs/targets/ia16.md) — real-mode segment split, UFS floppy boot, kernel module system

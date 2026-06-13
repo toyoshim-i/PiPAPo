@@ -1595,6 +1595,6 @@ These provide real-world validation of DOS call compatibility.
 
 - [subsystems/overview.md](/docs/subsystems/overview.md) — Subsystem framework (general design; Human68k uses kernel-embedded model instead of user-space `/subsys/`)
 - [ecpu/overview.md](/docs/ecpu/overview.md) — CPU emulation layer
-- [targets/68000.md](/docs/targets/68000.md) — m68k target reference (§7: X68000 details)
+- [targets/m68k.md](/docs/targets/m68k.md) — m68k target reference (§7: X68000 details)
 - [syscall.md](/docs/kernel/syscall.md) — PPAP system call reference
 - [kernel.md](/docs/kernel/overview.md) — Kernel internals

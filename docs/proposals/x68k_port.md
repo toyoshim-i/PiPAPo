@@ -859,7 +859,7 @@ either an IOCS-floppy backend or a SCSI backend.
 
 ## 13. Related Documentation
 
-- [docs/targets/68000.md](../targets/68000.md) -- m68k architecture reference
+- [docs/targets/m68k.md](../targets/m68k.md) -- m68k architecture reference
 - [docs/subsystems/human68k.md](../subsystems/human68k.md) -- Human68k subsystem design
 - [docs/ecpu/m68k.md](../ecpu/m68k.md) -- eCPU m68k emulator
 - [docs/archive/history/target-68000-plan.md](../archive/history/target-68000-plan.md) -- Original m68k planning document

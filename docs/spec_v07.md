@@ -587,7 +587,7 @@ PPAP uses a unified syscall numbering scheme across all architectures, so the ke
 | [porting.md](/docs/getting_started/porting.md) | Application porters | Third-party porting pattern |
 | [PicoCalc.md](/docs/reference/picocalc.md) | Hardware developers | PicoCalc pinout, I2C keyboard protocol, SD card, serial debug |
 | [PicoCalc-LCD.md](/docs/reference/picocalc_lcd.md) | Driver developers | ST7365P LCD driver architecture, SPI protocol, VT100 emulator |
-| [targets/68000.md](/docs/targets/68000.md) | m68k developers | m68k target-specific notes |
+| [targets/m68k.md](/docs/targets/m68k.md) | m68k developers | m68k target-specific notes |
 | [targets/pizero.md](/docs/targets/pizero.md) | ARM developers | Pi Zero port plan (draft) |
 | [testing.md](/docs/getting_started/testing.md) | All developers | Test framework, categories, adding tests |
 | [ecpu/overview.md](/docs/ecpu/overview.md) | — | CPU emulation layer design (future) |

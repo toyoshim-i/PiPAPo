@@ -64,7 +64,7 @@ This index is the entry point for project documentation.
 - Targets
   - [`targets/arm_m.md`](targets/arm_m.md) — ARM Cortex-M (qemu_arm, pico1, pico1calc, pico2)
   - [`targets/rv32.md`](targets/rv32.md) — RISC-V RV32IMAC (qemu_rv32, pico2rv)
-  - [`targets/68000.md`](targets/68000.md) — Motorola 68000 (qemu_m68k, x68k)
+  - [`targets/m68k.md`](targets/m68k.md) — Motorola 68000 (qemu_m68k, x68k)
   - [`targets/ia16.md`](targets/ia16.md) — Intel 8086 (pcxt)
   - [`targets/xtensa.md`](targets/xtensa.md) — Xtensa LX7 (xtensa_cc / M5Stack CardComputer)
   - [`targets/host.md`](targets/host.md) — Native Linux/macOS (host build of push and pi)

@@ -265,4 +265,4 @@ The trampoline and signal frame layout are architecture-specific but the kernel-
 - [userland_dev_guide.md](/docs/user/userland_dev_guide.md) — User-space development
 - [PicoCalc.md](/docs/reference/picocalc.md) — PicoCalc hardware reference
 - [PicoCalc-LCD.md](/docs/reference/picocalc_lcd.md) — LCD display driver
-- [targets/68000.md](/docs/targets/68000.md) — m68k target notes
+- [targets/m68k.md](/docs/targets/m68k.md) — m68k target notes
