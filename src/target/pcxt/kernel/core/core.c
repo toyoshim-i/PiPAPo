@@ -23,6 +23,7 @@ void kmem_pool_init(kmem_pool_t *, void *, size_t, uint32_t);
 void kmutex_init(kmutex_t *);
 void kmutex_lock(kmutex_t *);
 void kmutex_release_owned(struct pcb *);
+int kmutex_try_lock(kmutex_t *);
 void kmutex_unlock(kmutex_t *);
 void page_read(page_id_t, uint16_t, void *, uint16_t);
 void page_write(page_id_t, uint16_t, const void *, uint16_t);
@@ -49,6 +50,7 @@ uint32_t time_now_sec(void);
 #define core_kmutex_init         kmutex_init
 #define core_kmutex_lock         kmutex_lock
 #define core_kmutex_release_owned kmutex_release_owned
+#define core_kmutex_try_lock     kmutex_try_lock
 #define core_kmutex_unlock       kmutex_unlock
 #define core_page_read           page_read
 #define core_page_write          page_write

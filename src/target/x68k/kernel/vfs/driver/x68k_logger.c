@@ -43,10 +43,10 @@ void vfs_notify(int event) {
       break;
     }
     case VFS_EVENT_IDLE:
-      /* Use direct HW register reads — NOT IOCS calls — because IOCS
-       * is not reentrant and hangs when called from idle context. */
+      /* TVRAM keyboard can be sensed through the MFP directly.  Serial is
+       * IOCS-owned here, so idle only polls it when the IOCS mutex is free. */
       if (uart_rx_avail_hw()) tty_rx_notify(TTY_DISPLAY);
-      if (uart_serial_rx_avail_hw()) tty_rx_notify(TTY_SERIAL);
+      if (uart_serial_rx_avail_idle()) tty_rx_notify(TTY_SERIAL);
       break;
     case VFS_EVENT_CRASH_ENTER:
       /* arch/m68k crash handler will klogf next; stop IOCS TVRAM output

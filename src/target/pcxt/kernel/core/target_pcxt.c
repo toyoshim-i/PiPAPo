@@ -98,22 +98,23 @@ static void patch_vfs_fptrs(uint16_t vfs_seg) {
   PATCH_CORE( 4, kmutex_init);
   PATCH_CORE( 5, kmutex_lock);
   PATCH_CORE( 6, kmutex_release_owned);
-  PATCH_CORE( 7, kmutex_unlock);
-  PATCH_CORE( 8, page_read);
-  PATCH_CORE( 9, page_write);
-  PATCH_CORE(10, page_zero);
-  PATCH_CORE(11, region_alloc);
-  PATCH_CORE(12, region_free);
-  PATCH_CORE(13, region_free_bytes);
-  PATCH_CORE(14, region_total_bytes);
-  PATCH_CORE(15, sched_block_current);
-  PATCH_CORE(16, sched_get_ticks);
-  PATCH_CORE(17, sched_sleep_current);
-  PATCH_CORE(18, sched_sleep_current_unlock);
-  PATCH_CORE(19, sched_switch);
-  PATCH_CORE(20, sched_wakeup);
-  PATCH_CORE(21, subsys_read_proc);
-  PATCH_CORE(22, time_now_sec);
+  PATCH_CORE( 7, kmutex_try_lock);
+  PATCH_CORE( 8, kmutex_unlock);
+  PATCH_CORE( 9, page_read);
+  PATCH_CORE(10, page_write);
+  PATCH_CORE(11, page_zero);
+  PATCH_CORE(12, region_alloc);
+  PATCH_CORE(13, region_free);
+  PATCH_CORE(14, region_free_bytes);
+  PATCH_CORE(15, region_total_bytes);
+  PATCH_CORE(16, sched_block_current);
+  PATCH_CORE(17, sched_get_ticks);
+  PATCH_CORE(18, sched_sleep_current);
+  PATCH_CORE(19, sched_sleep_current_unlock);
+  PATCH_CORE(20, sched_switch);
+  PATCH_CORE(21, sched_wakeup);
+  PATCH_CORE(22, subsys_read_proc);
+  PATCH_CORE(23, time_now_sec);
 #undef PATCH_CORE
 }
 

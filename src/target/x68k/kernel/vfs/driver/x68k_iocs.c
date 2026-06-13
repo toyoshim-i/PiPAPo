@@ -31,3 +31,9 @@ void x68k_iocs_exit(void) {
 int x68k_iocs_held_by_current(void) {
   return current && iocs_mutex.owner == current;
 }
+
+int x68k_iocs_try_enter(void) {
+  if (!current) return 0;
+  if (!iocs_ready) x68k_iocs_init();
+  return mod_core.kmutex_try_lock(&iocs_mutex);
+}

@@ -25,6 +25,7 @@ mod_core_t mod_core = {
     .kmutex_init = kmutex_init,
     .kmutex_lock = kmutex_lock,
     .kmutex_release_owned = kmutex_release_owned,
+    .kmutex_try_lock = kmutex_try_lock,
     .kmutex_unlock = kmutex_unlock,
     .page_read = page_read,
     .page_write = page_write,

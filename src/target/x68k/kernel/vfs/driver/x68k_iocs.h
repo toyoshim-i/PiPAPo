@@ -20,6 +20,7 @@ void x68k_iocs_init(void);
 void x68k_iocs_enter(void);
 void x68k_iocs_exit(void);
 int x68k_iocs_held_by_current(void);
+int x68k_iocs_try_enter(void);
 
 static inline uint16_t ipl7_save(void) {
   uint16_t sr;

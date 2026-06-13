@@ -269,9 +269,9 @@ static int vt_feed(char c) {
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
 void uart_init(void) {
-  /* No-op on X68000: IOCS handles the UART, and clearing the screen here
-   * would wipe stage1/2's "PiPA" + the kernel's "Po" banner.  cur_x/cur_y
-   * stay 0; the first VT100 sequence corrects them. */
+  /* IOCS owns the display and serial hardware.  Do not clear TVRAM here:
+   * that would wipe stage1/2's "PiPA" + the kernel's "Po" banner.
+   * cur_x/cur_y stay 0; the first VT100 sequence corrects them. */
   x68k_iocs_init();
 }
 
@@ -378,13 +378,11 @@ int uart_serial_rx_avail(void) {
   return r;
 }
 
-/*
- * uart_serial_rx_avail_hw — non-IOCS RS-232C RX availability check
- *
- * Reads SCC (Z8530) channel B RR0 directly.  Bit 0 = Rx Char Available.
- * Safe to call from any context (no IOCS TRAP #15).
- */
-int uart_serial_rx_avail_hw(void) {
-  volatile uint8_t *scc_rr0 = (volatile uint8_t *)0xE98001u;
-  return (*scc_rr0 & 0x01u) ? 1 : 0;
+int uart_serial_rx_avail_idle(void) {
+  if (!x68k_iocs_try_enter()) return 0;
+  uint16_t sr = ipl7_save();
+  int r = iocs_isns232c() ? 1 : 0;
+  ipl7_restore(sr);
+  x68k_iocs_exit();
+  return r;
 }

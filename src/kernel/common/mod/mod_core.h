@@ -105,6 +105,13 @@ MOD_FUNC(core, void, kmutex_lock, kmutex_t *)
 MOD_FUNC(core, void, kmutex_release_owned, struct pcb *)
 
 /*
+ * kmutex_try_lock — Try to lock a sleepable kernel mutex without blocking.
+ *
+ * Process context only.  Returns non-zero if the lock was acquired.
+ */
+MOD_FUNC(core, int, kmutex_try_lock, kmutex_t *)
+
+/*
  * kmutex_unlock — Unlock a sleepable kernel mutex.
  */
 MOD_FUNC(core, void, kmutex_unlock, kmutex_t *)

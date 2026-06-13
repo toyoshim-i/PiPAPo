@@ -63,6 +63,28 @@ void kmutex_lock(kmutex_t *m) {
   }
 }
 
+int kmutex_try_lock(kmutex_t *m) {
+  if (!m) panic("kmutex_try_lock(NULL)\n");
+  kmutex_require_process_context("kmutex_try_lock");
+
+  uint32_t saved = spin_lock_irqsave(SPIN_PROC);
+
+  if (!m->owner) {
+    m->owner = current;
+    kmutex_link_held(m);
+    spin_unlock_irqrestore(SPIN_PROC, saved);
+    return 1;
+  }
+
+  if (m->owner == current) {
+    spin_unlock_irqrestore(SPIN_PROC, saved);
+    panic("recursive kmutex_try_lock\n");
+  }
+
+  spin_unlock_irqrestore(SPIN_PROC, saved);
+  return 0;
+}
+
 void kmutex_unlock(kmutex_t *m) {
   if (!m) panic("kmutex_unlock(NULL)\n");
   kmutex_require_process_context("kmutex_unlock");

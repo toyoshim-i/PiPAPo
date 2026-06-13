@@ -125,6 +125,27 @@ static void test_waiter_acquires_after_handoff(void) {
   ASSERT_NULL(proc_b.wait_channel);
 }
 
+static void test_try_lock_tracks_owner_without_blocking(void) {
+  kmutex_t mutex;
+
+  reset_test();
+  kmutex_init(&mutex);
+  ASSERT(kmutex_try_lock(&mutex), "try-lock should acquire free mutex");
+  ASSERT(mutex.owner == &proc_a, "try-lock should record owner");
+  ASSERT(proc_a.kmutex_held == &mutex, "try-lock should join held list");
+
+  current = &proc_b;
+  ASSERT(!kmutex_try_lock(&mutex), "try-lock should fail on contention");
+  ASSERT_EQ(switch_count, 0);
+  ASSERT(mutex.owner == &proc_a, "failed try-lock should not change owner");
+  ASSERT_NULL(proc_b.kmutex_held);
+
+  current = &proc_a;
+  kmutex_unlock(&mutex);
+  ASSERT_NULL(mutex.owner);
+  ASSERT_NULL(proc_a.kmutex_held);
+}
+
 static void test_release_owned_handoff_stress(void) {
   for (int i = 0; i < OWNER_DEATH_STRESS_ROUNDS; i++) {
     kmutex_t first;
@@ -167,6 +188,7 @@ static void test_recursive_lock_panics(void) {
   kmutex_init(&mutex);
   kmutex_lock(&mutex);
   ASSERT_PANICS(kmutex_lock(&mutex));
+  ASSERT_PANICS(kmutex_try_lock(&mutex));
 }
 
 static void test_unlock_by_non_owner_panics(void) {
@@ -186,6 +208,7 @@ static void test_irq_context_lock_unlock_panics(void) {
   kmutex_init(&mutex);
   test_in_irq_context = 1;
   ASSERT_PANICS(kmutex_lock(&mutex));
+  ASSERT_PANICS(kmutex_try_lock(&mutex));
   ASSERT_PANICS(kmutex_unlock(&mutex));
 }
 
@@ -193,6 +216,7 @@ int main(void) {
   printf("=== test_kmutex ===\n");
   RUN_TEST(test_lock_unlock_tracks_owner);
   RUN_TEST(test_waiter_acquires_after_handoff);
+  RUN_TEST(test_try_lock_tracks_owner_without_blocking);
   RUN_TEST(test_release_owned_handoff_stress);
   RUN_TEST(test_recursive_lock_panics);
   RUN_TEST(test_unlock_by_non_owner_panics);

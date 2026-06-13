@@ -20,9 +20,8 @@ int uart_serial_putc(char c, void (*notify)(void));
 int uart_serial_getc(void);
 int uart_serial_rx_avail(void);
 
-/* Non-IOCS availability checks — safe from timer-ISR context where IOCS
- * is not re-entrant (IOCS _B_PUTC lowers IPL internally for VSYNC sync). */
-int uart_rx_avail_hw(void);        /* MFP USART RSR bit 7 */
-int uart_serial_rx_avail_hw(void); /* SCC channel B RR0 bit 0 */
+/* Availability checks used by the idle notifier. */
+int uart_rx_avail_hw(void); /* MFP USART RSR bit 7 */
+int uart_serial_rx_avail_idle(void);
 
 #endif /* PPAP_TARGET_X68K_KERNEL_VFS_DRIVER_UART_X68K_H */
