@@ -220,6 +220,7 @@ extern uint32_t i16_page_pool_base;
  *                     512 is the universal standard for SD / eMMC / ATA.
  * ────────────────────────────────────────────────────────────────────────── */
 #define BLKDEV_MAX 4            /* maximum registered block devices      */
+#define BLKDEV_CACHE_SLOTS 4u   /* shared write-through sector cache     */
 #define BLKDEV_SECTOR_SIZE 512u /* bytes per sector                      */
 
 /* ── ELF loader (exec) ───────────────────────────────────────────────────

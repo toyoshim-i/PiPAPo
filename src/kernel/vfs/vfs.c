@@ -472,6 +472,12 @@ void vfs_fstab_automount(void) {
   } else {
     klogf("fstab: no entries\n");
   }
+#ifdef PPAP_HAS_BLKDEV
+  /* Defer generic cache activation until boot-time mounts finish.  Root
+   * devices that cannot tolerate cached probing during firmware reads can
+   * still opt out with BLKDEV_F_NOCACHE. */
+  blkdev_cache_set_enabled(true);
+#endif
 }
 
 int vfs_path_mkdir(const char *path, uint32_t mode) {

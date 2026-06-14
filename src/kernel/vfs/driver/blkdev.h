@@ -14,17 +14,22 @@
 #ifndef PPAP_KERNEL_VFS_DRIVER_BLKDEV_H
 #define PPAP_KERNEL_VFS_DRIVER_BLKDEV_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "kernel/common/config.h"
 #include "kernel/common/core/page_types.h"
 
+/* Device flags */
+#define BLKDEV_F_NOCACHE 0x0001u
+
 /* ── Block device struct ─────────────────────────────────────────────────── */
 
 typedef struct blkdev {
   const char *name;      /* device name: "mmcblk0", "loop0", … */
   uint32_t sector_count; /* total sectors on device */
+  uint16_t flags;        /* BLKDEV_F_* */
   void *priv;            /* driver-private state */
 
   /* Read sectors into page `page` at byte offset `off`.
@@ -48,12 +53,22 @@ typedef struct blkdev {
    * Returns 0 on success, negative errno on failure. */
   int (*write)(struct blkdev *dev, page_id_t page, uint16_t off,
                uint32_t sector, uint32_t count);
+
+  /* Original driver entry points after registration.  blkdev_register()
+   * wraps read/write with the shared cache while preserving these raw hooks. */
+  int (*raw_read)(struct blkdev *dev, page_id_t page, uint16_t off,
+                  uint32_t sector, uint32_t count);
+  int (*raw_write)(struct blkdev *dev, page_id_t page, uint16_t off,
+                   uint32_t sector, uint32_t count);
 } blkdev_t;
 
 /* ── API ─────────────────────────────────────────────────────────────────── */
 
 /* Initialise the block device registry.  Call once from kmain(). */
 void blkdev_init(void);
+
+/* Enable or disable the shared sector cache. */
+void blkdev_cache_set_enabled(bool enabled);
 
 /* Register a block device during bootstrap, before sched_start().
  * The blkdev_t is copied into an internal slot.

@@ -251,6 +251,7 @@ int main(void)
     tests[t++] = (test_entry_t){ "/bin/test_stat", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_env", TEST_ENABLED };
     tests[t++] = (test_entry_t){ "/bin/test_tmpfs", TEST_ENABLED };
+    tests[t++] = (test_entry_t){ "/bin/test_blkcache", TEST_ENABLED };
     if (access("/etc/test_smp_hardware", F_OK) == 0)
         tests[t++] = (test_entry_t){ "/bin/test_smp", TEST_ENABLED };
     /* test_ufs runs only where a UFS root is mounted (pcxt today). */

@@ -36,8 +36,8 @@
  * In 512-byte blkdev units that is sector 8. */
 #define UFS_BASE_512 8u
 
-#define BLKDEV_SECTORS_PER_PHYS (FLOPPY_SEC_BYTES / BLKDEV_SECTOR_SIZE) /* 2 \
-                                                                         */
+/* One 1024-byte physical sector contains two blkdev sectors. */
+#define BLKDEV_SECTORS_PER_PHYS (FLOPPY_SEC_BYTES / BLKDEV_SECTOR_SIZE)
 
 #define CACHE_PHYS_NONE ((uint32_t) - 1)
 
@@ -140,6 +140,7 @@ void iocs_blk_init(void) {
   iocs_dev.name = "fd0";
   iocs_dev.sector_count =
       FLOPPY_TOTAL_PHYS_SECS * BLKDEV_SECTORS_PER_PHYS - UFS_BASE_512;
+  iocs_dev.flags = BLKDEV_F_NOCACHE;
   iocs_dev.priv = (void *)0;
   iocs_dev.read = iocs_blk_read;
   iocs_dev.write = iocs_blk_write;
