@@ -385,9 +385,16 @@ void rewind(FILE *fp) {
 
 int setvbuf(FILE *fp, char *buf, int mode, size_t size) {
   if (!fp) return -1;
-  /* Only allow before first I/O on the stream — caller's
-   * responsibility.  We just swap the flags / buffer. */
-  if (fp->flags & _IO_DIRTY) flush_write_buf(fp);
+
+  if (mode != _IONBF && mode != _IOLBF && mode != _IOFBF) return -1;
+  if (mode != _IONBF && size == 0) {
+    if (buf) return -1;
+    size = BUFSIZ;
+  }
+
+  if (fp->flags & _IO_DIRTY) {
+    if (flush_write_buf(fp) != 0) return -1;
+  }
   fp->buf_pos = 0;
   fp->buf_end = 0;
   fp->ungot = -1;
@@ -397,14 +404,12 @@ int setvbuf(FILE *fp, char *buf, int mode, size_t size) {
     fp->flags |= _IO_NOBUF;
     return 0;
   }
+
   if (mode == _IOLBF)
     fp->flags |= _IO_LINEBUF;
-  else if (mode == _IOFBF)
-    fp->flags |= _IO_FULLBUF;
   else
-    return -1;
+    fp->flags |= _IO_FULLBUF;
 
-  /* Caller-supplied buffer takes ownership away from us. */
   if (buf) {
     if (fp->flags & _IO_OWN_BUF) {
       free(fp->buf);
@@ -412,6 +417,20 @@ int setvbuf(FILE *fp, char *buf, int mode, size_t size) {
     }
     fp->buf = (unsigned char *)buf;
     fp->buf_size = size;
+    return 0;
+  }
+
+  if (!(fp->flags & _IO_OWN_BUF) || !fp->buf || fp->buf_size < size) {
+    unsigned char *new_buf = malloc(size);
+    if (!new_buf) {
+      fp->flags &= ~(_IO_LINEBUF | _IO_FULLBUF);
+      fp->flags |= _IO_NOBUF;
+      return -1;
+    }
+    if (fp->flags & _IO_OWN_BUF) free(fp->buf);
+    fp->buf = new_buf;
+    fp->buf_size = size;
+    fp->flags |= _IO_OWN_BUF;
   }
   return 0;
 }

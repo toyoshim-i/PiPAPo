@@ -600,6 +600,8 @@ if(PPAP_TESTS)
     EXTRA_CFLAGS -I${PCXT_TEST_DIR})
   pcxt_user_program(test_blkcache ${PPAP_ROOT}/tests/user/test_blkcache.c
     EXTRA_CFLAGS -I${PCXT_TEST_DIR})
+  pcxt_user_program(test_stdio_buf ${PPAP_ROOT}/tests/user/test_stdio_buf.c
+    EXTRA_CFLAGS -I${PCXT_TEST_DIR})
   pcxt_user_program(test_ufs ${PPAP_ROOT}/tests/user/test_ufs.c
     EXTRA_CFLAGS -I${PCXT_TEST_DIR})
   pcxt_user_program(test_msdos ${PPAP_ROOT}/tests/user/test_msdos.c
