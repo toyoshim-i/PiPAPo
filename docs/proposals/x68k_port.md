@@ -648,6 +648,37 @@ process context has been successfully restored.  Keeping this state on the
 PCB matters when init starts multiple getties close together: a shared
 CPU-global flag can be consumed by the wrong process.
 
+### 7.7 vfork Parent Resume State
+
+Do not use a wide m68k parent user-stack save/restore as the x68k shell
+handoff fix.  It has repeatedly looked attractive during x68k debugging,
+but the evidence points elsewhere.
+
+With no-copy `vfork()`, the child shares the parent's user stack until
+`execve()` or `_exit()`.  A diagnostic wide-stack dump from x68k showed
+that the child does write around init's `spawn()` frame before `execve()`:
+
+- `USP + 0`: the parent's return address from `vfork()`, overwritten by
+  the child's first `execve()` argument setup.  This word must be saved
+  and restored so the blocked parent can return from `vfork()`.
+- Below `USP`: the child's `execve()` call frame and m68k syscall-wrapper
+  register saves.  These are child call frames, not parent resume state.
+- Above `USP`: the child's local `envp[]` array in `init.c`.  The parent
+  success path after `vfork()` does not read those child locals.
+
+`qemu_m68k` uses the same m68k user syscall stubs and the same native m68k
+`init` code path, so these child writes are not x68k-specific.  The fact
+that `qemu_m68k` boots and tests reliably is evidence that restoring only
+the actual parent resume word is the justified baseline.  A wider restore
+can hide the x68k symptom, but it does not explain why the parent would
+legitimately depend on child call-frame or child-local stack contents.
+
+If x68k fails while `qemu_m68k` works with the minimal restore, investigate
+x68k-specific state instead: IOCS/display handoff, serial getty behavior,
+memory pressure, interrupt/exception return paths, or emulator/hardware
+I/O side effects.  Keep any wider stack dump as diagnostic instrumentation
+only until the exact writer and the exact consumed word are proven.
+
 ---
 
 ## 8. Console Strategy

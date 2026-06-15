@@ -81,10 +81,10 @@ static inline page_id_t arch_user_ptr_to_page(page_id_t base_page,
 /* ── vfork parent-resume hooks ─────────────────────────────────────────────
  *
  * Save the 4-byte user-stack slot at the parent's USP (the bsr-pushed
- * return address of the vfork() caller) into the parent's PCB before the
- * child runs.  The child's first user-mode push during execve setup writes
- * exactly that address, so we restore it before any user-mode `rte` that
- * could resume the parent.  See docs/proposals/no_stack_copy_on_vfork.md.
+ * return address of the vfork() caller) before the child runs.  The child
+ * uses the same user stack until execve()/_exit(), so its execve argument
+ * setup can overwrite that slot.  See
+ * docs/proposals/no_stack_copy_on_vfork.md.
  * ────────────────────────────────────────────────────────────────────────── */
 
 struct pcb;
