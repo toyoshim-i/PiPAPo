@@ -11,6 +11,8 @@
 
 #include "push.h"
 
+#include <stdio.h>
+
 #include "lib/uclib.h"
 #include "syscall.h"
 
@@ -93,8 +95,6 @@ static int my_strlen(const char *s) {
   while (s[n]) n++;
   return n;
 }
-
-static void puts_fd(int fd, const char *s) { write(fd, s, my_strlen(s)); }
 
 static int streq(const char *a, const char *b) {
   while (*a && *b && *a == *b) {
@@ -186,13 +186,13 @@ static const char *my_strrchr(const char *s, char c) {
 }
 
 static void err_msg(const char *a, const char *b) {
-  puts_fd(2, "push: ");
-  puts_fd(2, a);
+  fputs("push: ", stderr);
+  fputs(a, stderr);
   if (b) {
-    puts_fd(2, ": ");
-    puts_fd(2, b);
+    fputs(": ", stderr);
+    fputs(b, stderr);
   }
-  puts_fd(2, "\n");
+  fputc('\n', stderr);
 }
 
 /* ── Environment management ──────────────────────────────────────────── */
@@ -756,7 +756,7 @@ static int tokenize(const char *input, char *buf, int buf_size, char **toks,
 
     if (has_glob) {
       if (expand_glob(&out, end, toks, &n, max_toks) < 0) {
-        puts_fd(2, "push: argument list too long\n");
+        fputs("push: argument list too long\n", stderr);
 #undef EMIT
         return -1;
       }
@@ -1164,8 +1164,8 @@ static void run_builtin(char **argv, int argc, int *status) {
   if (streq(cmd, "pwd")) {
     char cwd[PATH_BUF];
     if (getcwd(cwd, sizeof(cwd)) > 0) {
-      puts_fd(1, cwd);
-      write(1, "\n", 1);
+      fputs(cwd, stdout);
+      fputc('\n', stdout);
       *status = 0;
     } else {
       *status = 1;
@@ -1180,11 +1180,11 @@ static void run_builtin(char **argv, int argc, int *status) {
         no_nl = 1;
         continue;
       }
-      if (!first) write(1, " ", 1);
-      puts_fd(1, argv[i]);
+      if (!first) fputc(' ', stdout);
+      fputs(argv[i], stdout);
       first = 0;
     }
-    if (!no_nl) write(1, "\n", 1);
+    if (!no_nl) fputc('\n', stdout);
     *status = 0;
     return;
   }
@@ -1193,9 +1193,9 @@ static void run_builtin(char **argv, int argc, int *status) {
     if (argc < 2) {
       for (int i = 0; i < env_count; i++) {
         if (env_tab[i].exported) {
-          puts_fd(1, "export ");
-          puts_fd(1, env_pool + env_tab[i].off);
-          write(1, "\n", 1);
+          fputs("export ", stdout);
+          fputs(env_pool + env_tab[i].off, stdout);
+          fputc('\n', stdout);
         }
       }
       *status = 0;
@@ -1227,8 +1227,8 @@ static void run_builtin(char **argv, int argc, int *status) {
 
   if (streq(cmd, "set")) {
     for (int i = 0; i < env_count; i++) {
-      puts_fd(1, env_pool + env_tab[i].off);
-      write(1, "\n", 1);
+      fputs(env_pool + env_tab[i].off, stdout);
+      fputc('\n', stdout);
     }
     *status = 0;
     return;
@@ -1237,8 +1237,8 @@ static void run_builtin(char **argv, int argc, int *status) {
   if (streq(cmd, "env")) {
     for (int i = 0; i < env_count; i++) {
       if (env_tab[i].exported) {
-        puts_fd(1, env_pool + env_tab[i].off);
-        write(1, "\n", 1);
+        fputs(env_pool + env_tab[i].off, stdout);
+        fputc('\n', stdout);
       }
     }
     *status = 0;
@@ -1644,7 +1644,7 @@ static int exec_list(char **toks, int ntoks) {
 static int execute_line(const char *line) {
   char *buf = malloc(TOK_BUF_SIZE);
   if (!buf) {
-    puts_fd(2, "push: out of memory\n");
+    fputs("push: out of memory\n", stderr);
     last_status = 1;
     return 1;
   }
@@ -1668,15 +1668,14 @@ static int execute_line(const char *line) {
 
 /* ── File reader ─────────────────────────────────────────────────────── */
 
-static int read_line(int fd, char *buf, int len) {
+static int read_line(FILE *fp, char *buf, int len) {
   int i = 0;
   while (i < len - 1) {
-    char c;
-    int n = read(fd, &c, 1);
-    if (n <= 0) return i > 0 ? i : -1;
+    int c = fgetc(fp);
+    if (c == EOF) return i > 0 ? i : -1;
     if (c == '\n') break;
     if (c == '\r') continue;
-    buf[i++] = c;
+    buf[i++] = (char)c;
   }
   buf[i] = '\0';
   return i;
@@ -1690,8 +1689,8 @@ static int read_line(int fd, char *buf, int len) {
  * a pre-collected line array (for nested compounds).
  */
 struct line_src {
-  int fd;             /* file descriptor (-1 if using lines[]) */
-  const char **lines; /* pre-collected line array (NULL if fd) */
+  FILE *fp;           /* stream (NULL if using lines[]) */
+  const char **lines; /* pre-collected line array (NULL if fp) */
   int nlines;         /* number of lines in array */
   int pos;            /* current position in lines[] */
   int first;          /* first-line flag (for shebang skip) */
@@ -1703,7 +1702,7 @@ static int ls_next(struct line_src *ls, char *buf, int len) {
     my_strcpy(buf, ls->lines[ls->pos++], len);
     return my_strlen(buf);
   }
-  return read_line(ls->fd, buf, len);
+  return read_line(ls->fp, buf, len);
 }
 
 /* Check if a token matches a keyword (first word on a line) */
@@ -1959,7 +1958,7 @@ static int exec_while(const char *while_line, struct line_src *ls) {
 /* Execute a block of collected lines (for if-body, while-body, etc.) */
 static int exec_lines(const char **lines, int nlines) {
   struct line_src ls;
-  ls.fd = -1;
+  ls.fp = NULL;
   ls.lines = lines;
   ls.nlines = nlines;
   ls.pos = 0;
@@ -2004,21 +2003,22 @@ static int exec_from_source(struct line_src *ls) {
 }
 
 static int run_file(const char *path) {
-  int fd, close_fd = 0;
+  FILE *fp;
+  int close_fp = 0;
 
   if (!path) {
-    fd = 0;
+    fp = stdin;
   } else {
-    fd = open(path, O_RDONLY, 0);
-    if (fd < 0) {
+    fp = fopen(path, "r");
+    if (!fp) {
       err_msg(path, "cannot open");
       return 1;
     }
-    close_fd = 1;
+    close_fp = 1;
   }
 
   struct line_src ls;
-  ls.fd = fd;
+  ls.fp = fp;
   ls.lines = 0;
   ls.nlines = 0;
   ls.pos = 0;
@@ -2026,7 +2026,7 @@ static int run_file(const char *path) {
 
   int status = exec_from_source(&ls);
 
-  if (close_fd) close(fd);
+  if (close_fp) fclose(fp);
   return status;
 }
 
@@ -2114,7 +2114,7 @@ int main(int argc, char *argv[]) {
     }
 
     struct line_src ls;
-    ls.fd = 0;
+    ls.fp = stdin;
     ls.lines = 0;
     ls.nlines = 0;
     ls.pos = 0;
@@ -2133,8 +2133,9 @@ int main(int argc, char *argv[]) {
         n = push_readline(ps1, line, sizeof(line));
       } else {
         /* Dumb terminal fallback */
-        puts_fd(2, "$ ");
-        n = read_line(0, line, sizeof(line));
+        fputs("$ ", stderr);
+        fflush(stderr);
+        n = read_line(stdin, line, sizeof(line));
       }
       if (n < 0) break;
       if (line[0] == '\0') continue;
@@ -2155,6 +2156,6 @@ int main(int argc, char *argv[]) {
       execute_line(line);
     }
   }
-  write(2, "\n", 1);
+  fputc('\n', stderr);
   return last_status;
 }

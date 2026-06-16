@@ -15,6 +15,7 @@
 static char heap[4096];
 static char data[DATA_SIZE];
 static char tmp[64];
+static char full_buf[32];
 static char line_buf[32];
 
 static void make_data(void) {
@@ -95,7 +96,7 @@ int main(void) {
   fp = fopen(TMPFILE, "w");
   UT_ASSERT(fp != 0, "fopen setvbuf");
   if (fp) {
-    UT_ASSERT_EQ(setvbuf(fp, 0, _IOFBF, 1024), 0);
+    UT_ASSERT_EQ(setvbuf(fp, full_buf, _IOFBF, sizeof(full_buf)), 0);
     UT_ASSERT_EQ(fputc('x', fp), 'x');
     UT_ASSERT_EQ(read_file(TMPFILE, tmp, sizeof(tmp)), 0);
     UT_ASSERT_EQ(fclose(fp), 0);

@@ -13,8 +13,9 @@
  *    PPAP's pre-M4 behaviour (every uc_puts / uc_eputs hit write(2)
  *    immediately) and avoids any malloc on programs that never call
  *    fopen.  Apps that want buffering can call setvbuf().
- *  - fopen-returned streams are fully buffered with a BUFSIZ-sized
- *    malloc'd buffer.
+ *  - fopen-returned streams are fully buffered.  Their BUFSIZ-sized
+ *    malloc'd buffer is allocated lazily on first I/O so callers can
+ *    install a static buffer with setvbuf() immediately after fopen().
  *  - getc / putc are functions, not macros — keeps <stdio.h> opaque.
  */
 
@@ -77,6 +78,21 @@ static size_t fd_write_all(FILE *fp, const void *buf, size_t n) {
     off += (size_t)w;
   }
   return off;
+}
+
+static int ensure_buffer(FILE *fp) {
+  if (fp->buf && fp->buf_size > 0) return 0;
+
+  size_t size = fp->buf_size ? fp->buf_size : BUFSIZ;
+  unsigned char *buf = malloc(size);
+  if (!buf) {
+    fp->flags |= _IO_ERR;
+    return EOF;
+  }
+  fp->buf = buf;
+  fp->buf_size = size;
+  fp->flags |= _IO_OWN_BUF;
+  return 0;
 }
 
 /* Drain the write buffer to fd.  Returns 0 on success, EOF on error. */
@@ -150,15 +166,9 @@ FILE *fopen(const char *path, const char *mode) {
     close(fd);
     return (void *)0;
   }
-  unsigned char *buf = malloc(BUFSIZ);
-  if (!buf) {
-    free(fp);
-    close(fd);
-    return (void *)0;
-  }
   fp->fd = fd;
-  fp->flags = io_flag | _IO_FULLBUF | _IO_OWN_BUF | _IO_OWN_FILE;
-  fp->buf = buf;
+  fp->flags = io_flag | _IO_FULLBUF | _IO_OWN_FILE;
+  fp->buf = (void *)0;
   fp->buf_size = BUFSIZ;
   fp->buf_pos = 0;
   fp->buf_end = 0;
@@ -199,6 +209,7 @@ size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *fp) {
     size_t w = fd_write_all(fp, src, total);
     return w / size;
   }
+  if (ensure_buffer(fp) != 0) return 0;
 
   size_t off = 0;
   while (off < total) {
@@ -262,6 +273,7 @@ size_t fread(void *ptr, size_t size, size_t nmemb, FILE *fp) {
     }
     return off / size;
   }
+  if (ensure_buffer(fp) != 0) return 0;
 
   while (off < total) {
     if (fp->buf_pos >= fp->buf_end) {
@@ -387,10 +399,7 @@ int setvbuf(FILE *fp, char *buf, int mode, size_t size) {
   if (!fp) return -1;
 
   if (mode != _IONBF && mode != _IOLBF && mode != _IOFBF) return -1;
-  if (mode != _IONBF && size == 0) {
-    if (buf) return -1;
-    size = BUFSIZ;
-  }
+  if (mode != _IONBF && buf && size == 0) return -1;
 
   if (fp->flags & _IO_DIRTY) {
     if (flush_write_buf(fp) != 0) return -1;
@@ -420,17 +429,9 @@ int setvbuf(FILE *fp, char *buf, int mode, size_t size) {
     return 0;
   }
 
-  if (!(fp->flags & _IO_OWN_BUF) || !fp->buf || fp->buf_size < size) {
-    unsigned char *new_buf = malloc(size);
-    if (!new_buf) {
-      fp->flags &= ~(_IO_LINEBUF | _IO_FULLBUF);
-      fp->flags |= _IO_NOBUF;
-      return -1;
-    }
-    if (fp->flags & _IO_OWN_BUF) free(fp->buf);
-    fp->buf = new_buf;
-    fp->buf_size = size;
-    fp->flags |= _IO_OWN_BUF;
+  if (!(fp->flags & _IO_OWN_BUF)) {
+    fp->buf = (void *)0;
+    fp->buf_size = BUFSIZ;
   }
   return 0;
 }
