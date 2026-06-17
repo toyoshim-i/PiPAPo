@@ -94,6 +94,14 @@ layout used by timer and syscall paths.
 or trap return but not enough for an immediate thread-context yield, which is
 why `arch_sched_switch()` uses TRAP #1.
 
+TRAP #1 can be entered from either user mode or supervisor mode.  In
+particular, a blocking syscall such as `vfork()` calls `sched_switch()` while
+already running in the kernel, so the TRAP #1 frame resumes supervisor-mode
+syscall code rather than user code.  m68k vfork parent-frame restoration must
+therefore check the saved SR and run only for user-mode `rte` frames; otherwise
+a kernel-mode cooperative switch can consume the saved parent stack slot before
+the syscall epilogue reaches the real user-mode return.
+
 ## RISC-V
 
 RISC-V uses a trap-frame switch.  Trap entry swaps `sp` with `mscratch` to get
@@ -169,6 +177,12 @@ frame.  The corruption is data-dependent and hard to reproduce: i16 was
 bitten by exactly this during PC/XT bring-up when only the syscall-trap
 path was wired and the timer path popped junk.  Treat resume-path coverage
 as a release-blocker checklist, not an afterthought.
+
+The restore site must also be the final user-mode return, not merely any
+context-switch return.  On m68k, `sched_switch()` itself is implemented with
+TRAP #1 and may return to supervisor-mode syscall code.  The m68k restore
+helper receives the saved register frame and skips frames whose SR has the
+supervisor bit set.
 
 ### Per-arch hook contract
 

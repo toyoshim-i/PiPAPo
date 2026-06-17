@@ -90,5 +90,6 @@ static inline page_id_t arch_user_ptr_to_page(page_id_t base_page,
 struct pcb;
 void m68k_vfork_save_parent_frame(struct pcb *parent);
 void m68k_vfork_restore_frame(void);
+void m68k_vfork_restore_frame_if_user(uint32_t *regs);
 
 #endif /* PPAP_ARCH_M68K_KERNEL_CORE_ARCH_H */

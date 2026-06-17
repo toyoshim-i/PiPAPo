@@ -262,3 +262,13 @@ void m68k_vfork_restore_frame(void) {
   p->vfork_frame_saved = 0;
   *(volatile uint32_t *)(uintptr_t)p->usp = p->vfork_saved_ra;
 }
+
+void m68k_vfork_restore_frame_if_user(uint32_t *regs) {
+  uint16_t sr = *(uint16_t *)((uint8_t *)regs + 60);
+
+  /* Kernel sched_switch() also returns through TRAP #1.  Restoring there
+   * would consume the saved parent slot before the syscall epilogue makes
+   * the actual user-mode return. */
+  if (sr & SR_SUPERVISOR) return;
+  m68k_vfork_restore_frame();
+}

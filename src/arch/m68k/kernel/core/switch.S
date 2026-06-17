@@ -84,8 +84,11 @@ m68k_trap1_handler:
 
     jsr     m68k_ctx_switch
 
-    | Restore a blocked vfork parent's saved resume frame before user return.
-    jsr     m68k_vfork_restore_frame
+    | Restore a blocked vfork parent's saved frame only on user return.
+    move.l  %sp,%d0
+    move.l  %d0,%sp@-
+    jsr     m68k_vfork_restore_frame_if_user
+    addq.l  #4,%sp
 
     | Restore all registers (a1 overwritten by movem from saved frame)
     movem.l %sp@+,%d0-%d7/%a0-%a6
@@ -120,7 +123,10 @@ m68k_trace_handler:
 
 .Ltrace_no_switch:
     | Restore vfork parent slice on every user-mode rte path.
-    jsr     m68k_vfork_restore_frame
+    move.l  %sp,%d0
+    move.l  %d0,%sp@-
+    jsr     m68k_vfork_restore_frame_if_user
+    addq.l  #4,%sp
 
     | Restore all registers and return from exception
     movem.l %sp@+,%d0-%d7/%a0-%a6
@@ -166,7 +172,10 @@ m68k_timer_isr:
     subq.w  #1,m68k_irq_depth
 
     | Restore vfork parent slice on every user-mode rte path.
-    jsr     m68k_vfork_restore_frame
+    move.l  %sp,%d0
+    move.l  %d0,%sp@-
+    jsr     m68k_vfork_restore_frame_if_user
+    addq.l  #4,%sp
 
     | Restore all registers
     movem.l %sp@+,%d0-%d7/%a0-%a6
