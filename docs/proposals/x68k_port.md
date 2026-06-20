@@ -113,8 +113,10 @@ scheduler calling a console function), the shared IOCS work area at
 0x000400-0x0007FF is corrupted, causing an address error crash at ROM
 0x00FF775E.
 
-**Mitigation:** All IOCS calls take the x68k IOCS guard, then mask only PPAP's
-Timer-C scheduler source at the MFP while lowering CPU IPL for the ROM trap.
+**Mitigation:** All IOCS calls take the x68k IOCS guard (a `kmutex_t` that
+serializes every process-context IOCS user — TVRAM, serial, keyboard, and
+floppy `_B_READ`), then mask only PPAP's Timer-C scheduler source at the
+MFP while lowering CPU IPL for the ROM trap.
 This prevents scheduler re-entry into IOCS without blocking ROM-required
 interrupts such as SCC, VSYNC, and FDC.  The display input poll uses
 `uart_rx_avail_hw()` to read the MFP USART RSR register directly (0xE8802B bit
@@ -135,6 +137,8 @@ IOCS calls used by PPAP kernel:
 | `_B_CLR_ED` | 0x23 | Clear from cursor to end of screen |
 | `_B_CLR_AL` | 0x19 | Clear current line from cursor |
 | `_B_READ` | 0x46 | Read floppy sectors (CHS addressing) |
+| `_LOF232C` | 0x31 | RS-232C receive buffer count (input poll) |
+| `_INP232C` | 0x32 | Read one character from RS-232C serial |
 | `_OUT232C` | 0x35 | Write one character to RS-232C serial |
 
 ### 3.4 MFP (MC68901) Register Map
@@ -231,8 +235,10 @@ halts (`stop #0x2700`).
 **Size limit:** 3072 bytes (three floppy sectors).
 **Language:** C (compiled with `-m68000 -nostdlib -ffreestanding`).
 
-Stage2 implements a minimal UFS parser sufficient to load two files from
-the floppy's UFS partition.
+Stage2 implements a minimal 44bsd UFS (FFS1) parser sufficient to load
+`/boot/kernel` from the floppy's single UFS partition (sector 4+).  The
+same UFS is later mounted live as the rootfs by the kernel via `iocs_blk`,
+so stage2 does **not** load any in-RAM rootfs image.
 
 #### System work areas that must NOT be touched
 
@@ -250,42 +256,33 @@ buffer, safely above all system work areas.
 
 ```
 Stage2 execution flow:
-  1. Read UFS superblock (block 0 -> BUF at 0x003C00)
+  1. Read UFS superblock (fragment 16 = byte 8192 -> BUF at 0x003C00)
   2. Diagnostic: IOCS _B_PUTC "PA" (after first _B_READ, not before)
-  3. Validate UFS magic (0x55465331)
-  4. Read inode table block -> BUF; extract root inode (inode 1)
-  5. Walk root directory -> find "boot" directory inode
-  6. Walk boot/ directory -> find "kernel" and "rootfs.ufs" inodes
-  7. Load kernel to 0x006000 (KERNEL_LOAD_ADDR)
-     - Direct blocks (up to 10 x 4 KB = 40 KB)
-     - Single indirect block (for files > 40 KB)
-  8. Load rootfs.ufs to ROOTFS_BASE (= __page_pool_start from kernel ELF)
-  9. Write handoff record:
-     - 0x002FF4: 'RAMD' magic (0x52414D44)
-     - 0x002FF8: rootfs RAM address
-     - 0x002FFC: rootfs size in bytes
- 10. stage2_final():
+  3. Validate 44bsd UFS magic (0x00011954) at SB offset 1372
+  4. Read inode-table start fragment (fs_iblkno, SB offset 16)
+  5. Read root inode (inode 2); walk root directory -> "boot" inode
+  6. Walk boot/ directory -> find "kernel" inode
+  7. Load /boot/kernel to 0x006000 (KERNEL_LOAD_ADDR)
+     - Direct blocks (up to 12 x 4 KB = 48 KB)
+     - Single indirect block (kernel is ~120 KB)
+  8. Write completion handoff:
+     - 0x002FF4: 'RAMD' magic (0x52414D44) -- "stage2 ran to completion"
+     There is no rootfs address/size: the kernel mounts the same floppy
+     UFS live via iocs_blk, so nothing is staged in RAM.
+  9. stage2_final():
      a. Raise IPL to 7 (mask all interrupts)
-     b. Save IPL ROM handlers:
-        - iocs_handler = *(uint32_t *)0x002FF0  (saved by stage1)
-        - kbd_handler  = vector[74]  (MFP USART RX = keyboard)
+     b. Save IPL ROM handlers BEFORE the vector copy overwrites them:
+        - iocs_handler = *(uint32_t *)0x002FF0  (vector 47, saved by stage1)
+        - autovectors 24-31, MFP vectored 64-79, DMAC NIV/EIV 80-127
      c. Copy 256 longwords from 0x006000 to 0x000000 (kernel vector table)
-     d. Restore preserved vectors:
-        - vector[47] = iocs_handler  (TRAP #15: IOCS dispatch)
-        - vector[74] = kbd_handler   (MFP ch.10: USART RX buffer full)
+     d. Restore the preserved IPL ROM vectors (47, 24-31, 64-79, 80-127)
+        so IOCS, keyboard, timers, and the FDC/DMAC keep working
      e. jmp 0x006400 (Reset_Handler)
 ```
 
 The diagnostic banner is split across the boot chain: Stage1 prints "Pi",
 Stage2 prints "PA", and the kernel prints "Po" + " booting..." to spell
 "PiPAPo booting...".
-
-#### ROOTFS_BASE calculation
-
-`mkx68kimg.sh` reads `__page_pool_start` from the kernel ELF and passes
-it via `-DROOTFS_BASE=0x...u` when compiling stage2.  This ensures the
-rootfs image lands above the kernel BSS (which `Reset_Handler` zeros at
-boot before the kernel can read the rootfs).
 
 #### IOCS stack corruption workaround
 
@@ -297,16 +294,20 @@ reading from corrupted memory.
 
 ### 4.4 Vector Patching Strategy
 
-Stage2 performs a selective vector table replacement:
+Stage2 performs a selective vector table replacement.  IOCS depends on a
+range of IPL ROM vectors, so all of them are preserved across the copy:
 
 1. **Save** vector 47 (TRAP #15 / IOCS) from stage1's handoff at 0x002FF0.
-2. **Save** vector 74 (MFP USART RX / keyboard) from the live vector table.
+2. **Save** the live IPL ROM vectors that IOCS, the FDC/DMAC, and the
+   keyboard rely on: autovectors 24-31, MFP vectored interrupts 64-79
+   (vector 74 = MFP USART RX / keyboard), and the DMAC NIV/EIV window
+   80-127.
 3. **Copy** all 256 entries (1 KB) from the kernel binary at 0x006000 to
    the RAM vector table at 0x000000.
-4. **Restore** vector 47 (IOCS dispatch) and vector 74 (keyboard input).
+4. **Restore** vector 47 and the saved ranges (24-31, 64-79, 80-127).
 
-After this step, all PPAP exception handlers are live while IOCS and
-keyboard input remain functional.
+After this step, all PPAP exception handlers are live while IOCS,
+keyboard input, and the floppy block path remain functional.
 
 The kernel's `target_early_init()` in `target_x68k.c` performs additional
 patching:
@@ -345,12 +346,15 @@ Address Range       Size        Contents
 0x000400-0x005FFF   22.75 KB    Freed boot area -> page pool
 0x006000-0x0063FF   1 KB        Kernel .vectors (reused as SSP headroom)
 0x006400-~0x02xxxx  ~120 KB     Kernel .text + .rodata + .data + .bss
-~0x02xxxx           (aligned)   __page_pool_start (rootfs.ufs loaded here)
-~0x02xxxx+rootfs    ...         Page pool start (after rootfs reservation)
-...                 ...         Free pages for user processes
+~0x02xxxx           (aligned)   __page_pool_start
+~0x02xxxx           ...         Free pages for user processes
 0x0FFFFF            ...         End of 1 MB main RAM
 0x100000-0xBFFFFF   (optional)  Extended RAM (up to 11 MB)
 ```
+
+The rootfs is **not** staged in RAM: it is read live from the floppy via
+`iocs_blk`, so the page pool begins immediately at `__page_pool_start`
+with no rootfs reservation.  This saves ~1 MB on a base 1 MB machine.
 
 #### Supervisor stack
 
@@ -360,39 +364,42 @@ which was already copied to 0x000000 and is no longer needed) and into
 the freed boot area (0x000400-0x005FFF), giving approximately **23.75 KB**
 of supervisor stack space -- far more than needed.
 
-#### Rootfs RAM image
+#### Rootfs mount
 
-Stage2 loads `boot/rootfs.ufs` to `__page_pool_start`.  The kernel
-validates the UFS magic at that address and computes the size from the
-superblock (`block_count * block_size`).  Pages underlying the rootfs
-image are reserved via `page_alloc_at()` so the allocator never hands
-them out.  The rootfs is mounted read-only as `/` via `flatblk`.
+There is no in-RAM rootfs image.  `target_mount_rootfs()` mounts the same
+44bsd UFS that stage2 booted from as `/` via `iocs_blk` ("fd0"), backed by
+IOCS `_B_READ`.  The driver is currently **read-only**: `iocs_blk_write()`
+returns `-EIO` (the `_B_WRITE` path is not yet wired), so writes to the
+rootfs fail.  The device is registered with `BLKDEV_F_NOCACHE` so it
+bypasses the generic block sector cache, whose boot-time probing disturbs
+the IOCS firmware path.  See §5 for the on-disk layout.
 
 ---
 
 ## 5. Floppy Disk Layout
 
-### 5.1 Outer UFS Structure
+### 5.1 Disk Structure
 
-The floppy is formatted as a two-level UFS image built by `mkx68kimg.sh`:
+The floppy holds the two boot stages followed by a single 44bsd UFS,
+built by `scripts/mkx68kimg.sh`:
 
 ```
 Offset     Size    Contents
 0 KB       1 KB    Boot sector (Stage1 -- IPL ROM loads to 0x002000)
 1 KB       3 KB    Stage2 UFS loader (loaded by Stage1 to 0x003000)
-4 KB       ...     Outer UFS filesystem (contains boot/ and romfs files)
+4 KB       ...     44bsd UFS filesystem (root fs: boot/ + userland)
 ```
 
-The outer UFS contains:
-- `boot/kernel` -- flat binary kernel image
-- `boot/rootfs.ufs` -- inner UFS image (the actual root filesystem)
+There is no inner/outer split: the one UFS at sector 4 is both what
+stage2 reads `/boot/kernel` from and what the kernel mounts live as `/`.
 
-### 5.2 Inner rootfs.ufs
+### 5.2 Root UFS Contents
 
-The inner UFS image is built by `mkufs` with `BIG_ENDIAN` mode (m68k is
-big-endian).  It contains the complete root filesystem:
+The UFS image is built by `mkufs` with `BIG_ENDIAN` mode (m68k is
+big-endian).  It holds the kernel plus the complete root filesystem:
 
 ```
+/boot/kernel            Flat binary kernel image (loaded by stage2)
 /sbin/init              First userland process
 /bin/sh -> push         Shell (symlink to PPAP push)
 /bin/runtests           On-target test runner
@@ -409,13 +416,15 @@ bytes on disk without byte-order corruption.
 ### 5.3 Build Configuration
 
 ```cmake
-ppap_generate_romfs(ppap_x68k BIG_ENDIAN
+ppap_generate_romfs(ppap_x68k BIG_ENDIAN NO_ROGUE
     OVERLAY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/romfs
     EXCLUDE_APPS hello trace pdb)
 ```
 
-The `EXCLUDE_APPS` list keeps the image small for floppy capacity.
-The `OVERLAY_DIR` adds x68k-specific files like `/etc/profile`.
+`NO_ROGUE` and the `EXCLUDE_APPS` list keep the image small for floppy
+capacity.  The `OVERLAY_DIR` adds x68k-specific files like `/etc/profile`.
+`mkx68kimg.sh` then copies this staging tree plus the kernel binary (as
+`/boot/kernel`) into one 44bsd UFS at sector 4.
 
 ### 5.4 Floppy geometry
 
@@ -677,6 +686,15 @@ the actual parent resume word is the justified baseline.  A wider restore
 can hide the x68k symptom, but it does not explain why the parent would
 legitimately depend on child call-frame or child-local stack contents.
 
+**Restore only on user-mode returns.**  m68k `sched_switch` uses TRAP #1
+for both user-mode cooperative yields and supervisor-mode blocking
+switches.  Restoring the saved vfork parent word on *every* TRAP #1 return
+consumes it too early — while returning to kernel syscall code, before the
+final user-mode `rte` reaches init's `vfork()` caller frame.  A helper
+inspects the saved SR in the m68k register frame and skips parent-frame
+restoration for supervisor-mode returns; the TRAP #1, trace, and timer
+return sites all route through it.
+
 If x68k fails while `qemu_m68k` works with the minimal restore, investigate
 x68k-specific state instead: IOCS/display handoff, serial getty behavior,
 memory pressure, interrupt/exception return paths, or emulator/hardware
@@ -763,18 +781,19 @@ default environment to suppress any such probe.
 ### Phase X-3: Stage1/Stage2 Bootstrap and Floppy Image -- COMPLETE
 
 - `src/target/x68k/boot/stage1.S`: IPL bootstrap with BPB
-- `src/target/x68k/boot/stage2.c`: UFS kernel + rootfs loader in C
-- `tools/mkx68kimg/mkx68kimg.sh`: floppy image build tool
+- `src/target/x68k/boot/stage2.c`: UFS kernel loader in C
+- `scripts/mkx68kimg.sh`: floppy image build tool
 - `tools/mkufs/mkufs.c`: UFS image creator with big-endian symlink support
-- Rootfs loaded to RAM, mounted as `/` via flatblk
+- Rootfs originally loaded to RAM and mounted via flatblk; superseded by
+  the live `iocs_blk` mount in Phase X-5 (see below)
 - Keyboard vector preservation (vector 74)
-- IOCS reentrancy protection (IPL7 wrappers)
+- IOCS reentrancy protection (kmutex guard + Timer-C masking; see §3.3)
 - Direct MFP USART RSR polling for input availability
 
 ### Phase X-4: Integration Tests on Emulator -- IN PROGRESS
 
 - Shell launches and runs interactively on XEiJ emulator
-- 19 tests pass on m68k (qemu_m68k)
+- 25 tests pass on m68k (qemu_m68k) — latest verified count
 - XEiJ serial-over-TCP for automated test capture (`scripts/run_xeij_tcp.sh`)
 - Remaining: automated `runtests` on XEiJ
 
@@ -788,7 +807,11 @@ the kernel mounts the same UFS as `/` via `iocs_blk` ("fd0").
 Outcomes:
 
 - Saves ~1 MB of RAM on the base 1 MB X68000 (no in-RAM rootfs copy).
-- Rootfs is writable (writes go straight to floppy).
+- Rootfs is read-only for now: `iocs_blk` implements the `_B_READ` path
+  only; `iocs_blk_write()` returns `-EIO` until `_B_WRITE` is wired.
+- `iocs_blk` registers with `BLKDEV_F_NOCACHE`, bypassing the generic
+  block sector cache because its IOCS firmware path is sensitive to the
+  cache's boot-time probing.
 - Two-level UFS image gone; `ROOTFS_BASE` / `__page_pool_start` handoff
   between `mkx68kimg.sh`, stage2, and the kernel is gone.
 - Phase X-7 (SCSI HDD) becomes a drop-in: a parallel `scsi_blk` driver
@@ -820,20 +843,21 @@ Key files: `src/target/x68k/kernel/vfs/driver/iocs_blk.{c,h}`,
 ### 10.2 Build Pipeline
 
 ```
-1. Build kernel        -> build/x68k/ppap_x68k (ELF)
-2. Build stage1        -> build/x68k/stage1.bin
-3. Build stage2        -> build/x68k/stage2.elf (with -DROOTFS_BASE)
-4. Build userland      -> build/x68k/romfs_ppap_x68k/
-5. mkufs (inner)       -> build/x68k/rootfs.ufs (big-endian)
-6. mkx68kimg (outer)   -> build/x68k/ppap_x68k.xdf (bootable floppy)
+1. Build kernel        -> build/x68k/ppap_x68k.bin (flat binary)
+2. Build userland      -> build/x68k/romfs_ppap_x68k/ (staging tree)
+3. mkx68kimg.sh:
+   a. Assemble stage1  -> stage1.bin (sector 0)
+   b. Compile stage2   -> stage2.bin (sectors 1-3)
+   c. mkufs (big-endian) over romfs staging + /boot/kernel -> one 44bsd UFS
+   d. Concatenate stages + UFS -> build/x68k/ppap_x68k.xdf (bootable floppy)
 ```
 
 ### 10.3 Test Results
 
 | Target | Tests Pass | Notes |
 |--------|-----------|-------|
-| qemu_m68k | 19 | Full suite |
-| qemu_arm | 17 | h68k_dos + x68k skipped (m68k-only) |
+| qemu_m68k | 25 | Full suite (latest verified) |
+| qemu_arm | 24 | h68k_dos + x68k skipped (m68k-only) |
 | x68k (XEiJ) | -- | Shell interactive, runtests pending |
 
 ---
@@ -847,10 +871,12 @@ src/target/x68k/
   target_x68k.c          Target hooks, vector patching, rootfs mount
   boot/
     stage1.S             IPL bootstrap (sector 0, <= 1024 bytes)
-    stage2.c             UFS kernel + rootfs loader (sectors 1-3)
+    stage2.c             44bsd UFS kernel loader (sectors 1-3)
   drivers/
     uart_x68k.c          IOCS console, VT100 converter, MFP polling
     timer_x68k.c         MFP Timer-C driver (100 Hz tick)
+  kernel/vfs/driver/
+    iocs_blk.c           IOCS _B_READ/_B_WRITE block device ("fd0")
   romfs/
     etc/profile          Shell startup (TERM=dumb, PS1, PATH)
 
@@ -864,8 +890,10 @@ src/arch/m68k/
 src/kernel/exec/
   exec.c                 ELF loader (XIP + non-XIP, GOT relocation)
 
+scripts/
+  mkx68kimg.sh           Floppy image build tool (stages + single UFS)
+
 tools/
-  mkx68kimg/mkx68kimg.sh Floppy image build tool
   mkufs/mkufs.c          UFS image creator (big-endian support)
 ```
 
@@ -892,9 +920,9 @@ leaving ~164 sectors (~164 KB) of headroom.
 
 SCSI HDD support would remove the floppy capacity constraint and enable
 running with eCPU and CP/M enabled.  Requires implementing `scsi_x68k.c`
-for the MB89352A SCSI controller.  This becomes a drop-in once Phase X-5
-(live IOCS block device) lands -- the same `blkdev_t` interface accepts
-either an IOCS-floppy backend or a SCSI backend.
+for the MB89352A SCSI controller.  Now that Phase X-5 (live IOCS block
+device) has landed, this is a drop-in -- the same `blkdev_t` interface
+accepts either the IOCS-floppy backend or a SCSI backend.
 
 ---
 

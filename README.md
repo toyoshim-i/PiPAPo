@@ -26,7 +26,7 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 | `pico2` | Raspberry Pi Pico 2 | ARM Cortex-M33 | Dual-core @ 150 MHz | 520 KB | Stable |
 | `pico2rv` | Raspberry Pi Pico 2 | RISC-V Hazard3 | RV32IMAC @ 150 MHz | 520 KB | Stable |
 | `qemu_rv32` | QEMU virt rv32 | RISC-V | RV32IMAC | 1 MB | Kernel 69/87, user partial |
-| `qemu_m68k` | QEMU virt m68k | Motorola 68000 | m68000 | Up to 16 MB | 19/19 tests |
+| `qemu_m68k` | QEMU virt m68k | Motorola 68000 | m68000 | Up to 16 MB | 25/25 tests |
 | `x68k` | XEiJ emulator | Motorola 68000 | m68000 @ 10 MHz | 2+ MB | Boots to scheduler |
 | `xtensa_cc` | M5Stack CardComputer | Xtensa LX7 | ESP32-S3 @ 240 MHz | 512 KB | Boots, user-space WIP |
 | `pcxt` | QEMU / DOSBox-X | Intel 8086 | i8086 real mode | 640 KB | Almost stable |
