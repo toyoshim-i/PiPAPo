@@ -113,11 +113,15 @@ scheduler calling a console function), the shared IOCS work area at
 0x000400-0x0007FF is corrupted, causing an address error crash at ROM
 0x00FF775E.
 
-**Mitigation:** All IOCS calls in `uart_x68k.c` are wrapped with
-`ipl7_save()`/`ipl7_restore()` to raise IPL to 7 before entry, preventing
-timer ISR preemption.  The scheduler's input poll callback uses
-`uart_rx_avail_hw()` which reads the MFP USART RSR register directly
-(0xE8802B bit 7) instead of calling `_B_KEYSNS`.
+**Mitigation:** All IOCS calls take the x68k IOCS guard, then mask only PPAP's
+Timer-C scheduler source at the MFP while lowering CPU IPL for the ROM trap.
+This prevents scheduler re-entry into IOCS without blocking ROM-required
+interrupts such as SCC, VSYNC, and FDC.  The display input poll uses
+`uart_rx_avail_hw()` to read the MFP USART RSR register directly (0xE8802B bit
+7) instead of calling `_B_KEYSNS`.  The serial input poll calls IOCS
+`_LOF232C` only from idle thread context after taking the x68k IOCS guard, so
+it observes the ROM receive buffer filled by the SCC interrupt path without
+blocking or re-entering IOCS.
 
 IOCS calls used by PPAP kernel:
 
@@ -678,6 +682,12 @@ x68k-specific state instead: IOCS/display handoff, serial getty behavior,
 memory pressure, interrupt/exception return paths, or emulator/hardware
 I/O side effects.  Keep any wider stack dump as diagnostic instrumentation
 only until the exact writer and the exact consumed word are proven.
+
+Current console status: tty1 reached the display shell prompt in earlier WIP
+runs, but recent repro attempts still show slow or missing prompt behavior.
+Serial output through XEiJ TCP/AUX is visible.  Serial input is now being
+tested through the ROM receive buffer path (`_LOF232C`/`_INP232C`) instead of
+raw SCC polling because the ROM SCC interrupt handler may consume RR0 first.
 
 ---
 

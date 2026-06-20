@@ -44,12 +44,6 @@
 static uint8_t cache_buf[FLOPPY_SEC_BYTES] __attribute__((aligned(4)));
 static uint32_t cache_phys_lba = CACHE_PHYS_NONE;
 
-/* MFP IMRB bit 5 = Timer-C source.  Masking it at the MFP keeps the
- * scheduler-tick ISR (vector 69) from preempting an in-flight _B_READ
- * without raising CPU IPL above the FDC level. */
-#define MFP_IMRB_ADDR 0xE88015u
-#define MFP_TC_BIT 0x20u
-
 /* Read one 1024-byte physical sector into `dest` via IOCS _B_READ.
  *
  * IPL handling: the X68000 kernel runs at IPL=7 from reset until
@@ -68,18 +62,7 @@ static int iocs_read_phys(uint32_t lba, void *dest) {
   uint32_t d2_val = (SEC_LEN_CODE << 24) | (cyl << 16) | (head << 8) | sec;
 
   x68k_iocs_enter();
-
-  volatile uint8_t *imrb = (volatile uint8_t *)MFP_IMRB_ADDR;
-  uint8_t saved_imrb = *imrb;
-  *imrb = (uint8_t)(saved_imrb & (uint8_t)~MFP_TC_BIT);
-
-  uint16_t saved_sr;
-  asm volatile(
-      "move.w %%sr,%0\n\t"
-      "andi.w #0xF8FF,%%sr"
-      : "=d"(saved_sr)
-      :
-      : "memory");
+  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
 
   register uint32_t d0 asm("d0") = IOCS_B_READ;
   register uint32_t d1 asm("d1") = (FDC_PDA << 8) | FDC_MODE;
@@ -91,8 +74,7 @@ static int iocs_read_phys(uint32_t lba, void *dest) {
                : "r"(d1), "r"(d2), "r"(d3), "r"(a1)
                : "a0", "memory");
 
-  asm volatile("move.w %0,%%sr" : : "d"(saved_sr) : "memory");
-  *imrb = saved_imrb;
+  x68k_iocs_irq_end(irq);
   x68k_iocs_exit();
 
   /* d0 returns FDC status: negative = error, 0 = success. */

@@ -26,7 +26,7 @@ Init spawns `/bin/sh` on tty1 (auto-login, no prompt) and
   │ TTY_DISPLAY (tty1)        │ TTY_SERIAL (ttyS0)
   │ uart_putc  (IOCS _B_PUTC) │ uart_serial_putc  (IOCS _OUT232C)
   │ uart_getc  (IOCS _B_GETC) │ uart_serial_getc  (IOCS _INP232C)
-  │ uart_rx_avail (_B_KEYSNS) │ uart_serial_rx_avail (_ISNS232C)
+  │ uart_rx_avail (_B_KEYSNS) │ uart_serial_rx_avail (IOCS _LOF232C)
   └───────────────────────────┘
 ```
 
@@ -40,8 +40,9 @@ All console I/O goes through X68000 IOCS calls (`TRAP #15`), which are
 the IPL ROM's standard API for hardware access.  This has implications:
 
 1. **Non-reentrancy**: IOCS functions share work areas in low RAM
-   ($0400–$0FFF).  All IOCS calls are wrapped with `ipl7_save()`/
-   `ipl7_restore()` to prevent preemption by the Timer-C ISR.
+   ($0400–$0FFF).  IOCS calls take the x68k IOCS guard and mask only PPAP's
+   Timer-C scheduler interrupt at the MFP.  CPU IPL is lowered for the ROM trap
+   so SCC/VSYNC/FDC interrupts that IOCS depends on can still run.
 
 2. **Vector preservation**: Stage2 copies the kernel's `.vectors` to
    address 0, but must save and restore the IPL ROM's interrupt handlers:
@@ -60,22 +61,25 @@ the IPL ROM's standard API for hardware access.  This has implications:
 
 ## Input Polling
 
-IOCS functions cannot be called from ISR or idle-loop context (they hang
-or crash due to reentrancy and internal blocking).  Input availability is
-polled using direct hardware register reads:
+IOCS functions cannot be called from ISR context or re-entered while another
+process is inside IOCS.  Display-keyboard availability is polled with a direct
+hardware status read.  Serial availability uses `_LOF232C` only from idle
+thread context after taking the x68k IOCS guard, so it observes the ROM receive
+buffer without blocking.
 
 | TTY       | Poll function             | What it reads                        |
 |-----------|---------------------------|--------------------------------------|
 | tty1      | `uart_rx_avail_hw()`      | MFP USART RSR bit 7 at $E8802B      |
-| ttyS0     | `uart_serial_rx_avail_hw()` | SCC ch.B RR0 bit 0 at $E98001     |
+| ttyS0     | `uart_serial_rx_avail_idle()` | IOCS `_LOF232C` receive count    |
 
 The timer ISR sets `input_poll_due` every 20 ms.  The idle loop calls
 `sched_display_poll()`, which runs the poll functions and calls
 `tty_rx_notify()` to wake blocked readers.
 
-Actual character reads (when a process calls `read()`) use the IOCS
-wrappers (`_B_KEYSNS`/`_B_GETC` for keyboard, `_ISNS232C`/`_INP232C`
-for serial), which are safe in process context with IPL guarding.
+Actual display-keyboard reads (when a process calls `read()`) use the IOCS
+wrappers (`_B_KEYSNS`/`_B_GETC`), which are safe in process context with IPL
+guarding.  Serial reads use `_LOF232C` to confirm buffered input and then
+`_INP232C` to consume one byte from the ROM receive buffer.
 
 ## Preemptive Scheduling (Timer-C)
 
@@ -85,10 +89,11 @@ MFP Timer-C (vector 69) drives the 100 Hz scheduler tick.
 handler.  This means IPL ROM Timer-C functionality (cursor blink, key
 repeat timing) is lost.
 
-## Known Limitation: No Input
+## Known Limitation: Incomplete Input
 
-**Status**: Shell prompt appears on tty1, getty message appears on
-ttyS0, but keyboard and serial input do not work yet.
+**Status**: Shell prompt appears on tty1 in known-good WIP runs, but recent
+repro attempts still show slow or missing prompt behavior.  Serial output
+through XEiJ TCP/AUX is visible; serial input is under investigation.
 
 Possible causes under investigation:
 
@@ -98,11 +103,10 @@ Possible causes under investigation:
    correctly detects keystrokes, or whether `_B_KEYSNS`/`_B_GETC` work
    after Timer-C has been taken over.
 
-2. **Serial**: SCC channel B RR0 is polled for Rx availability.  IOCS
-   `_ISNS232C`/`_INP232C` are used for actual reads.  The SCC interrupt
-   handler (autovector 29, level 5) is preserved by stage2.  `_INP232C` is
-   function `0x32` and `_ISNS232C` is function `0x33` per the local XEiJ IOCS
-   definitions.
+2. **Serial**: The ROM SCC interrupt path may drain RR0 into its own receive
+   buffer before PPAP's idle poll sees the raw SCC status bit.  The current
+   driver polls `_LOF232C` and reads `_INP232C` instead of competing with the
+   ROM handler for SCC 1A data.
 
 3. **Timer-C takeover**: Replacing the IPL ROM's Timer-C handler may
    break internal IOCS timing that keyboard or serial subsystems depend

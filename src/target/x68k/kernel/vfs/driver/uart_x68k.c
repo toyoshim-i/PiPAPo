@@ -5,9 +5,9 @@
  * Stage2 preserves the IPL IOCS handler at vector 47 (TRAP #15), so all
  * IOCS function codes work transparently from supervisor mode.
  *
- * IMPORTANT: All IOCS calls are wrapped with ipl7_save/ipl7_restore to
- * prevent the MFP Timer-C ISR from preempting mid-call.  IOCS functions
- * are not reentrant — they use a shared work area in low RAM.
+ * IMPORTANT: All IOCS calls take the x68k IOCS guard and mask PPAP's Timer-C
+ * scheduler source while leaving the ROM's other required interrupts enabled.
+ * IOCS functions are not reentrant — they use a shared work area in low RAM.
  *
  * VT100 escape sequence converter:
  *   X68000 IOCS _B_PUTC has its own escape sequence parser that is NOT
@@ -25,8 +25,8 @@
  *   _B_CLRST   (d0=0x2A, d1.w=2)     Clear entire screen
  *   _B_CLRST   (d0=0x2A, d1.w=0)     Clear from cursor to end of screen
  *   _B_ERA_AL  (d0=0x2B)             Clear from cursor to end of line
+ *   _LOF232C   (d0=0x31)             RS-232C receive buffer count
  *   _INP232C   (d0=0x32)             Input one RS-232C serial character
- *   _ISNS232C  (d0=0x33)             RS-232C serial input status
  *   _OUT232C   (d0=0x35, d1.b=char)  Output one character to RS-232C serial
  */
 
@@ -268,6 +268,26 @@ static int vt_feed(char c) {
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
+/* ── RS-232C serial input via IOCS ─────────────────────────────────────────
+ *
+ * The ROM SCC interrupt path owns receive buffering.  Poll `_LOF232C` instead
+ * of SCC RR0 so idle wakeups see bytes already drained into the IOCS buffer.
+ * Call `_INP232C` only after `_LOF232C` reports data; `_INP232C` blocks when
+ * the ROM buffer is empty.
+ */
+
+static inline int iocs_lof232c(void) {
+  register int32_t d0 asm("d0") = 0x31;
+  asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
+  return d0;
+}
+
+static inline int iocs_inp232c(void) {
+  register int32_t d0 asm("d0") = 0x32;
+  asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
+  return d0;
+}
+
 void uart_init(void) {
   /* IOCS owns the display and serial hardware.  Do not clear TVRAM here:
    * that would wipe stage1/2's "PiPA" + the kernel's "Po" banner.
@@ -279,9 +299,9 @@ int uart_putc(char c, void (*notify)(void)) {
   (void)notify; /* IOCS is synchronous — putc never fails */
   if (uart_tvram_inhibit) return 1;
   x68k_iocs_enter();
-  uint16_t sr = ipl7_save();
+  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
   if (!vt_feed(c)) iocs_b_putc(c);
-  ipl7_restore(sr);
+  x68k_iocs_irq_end(irq);
   x68k_iocs_exit();
   return 1;
 }
@@ -290,25 +310,25 @@ int uart_serial_putc(char c, void (*notify)(void)) {
   (void)notify;
   if (uart_tvram_inhibit && x68k_iocs_held_by_current()) return 1;
   x68k_iocs_enter();
-  uint16_t sr = ipl7_save();
+  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
   if (c == '\n') iocs_out232c('\r');
   iocs_out232c(c);
-  ipl7_restore(sr);
+  x68k_iocs_irq_end(irq);
   x68k_iocs_exit();
   return 1;
 }
 
 int uart_getc(void) {
   x68k_iocs_enter();
-  uint16_t sr = ipl7_save();
+  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
   int avail = iocs_b_keysns();
   if (!avail) {
-    ipl7_restore(sr);
+    x68k_iocs_irq_end(irq);
     x68k_iocs_exit();
     return -1;
   }
   int c = iocs_b_getc();
-  ipl7_restore(sr);
+  x68k_iocs_irq_end(irq);
   x68k_iocs_exit();
   if (c > 0x7F) return -1;
   return c;
@@ -316,9 +336,9 @@ int uart_getc(void) {
 
 int uart_rx_avail(void) {
   x68k_iocs_enter();
-  uint16_t sr = ipl7_save();
+  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
   int r = iocs_b_keysns() ? 1 : 0;
-  ipl7_restore(sr);
+  x68k_iocs_irq_end(irq);
   x68k_iocs_exit();
   return r;
 }
@@ -327,9 +347,8 @@ int uart_rx_avail(void) {
  * uart_rx_avail_hw — non-IOCS keyboard availability check
  *
  * Reads the MFP USART RSR (Receiver Status Register) directly to detect
- * if a keyboard scan code is pending.  Used by the timer-ISR input poll
- * instead of uart_rx_avail() to avoid reentering IOCS (which is not
- * reentrant — _B_PUTC lowers IPL internally for VSYNC sync).
+ * if a keyboard scan code is pending.  Used by the idle input poll instead
+ * of uart_rx_avail() to avoid reentering IOCS.
  *
  * MFP USART RSR is at 0xE88001 + 21*2 = 0xE8802B (byte-wide, odd address).
  * Bit 7 (BF = Buffer Full) is set when a received byte is waiting.
@@ -339,31 +358,17 @@ int uart_rx_avail_hw(void) {
   return (*rsr & 0x80u) ? 1 : 0;
 }
 
-/* ── RS-232C serial input via IOCS ───────────────────────────────────────── */
-
-static inline int iocs_isns232c(void) {
-  register int32_t d0 asm("d0") = 0x33;
-  asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
-  return d0;
-}
-
-static inline int iocs_inp232c(void) {
-  register int32_t d0 asm("d0") = 0x32;
-  asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
-  return d0;
-}
-
 int uart_serial_getc(void) {
   x68k_iocs_enter();
-  uint16_t sr = ipl7_save();
-  int avail = iocs_isns232c();
-  if (!avail) {
-    ipl7_restore(sr);
+  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
+  int avail = iocs_lof232c();
+  if (avail <= 0) {
+    x68k_iocs_irq_end(irq);
     x68k_iocs_exit();
     return -1;
   }
   int c = iocs_inp232c();
-  ipl7_restore(sr);
+  x68k_iocs_irq_end(irq);
   x68k_iocs_exit();
   if (c > 0x7F) return -1;
   return c;
@@ -371,18 +376,18 @@ int uart_serial_getc(void) {
 
 int uart_serial_rx_avail(void) {
   x68k_iocs_enter();
-  uint16_t sr = ipl7_save();
-  int r = iocs_isns232c() ? 1 : 0;
-  ipl7_restore(sr);
+  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
+  int r = iocs_lof232c() > 0;
+  x68k_iocs_irq_end(irq);
   x68k_iocs_exit();
   return r;
 }
 
 int uart_serial_rx_avail_idle(void) {
   if (!x68k_iocs_try_enter()) return 0;
-  uint16_t sr = ipl7_save();
-  int r = iocs_isns232c() ? 1 : 0;
-  ipl7_restore(sr);
+  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
+  int r = iocs_lof232c() > 0;
+  x68k_iocs_irq_end(irq);
   x68k_iocs_exit();
   return r;
 }

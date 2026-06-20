@@ -141,9 +141,12 @@ reset button — negligible risk.
 
 ### IOCS Calls From Idle Thread
 
-Already mitigated: input polling uses direct hardware register reads
-(`uart_rx_avail_hw()` at 0x0812, `uart_serial_rx_avail_hw()` at SCC RR0).
-No IOCS TRAP #15 calls from idle or interrupt context.
+Display input polling uses a direct MFP USART status read, not IOCS.  Serial
+input polling uses IOCS `_LOF232C` while holding the x68k IOCS guard; this is
+nonblocking and observes the ROM receive buffer that the SCC interrupt path
+fills.  IOCS traps mask PPAP's Timer-C scheduler source at the MFP, but leave
+the ROM's other required interrupts enabled.  Serial reads then call
+`_INP232C` only after `_LOF232C` reports data.
 
 ---
 
