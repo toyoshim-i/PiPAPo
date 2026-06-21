@@ -102,6 +102,38 @@ therefore check the saved SR and run only for user-mode `rte` frames; otherwise
 a kernel-mode cooperative switch can consume the saved parent stack slot before
 the syscall epilogue reaches the real user-mode return.
 
+### Per-process stacks and the initial frame
+
+Because USP and SSP are physically separate, each m68k process owns **two**
+stack pages: a kernel stack (`p->stack_page`, the SSP target — exception
+frames, switch save area, syscall handling) and a user stack
+(`p->user_stack_page`, the USP target — argc/argv/envp/auxv and user calls).
+`execve()` allocates the SSP page **before** the data pages so a LIFO
+page-pool free does not block later `brk` expansion.
+
+`proc_setup_stack()` seeds a fresh process by building, on its kernel stack,
+exactly the frame the switch-restore tail pops — `d0-d7`, `a0-a6`, a 16-bit
+SR, and a 32-bit PC (15×4 + 2 + 4 = 66 bytes), with `pcb_t.sp` pointing at
+the saved `d0`.  Slot 13 (a5) is patched to the process GOT base (see
+[targets/m68k.md §6](../targets/m68k.md#got-relocation-and-the-a5-base-register)).
+The SR is `SR_USER` (S=0, IPL=0), so the restore tail
+(`movem.l %sp@+,%d0-%d7/%a0-%a6; rte`) pops the registers and then `rte`
+switches to user mode, making the hardware a7 the USP.  The same `movem`/`rte`
+shape is what the timer and TRAP #1 paths restore, so a fresh process and a
+preempted one resume identically.
+
+### Exec-restore protection
+
+There is a window in `execve()` between building the new exception frame and
+the trap-return path consuming it.  A timer ISR firing here would context-
+switch and save the kernel's current SSP over `current->sp`, destroying the
+freshly built frame.  A **PCB-local** `exec_restore_pending` flag guards it:
+`execve()` sets it (interrupts disabled) once the frame and GOT base are in
+place, the timer ISR skips the switch while it is set, and the trap-return
+`.Lexec_restore` path clears it after restoring the new context.  The flag
+lives in the PCB (not a CPU-global) so that init starting several getties in
+quick succession cannot let one process consume another's pending restore.
+
 ## RISC-V
 
 RISC-V uses a trap-frame switch.  Trap entry swaps `sp` with `mscratch` to get

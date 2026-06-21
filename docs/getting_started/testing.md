@@ -661,6 +661,24 @@ remaining entries fall into two buckets visible in the summary:
   unsupported), ELF32 parser n/a (pcxt uses elf16), arch-specific
   ptrace regsets, etc.
 
+### x68k (XEiJ) testing
+
+`x68k` does not run under QEMU; it boots the `.xdf` floppy under the XEiJ
+Java emulator. `./scripts/run.sh x68k` builds the floppy image and launches
+XEiJ, which routes its AUX serial port to TCP (port 54321) so kernel and
+serial-getty output appear on stdout for capture. `scripts/run_xeij_tcp.sh`
+drives that serial-over-TCP channel for automated capture.
+
+Status today is **startup-level**: a fresh packaged boot reaches scheduler
+startup, `init started`, and the serial getty prompt (see the `x68k` row in
+the results table above). Automated `runtests` on XEiJ is not yet wired —
+the m68k regression numbers come from `qemu_m68k`, which shares the kernel,
+syscall ABI, and native m68k `init` path. Remaining work toward a recorded
+`runtests` pass is tracked in
+[proposals/x68k_port.md](../proposals/x68k_port.md); the X68000 boot chain,
+IOCS console, and hardware details are in
+[targets/m68k.md §7](../targets/m68k.md#7-x68000-target-x68k).
+
 ### `run.sh --test-extended`
 
 Builds with `PPAP_TESTS=ON` and `PPAP_TESTS_EXTENDED=ON`, runs under QEMU
