@@ -103,6 +103,10 @@ static uintptr_t kstack_current_sp(void) {
   uintptr_t sp;
   __asm__ volatile("mov %0, sp" : "=r"(sp));
   return sp;
+#elif defined(__m68k__)
+  uintptr_t sp;
+  __asm__ volatile("move.l %%sp, %0" : "=r"(sp));
+  return sp;
 #else
   return current ? current->kernel_sp : 0u;
 #endif

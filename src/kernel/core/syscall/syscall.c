@@ -41,8 +41,8 @@ static long ia16_sign_extend_arg(long value) {
 }
 #endif
 
-#if defined(KSTACK_USAGE_TRACK) && \
-    (defined(__arm__) || defined(__thumb__) || defined(__ARM_ARCH))
+#if defined(KSTACK_USAGE_TRACK) && (defined(__arm__) || defined(__thumb__) || \
+                                    defined(__ARM_ARCH) || defined(__m68k__))
 #define SYSCALL_TRACK_KSTACK 1
 #endif
 
