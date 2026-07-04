@@ -35,11 +35,16 @@ function(ppap_m68k_target_common target)
     # Warnings: treat as errors for project code (third-party is built externally)
     target_compile_options(${target} PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter)
 
-    # Core kernel definitions
+    # Core kernel definitions.  PROC_KSTACK_SIZE defaults to 2 KB; a target
+    # may raise it by setting PPAP_M68K_KSTACK_SIZE before calling this (x68k
+    # needs more — IOCS ROM calls run on the process kstack).  A target that
+    # raises it must also enlarge its .kstack linker region to match.
+    if(NOT DEFINED PPAP_M68K_KSTACK_SIZE)
+        set(PPAP_M68K_KSTACK_SIZE 2048u)
+    endif()
     target_compile_definitions(${target} PRIVATE
         PPAP_KERNEL=1
-        # TODO: shrink to 1 KB after fixed-kstack high-water measurements.
-        PROC_KSTACK_SIZE=2048u
+        PROC_KSTACK_SIZE=${PPAP_M68K_KSTACK_SIZE}
     )
     ppap_target_default_init_path(${target})
     

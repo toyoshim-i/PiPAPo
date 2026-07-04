@@ -39,6 +39,15 @@ add_executable(ppap_x68k
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/driver/timer_x68k.c
 )
 
+# X68000 IOCS ROM calls run on the current process's kernel stack, and the
+# ROM's SCC/MFP/FDC interrupt frames nest on it while the IOCS guard holds
+# IPL=0; preemption adds the timer ISR frame on top.  The shared m68k 2 KB
+# default overruns into the adjacent kstack slot under IOCS-heavy workloads
+# (verified by kstack canary panics); 4 KB holds with margin.  Set before
+# the common setup applies PROC_KSTACK_SIZE, and keep in sync with the
+# .kstack region in x68k.ld = PROC_KSTACK_IDLE_SIZE +
+# (PROC_MAX-1) * PROC_KSTACK_SIZE.
+set(PPAP_M68K_KSTACK_SIZE 4096u)
 ppap_m68k_target_common(ppap_x68k)
 
 target_include_directories(ppap_x68k PRIVATE

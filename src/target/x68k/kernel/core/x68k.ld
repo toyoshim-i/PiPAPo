@@ -97,15 +97,17 @@ SECTIONS {
 
     /* ------------------------------------------------------------------
      * Per-process kernel stacks.  Slot 0 = 128 B (idle), slots 1..7
-     * = 2 KB each.  Total 128 + 7 * 2048 = 14464 bytes.  Must match
-     * PROC_KSTACK_IDLE_SIZE / PROC_KSTACK_SIZE / PROC_MAX in config.h
-     * and this target's compile definitions.  TODO: shrink to 1 KB after
-     * fixed-kstack high-water measurements.
+     * = 4 KB each.  Total 128 + 7 * 4096 = 28800 bytes.  Must match
+     * PROC_KSTACK_IDLE_SIZE / PROC_KSTACK_SIZE / PROC_MAX in config.h and
+     * this target's compile definitions (PROC_KSTACK_SIZE=4096).  The
+     * shared m68k 2 KB default overruns on x68k: IOCS ROM calls run on
+     * the process kstack and the ROM's interrupt frames nest on it under
+     * the IPL=0 IOCS guard.  See src/target/x68k/CMakeLists.txt.
      * ------------------------------------------------------------------ */
     .kstack (NOLOAD) : {
         . = ALIGN(4);
         __kstack_region_base = .;
-        . += 14464;
+        . += 28800;
         __kstack_region_end = .;
     } > RAM
 
