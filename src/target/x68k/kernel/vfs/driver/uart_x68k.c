@@ -19,8 +19,8 @@
  *
  * IOCS functions used:
  *   _B_PUTC    (d0=0x20, d1.w=char)  Output one character to TVRAM console
- *   _B_GETC    (d0=0x21)             Input one character (blocking)
- *   _B_KEYSNS  (d0=0x1C)             Keyboard sense (non-blocking)
+ *   _B_KEYINP  (d0=0x00)             Dequeue one key (blocks on empty ring)
+ *   _B_KEYSNS  (d0=0x01)             Key-ring sense (non-destructive)
  *   _B_LOCATE  (d0=0x23, d1.w=x, d2.w=y)  Set cursor position
  *   _B_CLRST   (d0=0x2A, d1.w=2)     Clear entire screen
  *   _B_CLRST   (d0=0x2A, d1.w=0)     Clear from cursor to end of screen
@@ -85,7 +85,12 @@ static inline int iocs_b_getc(void) {
 }
 
 static inline int iocs_b_keysns(void) {
-  register int32_t d0 asm("d0") = 0x04; /* _B_KEYSNS — non-blocking poll */
+  /* $01 = _B_KEYSNS: non-destructive sense of the IOCS key ring.  Returns 0
+   * when the ring is empty, nonzero when a key is queued.  _B_KEYSNS and
+   * _B_KEYINP operate on the same ring and the keyboard ISR only enqueues,
+   * so under the IOCS mutex "sense nonzero ⇒ _B_KEYINP returns without
+   * waiting" holds; uart_getc() depends on that to never block in ROM. */
+  register int32_t d0 asm("d0") = 0x01;
   asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
   return d0;
 }
@@ -344,18 +349,21 @@ int uart_rx_avail(void) {
 }
 
 /*
- * uart_rx_avail_hw — non-IOCS keyboard availability check
+ * uart_rx_avail_idle — keyboard availability check for the idle poll
  *
- * Reads the MFP USART RSR (Receiver Status Register) directly to detect
- * if a keyboard scan code is pending.  Used by the idle input poll instead
- * of uart_rx_avail() to avoid reentering IOCS.
- *
- * MFP USART RSR is at 0xE88001 + 21*2 = 0xE8802B (byte-wide, odd address).
- * Bit 7 (BF = Buffer Full) is set when a received byte is waiting.
+ * Senses the IOCS key ring, not the MFP USART directly: the ROM keyboard
+ * ISR drains the USART receive register into the ring within microseconds
+ * of a byte arriving, so a process-context poll of RSR bit 7 (Buffer Full)
+ * essentially never observes it.  Skips the poll (returns 0) when the IOCS
+ * mutex is busy; the next idle pass retries.
  */
-int uart_rx_avail_hw(void) {
-  volatile uint8_t *rsr = (volatile uint8_t *)(0xE88001u + 21u * 2u);
-  return (*rsr & 0x80u) ? 1 : 0;
+int uart_rx_avail_idle(void) {
+  if (!x68k_iocs_try_enter()) return 0;
+  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
+  int r = iocs_b_keysns() ? 1 : 0;
+  x68k_iocs_irq_end(irq);
+  x68k_iocs_exit();
+  return r;
 }
 
 int uart_serial_getc(void) {

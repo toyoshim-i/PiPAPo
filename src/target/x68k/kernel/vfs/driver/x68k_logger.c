@@ -43,9 +43,9 @@ void vfs_notify(int event) {
       break;
     }
     case VFS_EVENT_IDLE:
-      /* TVRAM keyboard can be sensed through the MFP directly.  Serial is
-       * IOCS-owned here, so idle only polls it when the IOCS mutex is free. */
-      if (uart_rx_avail_hw()) tty_rx_notify(TTY_DISPLAY);
+      /* Both inputs are IOCS-owned; the probes skip the poll when the
+       * IOCS mutex is busy and the next idle pass retries. */
+      if (uart_rx_avail_idle()) tty_rx_notify(TTY_DISPLAY);
       if (uart_serial_rx_avail_idle()) tty_rx_notify(TTY_SERIAL);
       break;
     case VFS_EVENT_CRASH_ENTER:

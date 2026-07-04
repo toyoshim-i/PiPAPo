@@ -20,8 +20,9 @@ int uart_serial_putc(char c, void (*notify)(void));
 int uart_serial_getc(void);
 int uart_serial_rx_avail(void);
 
-/* Availability checks used by the idle notifier. */
-int uart_rx_avail_hw(void); /* MFP USART RSR bit 7 */
+/* Availability checks used by the idle notifier.  Both sense via IOCS and
+ * return 0 without polling when the IOCS mutex is busy. */
+int uart_rx_avail_idle(void);
 int uart_serial_rx_avail_idle(void);
 
 #endif /* PPAP_TARGET_X68K_KERNEL_VFS_DRIVER_UART_X68K_H */
