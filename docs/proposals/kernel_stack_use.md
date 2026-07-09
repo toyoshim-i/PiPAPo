@@ -34,6 +34,11 @@ cleanup plan.
 - ARM-M targets use fixed per-process kernel-stack slots.
 - ARM-M user-process slots are currently 2 KB.
 - ia16 uses fixed 1 KB user-process kernel-stack slots.
+- m68k defaults to 2 KB; x68k raises it to 4 KB (`PPAP_M68K_KSTACK_SIZE`)
+  because IOCS ROM calls run on the current process's kernel stack and the
+  ROM's SCC/MFP/FDC interrupt frames nest on it under the IPL=0 IOCS guard.
+  2 KB overruns into the adjacent slot under IOCS-heavy load (proven by
+  kstack canary panics); do not shrink x68k below 4 KB without re-measuring.
 - Common PPAP syscall paths are not the main stack-risk area now.
 - Any remaining pressure is expected to be in subsystem bridges, host shims,
   loaders, or emulator-facing glue.

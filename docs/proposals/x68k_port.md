@@ -75,19 +75,37 @@ linked at the top.
 
 ### 3.1 UART RX / serial input (Phase X-4)
 
-Serial **output** through XEiJ TCP/AUX is reliable.  Serial **input** is
-the open item.
+Serial input now works.  The freeze that made the getty unresponsive was a
+**blocking IOCS call under the Timer-C mask**: `uart_getc()` sensed the
+keyboard with the wrong IOCS function (`$04`) and fell into the blocking
+`_B_KEYINP`, which spins in ROM with the scheduler tick masked — so
+preemption, `nanosleep`, the idle thread, and the idle-driven serial RX poll
+all stalled until a key was pressed.  Fixed by sensing with `$01`
+(`_B_KEYSNS`) and never issuing a blocking IOCS call under the guard.  Input
+is delivered by the idle poll (`_LOF232C` count → `_INP232C` read for serial;
+`_B_KEYSNS` for the display keyboard), both gated behind a non-blocking IOCS
+try-lock.  Root-cause detail in `inside_human.md` §13.7–13.8.
 
-- Input now polls the ROM receive buffer with IOCS `_LOF232C` (count) then
-  `_INP232C` (read), from idle-thread context under the IOCS guard, instead
-  of polling raw SCC status — the ROM SCC interrupt handler may consume RR0
-  first.  This path is still under investigation.
-- Display keyboard input works in manual testing; the display shell prompt
-  was reached in earlier WIP runs but recent repros show slow or missing
-  prompt behavior, so it is not yet a stable recorded pass.
-- Next: confirm the ROM-buffer input path delivers characters reliably to
-  the serial getty, then promote the display/serial shell to a recorded
-  pass.
+Remaining sub-items:
+
+- **Drop the Timer-C MFP mask from the IOCS guard.** The mask
+  (`x68k_iocs_irq_begin()`) predates the IOCS kmutex; the kmutex already
+  serializes all process-context IOCS, the tick ISR never enters IOCS, and
+  `kmutex_lock` panics on IRQ-context use — so the extra MFP mask is likely
+  redundant with the kmutex and is exactly what lets one blocking call freeze
+  the scheduler.  Removing it also keeps the tick alive through long IOCS
+  calls (floppy `_B_READ`).  Verify the tick still cannot re-enter IOCS, then
+  drop it.  Note §3.4's `_B_WRITE` path shares this guard.  While here, audit
+  every IOCS call site under the guard for other potentially-blocking calls
+  (the invariant in `inside_human.md` §13.7 forbids them).
+- **Flaky `kill`-getty SIGBUS.** Killing the serial getty has intermittently
+  raised SIGBUS in the m68k wake/signal path.  Re-check now that the
+  scheduler is healthy; may share a cause with the (fixed) freeze or be
+  independent.
+- **Display keyboard + real-hardware confirmation.** Serial input is verified
+  headlessly on XEiJ; the physical TVRAM-console keyboard path uses the same
+  wake mechanism but is only confirmable interactively (and on real hardware,
+  §3.7).  Promote to a recorded pass once §3.6's XEiJ automation lands.
 
 ### 3.2 TVRAM color (SGR) escape support
 
