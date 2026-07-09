@@ -27,7 +27,7 @@ A portable UNIX-like micro OS for bare-metal microcontrollers and retro CPUs.
 | `pico2rv` | Raspberry Pi Pico 2 | RISC-V Hazard3 | RV32IMAC @ 150 MHz | 520 KB | Stable |
 | `qemu_rv32` | QEMU virt rv32 | RISC-V | RV32IMAC | 1 MB | Kernel 69/87, user partial |
 | `qemu_m68k` | QEMU virt m68k | Motorola 68000 | m68000 | Up to 16 MB | 25/25 tests |
-| `x68k` | XEiJ emulator | Motorola 68000 | m68000 @ 10 MHz | 2+ MB | Boots to scheduler |
+| `x68k` | XEiJ emulator | Motorola 68000 | m68000 @ 10 MHz | 2+ MB | Interactive shell |
 | `xtensa_cc` | M5Stack CardComputer | Xtensa LX7 | ESP32-S3 @ 240 MHz | 512 KB | Boots, user-space WIP |
 | `pcxt` | QEMU / DOSBox-X | Intel 8086 | i8086 real mode | 640 KB | Almost stable |
 
@@ -53,7 +53,7 @@ On i16 (PC/XT), the kernel is split into separate code-segment modules (core + V
 - **SD card disabled** — SD/VFAT support is tentatively disabled in the current build
 - **RISC-V trace tool** — vfork in the trace tool crashes (context switch issue); see [docs/targets/rv32.md](/docs/targets/rv32.md)
 - **Xtensa port WIP** — CardComputer (ESP32-S3) boots, romfs mounts, PID 1 loads; user-space write() output not yet visible; see [docs/targets/xtensa.md](/docs/targets/xtensa.md)
-- **X68000 port WIP** — boots to scheduler under XEiJ; user-space and Human68k subsystem still in progress
+- **X68000 port WIP** — runs an interactive shell on both the TVRAM/keyboard and serial consoles under XEiJ (user-space and Human68k subsystem work); automated test pass and real-hardware bring-up still pending; see [docs/proposals/x68k_port.md](/docs/proposals/x68k_port.md)
 
 ## Future Work
 

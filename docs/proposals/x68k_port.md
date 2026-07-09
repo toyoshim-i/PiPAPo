@@ -102,10 +102,10 @@ Remaining sub-items:
   raised SIGBUS in the m68k wake/signal path.  Re-check now that the
   scheduler is healthy; may share a cause with the (fixed) freeze or be
   independent.
-- **Display keyboard + real-hardware confirmation.** Serial input is verified
-  headlessly on XEiJ; the physical TVRAM-console keyboard path uses the same
-  wake mechanism but is only confirmable interactively (and on real hardware,
-  §3.7).  Promote to a recorded pass once §3.6's XEiJ automation lands.
+- **Recorded pass + real-hardware confirmation.** Both consoles are
+  interactive on XEiJ — the TVRAM/keyboard shell and the serial getty (the
+  latter verified headlessly).  What remains is an automated recorded pass
+  (§3.6) and real-hardware bring-up (§3.7).
 
 ### 3.2 TVRAM color (SGR) escape support
 
