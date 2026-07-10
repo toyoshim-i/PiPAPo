@@ -65,9 +65,9 @@ A bootable PPAP system on the Sharp X68000 that:
 | X-7 | SCSI HDD and extended features | ⬜ Planned |
 
 The boot chain, console, scheduler, ELF loader, Human68k subsystem, and
-live UFS rootfs all work on XEiJ.  Boot reaches scheduler startup, `init
-started`, and the serial getty prompt.  See the implementation references
-linked at the top.
+live UFS rootfs all work on XEiJ.  Boot reaches an interactive shell on
+both the TVRAM/keyboard and RS-232C serial consoles.  See the
+implementation references linked at the top.
 
 ---
 
@@ -211,9 +211,9 @@ src/target/x68k/
   kernel/core/target_x68k.c         Target hooks, vector patching, rootfs mount
   boot/stage1.S                     IPL bootstrap (sector 0, <= 1024 B)
   boot/stage2.c                     44bsd UFS kernel loader (sectors 1-3)
-  kernel/vfs/driver/uart_x68k.c     IOCS console, VT100 converter, MFP polling
+  kernel/vfs/driver/uart_x68k.c     IOCS console, VT100 converter, serial/keyboard input
   kernel/vfs/driver/iocs_blk.c      IOCS _B_READ block device ("fd0")
-  drivers/timer_x68k.c              MFP Timer-C driver (100 Hz tick)
+  kernel/core/driver/timer_x68k.c   MFP Timer-C driver (100 Hz tick)
   romfs/etc/profile                 Shell startup (TERM=dumb, PS1, PATH)
 scripts/mkx68kimg.sh                Floppy image build tool
 tools/mkufs/mkufs.c                 UFS image creator (big-endian support)
