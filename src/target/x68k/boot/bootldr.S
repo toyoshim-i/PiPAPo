@@ -131,7 +131,7 @@ copy_loop:
     move.l  (%a0)+,(%a1)+
     dbra    %d0,copy_loop
 
-    | Restore TRAP #15 to IPL IOCS handler for kernel uart_x68k.c to use.
+    | Restore TRAP #15 to IPL IOCS handler for the kernel's IOCS drivers.
     move.l  %a5,0x0000BC
 
     | Jump to kernel Reset_Handler at 0x006400.

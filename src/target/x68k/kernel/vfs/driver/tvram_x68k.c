@@ -1,9 +1,10 @@
 /*
- * uart_x68k.c — Console driver for X68000 via IPL IOCS
+ * tvram_x68k.c — X68000 TVRAM text console driver via IPL IOCS
  *
- * Implements the uart.h interface using X68000 IOCS calls (TRAP #15).
- * Stage2 preserves the IPL IOCS handler at vector 47 (TRAP #15), so all
- * IOCS function codes work transparently from supervisor mode.
+ * Implements the shared uart.h console interface (uart_init / uart_putc /
+ * uart_getc / uart_rx_avail) on the built-in TVRAM text plane using X68000
+ * IOCS calls (TRAP #15).  Stage2 preserves the IPL IOCS handler at vector 47
+ * (TRAP #15), so all IOCS function codes work from supervisor mode.
  *
  * IMPORTANT: All IOCS calls take the x68k IOCS guard and mask PPAP's Timer-C
  * scheduler source while leaving the ROM's other required interrupts enabled.
@@ -21,21 +22,17 @@
  *   _B_PUTC    (d0=0x20, d1.w=char)  Output one character to TVRAM console
  *   _B_KEYINP  (d0=0x00)             Dequeue one key (blocks on empty ring)
  *   _B_KEYSNS  (d0=0x01)             Key-ring sense (non-destructive)
+ *   _B_COLOR   (d0=0x22, d1.w=code)  Set text colour/attribute for _B_PUTC
  *   _B_LOCATE  (d0=0x23, d1.w=x, d2.w=y)  Set cursor position
  *   _B_CLRST   (d0=0x2A, d1.w=2)     Clear entire screen
  *   _B_CLRST   (d0=0x2A, d1.w=0)     Clear from cursor to end of screen
  *   _B_ERA_AL  (d0=0x2B)             Clear from cursor to end of line
- *   _LOF232C   (d0=0x31)             RS-232C receive buffer count
- *   _INP232C   (d0=0x32)             Input one RS-232C serial character
- *   _OUT232C   (d0=0x35, d1.b=char)  Output one character to RS-232C serial
- *   _B_COLOR   (d0=0x22, d1.w=code)  Set text colour/attribute for _B_PUTC
  *   _B_CONSOL  (d0=0x2E)             Query text console geometry (cols/rows)
  */
 
-#include "kernel/vfs/driver/uart_x68k.h"
+#include "kernel/vfs/driver/tvram_x68k.h"
 
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdint.h>
 
 #include "kernel/vfs/driver/uart.h"
@@ -98,12 +95,6 @@ static void iocs_b_consol_query(int *cols, int *rows) {
   *rows = (int)((uint32_t)d2 & 0xFFu) + 1;
 }
 
-static inline void iocs_out232c(char c) {
-  register int32_t d0 asm("d0") = 0x35;
-  register int32_t d1 asm("d1") = (unsigned char)c;
-  asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "d2", "a0", "a1", "memory");
-}
-
 static inline int iocs_b_getc(void) {
   register int32_t d0 asm("d0") = 0x00; /* _B_KEYINP — blocking key read */
   asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
@@ -143,7 +134,7 @@ bool uart_tvram_inhibit;
  *   ESC [ 2 J       → clear screen       (_B_CLR_ST)
  *   ESC [ 0 J       → clear to end       (_B_CLR_ED)
  *   ESC [ 0 K       → clear to EOL       (_B_CLR_AL)
- *   ESC [ ... m     → SGR (ignored — no TVRAM colour support)
+ *   ESC [ ... m     → SGR colour         (_B_COLOR)
  *   ESC [ ? ...     → private modes (ignored)
  *
  * Cursor position is tracked in software to support relative movements.
@@ -363,26 +354,6 @@ static int vt_feed(char c) {
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
-/* ── RS-232C serial input via IOCS ─────────────────────────────────────────
- *
- * The ROM SCC interrupt path owns receive buffering.  Poll `_LOF232C` instead
- * of SCC RR0 so idle wakeups see bytes already drained into the IOCS buffer.
- * Call `_INP232C` only after `_LOF232C` reports data; `_INP232C` blocks when
- * the ROM buffer is empty.
- */
-
-static inline int iocs_lof232c(void) {
-  register int32_t d0 asm("d0") = 0x31;
-  asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
-  return d0;
-}
-
-static inline int iocs_inp232c(void) {
-  register int32_t d0 asm("d0") = 0x32;
-  asm volatile("trap #15" : "+r"(d0) : : "d1", "d2", "a0", "a1", "memory");
-  return d0;
-}
-
 void uart_init(void) {
   /* IOCS owns the display and serial hardware.  Do not clear TVRAM here:
    * that would wipe stage1/2's "PiPA" + the kernel's "Po" banner.
@@ -411,18 +382,6 @@ int uart_putc(char c, void (*notify)(void)) {
   x68k_iocs_enter();
   x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
   if (!vt_feed(c)) iocs_b_putc(c);
-  x68k_iocs_irq_end(irq);
-  x68k_iocs_exit();
-  return 1;
-}
-
-int uart_serial_putc(char c, void (*notify)(void)) {
-  (void)notify;
-  if (uart_tvram_inhibit && x68k_iocs_held_by_current()) return 1;
-  x68k_iocs_enter();
-  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
-  if (c == '\n') iocs_out232c('\r');
-  iocs_out232c(c);
   x68k_iocs_irq_end(irq);
   x68k_iocs_exit();
   return 1;
@@ -466,40 +425,6 @@ int uart_rx_avail_idle(void) {
   if (!x68k_iocs_try_enter()) return 0;
   x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
   int r = iocs_b_keysns() ? 1 : 0;
-  x68k_iocs_irq_end(irq);
-  x68k_iocs_exit();
-  return r;
-}
-
-int uart_serial_getc(void) {
-  x68k_iocs_enter();
-  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
-  int avail = iocs_lof232c();
-  if (avail <= 0) {
-    x68k_iocs_irq_end(irq);
-    x68k_iocs_exit();
-    return -1;
-  }
-  int c = iocs_inp232c();
-  x68k_iocs_irq_end(irq);
-  x68k_iocs_exit();
-  if (c > 0x7F) return -1;
-  return c;
-}
-
-int uart_serial_rx_avail(void) {
-  x68k_iocs_enter();
-  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
-  int r = iocs_lof232c() > 0;
-  x68k_iocs_irq_end(irq);
-  x68k_iocs_exit();
-  return r;
-}
-
-int uart_serial_rx_avail_idle(void) {
-  if (!x68k_iocs_try_enter()) return 0;
-  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
-  int r = iocs_lof232c() > 0;
   x68k_iocs_irq_end(irq);
   x68k_iocs_exit();
   return r;
