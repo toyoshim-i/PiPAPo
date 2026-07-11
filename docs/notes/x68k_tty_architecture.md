@@ -55,9 +55,9 @@ the IPL ROM's standard API for hardware access.  This has implications:
 
 3. **VT100 translation**: IOCS `_B_PUTC` has its own escape sequence
    parser (incompatible with VT100).  Sending raw VT100 CSI sequences
-   causes address errors.  `uart_x68k.c` intercepts all ESC sequences,
+   causes address errors.  `tvram_x68k.c` intercepts all ESC sequences,
    parses them as VT100, and converts supported sequences to equivalent
-   IOCS calls (cursor positioning, screen clear, etc.).
+   IOCS calls (cursor positioning, screen clear, SGR colour, etc.).
 
 ## Input Polling
 
@@ -139,7 +139,8 @@ With pastepipe enabled, XEiJ accepts control commands such as `interrupt`,
 
 | File | Role |
 |------|------|
-| `src/target/x68k/kernel/vfs/driver/uart_x68k.c` | IOCS wrappers, VT100 converter, serial I/O |
+| `src/target/x68k/kernel/vfs/driver/tvram_x68k.c` | TVRAM console: VT100 converter, SGR colour, geometry |
+| `src/target/x68k/kernel/vfs/driver/serial_x68k.c` | RS-232C serial console |
 | `src/target/x68k/kernel/core/driver/timer_x68k.c` | MFP Timer-C configuration |
 | `src/target/x68k/kernel/vfs/driver/x68k_logger.c` | TTY backend wiring |
 | `src/target/x68k/boot/stage2.c` | Vector preservation during kernel load |
