@@ -25,4 +25,12 @@ int uart_serial_rx_avail(void);
 int uart_rx_avail_idle(void);
 int uart_serial_rx_avail_idle(void);
 
+/* ── TVRAM display backend (primary TTY) ───────────────────────────────── */
+
+/* Text console geometry (columns/rows), queried from IOCS _B_CONSOL at init.
+ * Wired into the display tty backend's get_cols/get_rows hooks so
+ * TIOCGWINSZ reflects the real TVRAM text area. */
+int uart_get_cols(void);
+int uart_get_rows(void);
+
 #endif /* PPAP_TARGET_X68K_KERNEL_VFS_DRIVER_UART_X68K_H */

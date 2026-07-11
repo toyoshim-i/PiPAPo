@@ -28,6 +28,8 @@
  *   _LOF232C   (d0=0x31)             RS-232C receive buffer count
  *   _INP232C   (d0=0x32)             Input one RS-232C serial character
  *   _OUT232C   (d0=0x35, d1.b=char)  Output one character to RS-232C serial
+ *   _B_COLOR   (d0=0x22, d1.w=code)  Set text colour/attribute for _B_PUTC
+ *   _B_CONSOL  (d0=0x2E)             Query text console geometry (cols/rows)
  */
 
 #include "kernel/vfs/driver/uart_x68k.h"
@@ -70,6 +72,30 @@ static inline void iocs_b_locate(int x, int y) {
   register int32_t d1 asm("d1") = x;
   register int32_t d2 asm("d2") = y;
   asm volatile("trap #15" : "+r"(d0) : "r"(d1), "r"(d2) : "a0", "a1", "memory");
+}
+
+/* _B_COLOR — set the text colour/attribute used by subsequent _B_PUTC.  The
+ * code selects an X68000 text-palette entry: base 0-3, +4 emphasis, +8
+ * reverse. */
+static inline void iocs_b_color(int code) {
+  register int32_t d0 asm("d0") = 0x22;
+  register int32_t d1 asm("d1") = code;
+  asm volatile("trap #15" : "+r"(d0) : "r"(d1) : "d2", "a0", "a1", "memory");
+}
+
+/* _B_CONSOL — query the current text console geometry.  Called with d1=d2=-1
+ * (change nothing); the ROM returns the current display range in d2, packed
+ * as (cols-1) in the high word and (rows-1) in the low byte. */
+static void iocs_b_consol_query(int *cols, int *rows) {
+  register int32_t d0 asm("d0") = 0x2E;
+  register int32_t d1 asm("d1") = -1;
+  register int32_t d2 asm("d2") = -1;
+  asm volatile("trap #15"
+               : "+r"(d0), "+r"(d1), "+r"(d2)
+               :
+               : "a0", "a1", "memory");
+  *cols = (int)(((uint32_t)d2 >> 16) & 0xFFFFu) + 1;
+  *rows = (int)((uint32_t)d2 & 0xFFu) + 1;
 }
 
 static inline void iocs_out232c(char c) {
@@ -123,9 +149,12 @@ bool uart_tvram_inhibit;
  * Cursor position is tracked in software to support relative movements.
  */
 
-#define VT_COLS 96 /* X68000 standard text screen width  */
-#define VT_ROWS 31 /* X68000 standard text screen height */
-#define VT_MAX_PARAMS 4
+#define VT_MAX_PARAMS 8
+
+/* Console text geometry, queried from IOCS _B_CONSOL at init.  Defaults to
+ * the X68000 standard 96x31 text screen until the query updates them. */
+static int vt_cols = 96;
+static int vt_rows = 31;
 
 enum { ST_NORMAL = 0, ST_ESC, ST_CSI };
 
@@ -137,6 +166,33 @@ static int vt_private; /* '?' prefix seen */
 /* Software cursor tracking */
 static int cur_x, cur_y;
 
+/* SGR (colour) state.  Mapped onto the X68000 default text palette
+ * {0=black, 1=cyan, 2=yellow, 3=white} via IOCS _B_COLOR, with emphasis (+4)
+ * for bold and reverse (+8) for inverse.  ANSI hues collapse to the nearest
+ * of those four palette entries; the palette itself is left unchanged so
+ * native Human68k programs still see Sharp's defaults. */
+static int sgr_fg = 3; /* current text-palette entry (default: white) */
+static int sgr_bold;
+static int sgr_reverse;
+
+static const unsigned char ansi_to_tpal[8] = {
+    0, /* black             */
+    2, /* red     -> yellow */
+    1, /* green   -> cyan   */
+    2, /* yellow            */
+    1, /* blue    -> cyan   */
+    3, /* magenta -> white  */
+    1, /* cyan              */
+    3, /* white             */
+};
+
+static void sgr_apply(void) {
+  int code = sgr_fg & 3;
+  if (sgr_bold) code += 4;
+  if (sgr_reverse) code += 8;
+  iocs_b_color(code);
+}
+
 static int param(int idx, int def) {
   if (idx < vt_nparams && vt_params[idx] > 0) return vt_params[idx];
   return def;
@@ -145,8 +201,8 @@ static int param(int idx, int def) {
 static void clamp_cursor(void) {
   if (cur_x < 0) cur_x = 0;
   if (cur_y < 0) cur_y = 0;
-  if (cur_x >= VT_COLS) cur_x = VT_COLS - 1;
-  if (cur_y >= VT_ROWS) cur_y = VT_ROWS - 1;
+  if (cur_x >= vt_cols) cur_x = vt_cols - 1;
+  if (cur_y >= vt_rows) cur_y = vt_rows - 1;
 }
 
 static void locate(int x, int y) {
@@ -190,7 +246,41 @@ static void csi_dispatch(int final) {
     case 'K':                                /* Erase in Line */
       if (param(0, 0) == 0) iocs_b_clr_al(); /* cursor to end of line */
       break;
-    case 'm': /* SGR — no colour support, ignore */
+    case 'm': /* SGR — map colour onto the X68000 text palette */
+      if (vt_nparams == 0) {
+        /* Bare ESC[m == ESC[0m == reset */
+        sgr_fg = 3;
+        sgr_bold = 0;
+        sgr_reverse = 0;
+      } else {
+        for (int i = 0; i < vt_nparams; i++) {
+          int p = vt_params[i];
+          if (p == 0) {
+            sgr_fg = 3;
+            sgr_bold = 0;
+            sgr_reverse = 0;
+          } else if (p == 1) {
+            sgr_bold = 1;
+          } else if (p == 7) {
+            sgr_reverse = 1;
+          } else if (p == 22) {
+            sgr_bold = 0;
+          } else if (p == 27) {
+            sgr_reverse = 0;
+          } else if (p >= 30 && p <= 37) {
+            sgr_fg = ansi_to_tpal[p - 30];
+          } else if (p == 39) {
+            sgr_fg = 3;
+          } else if (p >= 90 && p <= 97) {
+            sgr_fg = ansi_to_tpal[p - 90];
+            sgr_bold = 1;
+          }
+          /* Background (40-47/49/100-107) is not represented: the IOCS
+           * console has no per-character background; reverse (7) covers
+           * inverse.  Unknown params are ignored. */
+        }
+      }
+      sgr_apply();
       break;
     case 'r': /* DECSTBM — scroll region, ignore */
       break;
@@ -214,19 +304,19 @@ static int vt_feed(char c) {
       /* Track cursor for printable characters */
       if (ch >= 0x20u && ch <= 0x7Eu) {
         cur_x++;
-        if (cur_x >= VT_COLS) {
+        if (cur_x >= vt_cols) {
           cur_x = 0;
-          if (cur_y < VT_ROWS - 1) cur_y++;
+          if (cur_y < vt_rows - 1) cur_y++;
         }
       } else if (ch == '\n') {
-        if (cur_y < VT_ROWS - 1) cur_y++;
+        if (cur_y < vt_rows - 1) cur_y++;
       } else if (ch == '\r') {
         cur_x = 0;
       } else if (ch == '\b') {
         if (cur_x > 0) cur_x--;
       } else if (ch == '\t') {
         cur_x = (cur_x + 8) & ~7;
-        if (cur_x >= VT_COLS) cur_x = VT_COLS - 1;
+        if (cur_x >= vt_cols) cur_x = vt_cols - 1;
       }
       return 0; /* pass through to _B_PUTC */
 
@@ -298,7 +388,22 @@ void uart_init(void) {
    * that would wipe stage1/2's "PiPA" + the kernel's "Po" banner.
    * cur_x/cur_y stay 0; the first VT100 sequence corrects them. */
   x68k_iocs_init();
+
+  /* Query the real text geometry so the VT100 converter's wrap/clamp math
+   * and the tty window size match the active TVRAM mode. */
+  x68k_iocs_enter();
+  x68k_iocs_irq_state_t irq = x68k_iocs_irq_begin();
+  iocs_b_consol_query(&vt_cols, &vt_rows);
+  x68k_iocs_irq_end(irq);
+  x68k_iocs_exit();
+  if (vt_cols < 20 || vt_cols > 128) vt_cols = 96;
+  if (vt_rows < 8 || vt_rows > 64) vt_rows = 31;
 }
+
+/* Text console geometry for the tty backend's get_cols/get_rows hooks
+ * (TIOCGWINSZ).  Reflects the IOCS _B_CONSOL query done in uart_init. */
+int uart_get_cols(void) { return vt_cols; }
+int uart_get_rows(void) { return vt_rows; }
 
 int uart_putc(char c, void (*notify)(void)) {
   (void)notify; /* IOCS is synchronous — putc never fails */

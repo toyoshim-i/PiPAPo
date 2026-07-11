@@ -27,8 +27,8 @@ void vfs_notify(int event) {
           .putc = uart_putc,
           .getc = uart_getc,
           .rx_avail = uart_rx_avail,
-          .get_cols = NULL,
-          .get_rows = NULL,
+          .get_cols = uart_get_cols,
+          .get_rows = uart_get_rows,
       };
       static const tty_backend_t serial_be = {
           .putc = uart_serial_putc,
@@ -40,6 +40,8 @@ void vfs_notify(int event) {
       tty_set_backend(TTY_DISPLAY, &tvram_be);
       tty_set_backend(TTY_SERIAL, &serial_be);
       tty_set_console(TTY_DISPLAY);
+      mod_vfs.klogf("Console: %ux%u TVRAM text\n", (unsigned)uart_get_cols(),
+                    (unsigned)uart_get_rows());
       break;
     }
     case VFS_EVENT_IDLE:
