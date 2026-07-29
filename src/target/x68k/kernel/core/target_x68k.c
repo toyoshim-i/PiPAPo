@@ -23,6 +23,7 @@
 #include "kernel/core/syscall/syscall.h"
 #ifdef PPAP_HAS_BLKDEV
 #include "kernel/vfs/driver/iocs_blk.h"
+#include "kernel/vfs/driver/scsi_blk.h"
 #endif
 #include "target/target.h"
 
@@ -132,6 +133,7 @@ void target_late_init(void) {
   mod_vfs.notify(VFS_EVENT_LATE_INIT);
 #ifdef PPAP_HAS_BLKDEV
   iocs_blk_init();
+  scsi_blk_init();
 #endif
 }
 
@@ -139,7 +141,8 @@ int target_mount_rootfs(void) {
 #ifdef PPAP_HAS_BLKDEV
   /* iocs_blk registered "fd0" against the IOCS-backed floppy in
    * target_late_init.  Mount it as the rootfs — same 44bsd UFS that
-   * stage2 loaded /boot/kernel from. */
+   * stage2 loaded /boot/kernel from.  (scsi_blk also registers "sd0" when a
+   * SCSI disk is present; X-8 selects fd0/sd0 from the SRAM boot device.) */
   return mod_vfs.mount_ufs("/", 0, "fd0");
 #else
   return -1;

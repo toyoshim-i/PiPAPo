@@ -33,6 +33,7 @@ add_executable(ppap_x68k
     ${KERNEL_BLKDEV_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/core/target_x68k.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/iocs_blk.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/scsi_blk.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/serial_x68k.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/tvram_x68k.c
     ${CMAKE_CURRENT_SOURCE_DIR}/kernel/vfs/driver/x68k_iocs.c
