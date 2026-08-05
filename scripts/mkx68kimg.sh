@@ -42,8 +42,10 @@ done
 STAGE1_S="$PROJECT_DIR/src/target/x68k/boot/stage1.S"
 STAGE1_LD="$PROJECT_DIR/src/target/x68k/boot/bootldr.ld"
 STAGE2_HEAD_S="$PROJECT_DIR/src/target/x68k/boot/stage2_head.S"
-STAGE2_C="$PROJECT_DIR/src/target/x68k/boot/stage2.c"
+STAGE2_CORE_C="$PROJECT_DIR/src/target/x68k/boot/stage2_core.c"
+STAGE2_FLOPPY_C="$PROJECT_DIR/src/target/x68k/boot/stage2_floppy.c"
 STAGE2_LD="$PROJECT_DIR/src/target/x68k/boot/stage2.ld"
+BOOT_INC="$PROJECT_DIR/src/target/x68k/boot"
 
 ROMFS_STAGING="$PROJECT_DIR/build/x68k/romfs_ppap_x68k"
 
@@ -112,12 +114,13 @@ fi
 
 # ── Build stage2.bin ──────────────────────────────────────────────────────────
 
-echo "[mkx68kimg] Building stage2..."
+echo "[mkx68kimg] Building stage2 (floppy)..."
 $M68K_GCC -m68000 -nostdlib -ffreestanding -Os \
+    -I "$BOOT_INC" \
     -T "$STAGE2_LD" \
     -Wl,--build-id=none \
     -o "$TMPDIR/stage2.elf" \
-    "$STAGE2_HEAD_S" "$STAGE2_C"
+    "$STAGE2_HEAD_S" "$STAGE2_CORE_C" "$STAGE2_FLOPPY_C"
 $M68K_OBJCOPY -O binary -j .text -j .rodata "$TMPDIR/stage2.elf" "$TMPDIR/stage2.bin"
 
 STAGE2_SIZE=$(stat -c%s "$TMPDIR/stage2.bin")

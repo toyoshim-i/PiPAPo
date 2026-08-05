@@ -25,7 +25,13 @@
 #include "kernel/vfs/driver/iocs_blk.h"
 #include "kernel/vfs/driver/scsi_blk.h"
 #endif
+#include "boot/boot_handoff.h"
 #include "target/target.h"
+
+/* Medium the boot chain came from, read once from the boot handoff in
+ * target_early_init() and used to mount the matching rootfs.  Defaults to
+ * floppy when the handoff magic is absent (e.g. an unrecognised boot path). */
+static uint8_t g_boot_device = BOOT_DEV_FLOPPY;
 
 /* ── TRAP #0 syscall dispatch ────────────────────────────────────────── *
  *
@@ -59,6 +65,15 @@ void m68k_syscall_entry(uint32_t *regs) {
 /* ── Target hooks ────────────────────────────────────────────────────── */
 
 void target_early_init(void) {
+  /* Read the boot-device handoff FIRST — before target_late_init() reclaims
+   * 0x000400-0x005FFF as page-pool memory and before the supervisor stack
+   * (growing down from 0x006400) can reach 0x002FF8.  stage2 recorded which
+   * medium it booted from; the magic guards against stale RAM. */
+  if (*(volatile uint32_t *)BOOT_HANDOFF_MAGIC_ADDR == BOOT_HANDOFF_MAGIC) {
+    uint32_t dev = *(volatile uint32_t *)BOOT_HANDOFF_DEV_ADDR;
+    g_boot_device = (uint8_t)dev;
+  }
+
   /* Patch hardware interrupt vectors BEFORE the first IOCS call.
    *
    * Stage2 copies the kernel's .vectors to 0x000000 before jumping here,
@@ -139,11 +154,13 @@ void target_late_init(void) {
 
 int target_mount_rootfs(void) {
 #ifdef PPAP_HAS_BLKDEV
-  /* iocs_blk registered "fd0" against the IOCS-backed floppy in
-   * target_late_init.  Mount it as the rootfs — same 44bsd UFS that
-   * stage2 loaded /boot/kernel from.  (scsi_blk also registers "sd0" when a
-   * SCSI disk is present; X-8 selects fd0/sd0 from the SRAM boot device.) */
-  return mod_vfs.mount_ufs("/", 0, "fd0");
+  /* iocs_blk ("fd0") and scsi_blk ("sd0") both registered in
+   * target_late_init().  Mount whichever medium the boot chain came from
+   * (recorded in the boot handoff) — the same 44bsd UFS that stage2 loaded
+   * /boot/kernel from. */
+  const char *dev = (g_boot_device == BOOT_DEV_SCSI) ? "sd0" : "fd0";
+  mod_vfs.klogf("boot: rootfs on %s\n", dev);
+  return mod_vfs.mount_ufs("/", 0, dev);
 #else
   return -1;
 #endif
