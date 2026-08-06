@@ -321,6 +321,7 @@ if [[ "$TARGET" == "x68k" ]]; then
     DOCKER_IMAGE="$(target_docker_image x68k)"
     docker_run "$DOCKER_IMAGE" /ppap/scripts/mkx68kimg.sh
     XDF="$PROJECT_DIR/build/x68k/ppap_x68k.xdf"
+    HDS="$PROJECT_DIR/build/x68k/ppap_x68k.hds"
     XEIJ_DIR="$PROJECT_DIR/tools/xeij"
     XEIJ_JAR="$XEIJ_DIR/XEiJ.jar"
     if [[ ! -f "$XEIJ_JAR" ]]; then
@@ -343,10 +344,23 @@ if [[ "$TARGET" == "x68k" ]]; then
     # "TCP/IP ⇔ AUX" URL-encoded
     XEIJ_RS232C="TCP%2FIP+%E2%87%94+AUX"
 
-    echo "[run] Launching XEiJ with $XDF (serial on TCP port $XEIJ_TCP_PORT) ..."
+    # Boot device: floppy when the .xdf exists (normal build), else the SCSI
+    # HDD (--test builds skip the oversized floppy image).  Override with the
+    # X68K_BOOT env var (fd0 / sc0).
+    X68K_BOOT="${X68K_BOOT:-}"
+    if [[ -z "$X68K_BOOT" ]]; then
+        if [[ -f "$XDF" ]]; then X68K_BOOT="fd0"; else X68K_BOOT="sc0"; fi
+    fi
+    # Attach whichever images the build produced — SCSI HDD always, floppy when
+    # it fit.  Either can be the -boot device; both mount the same rootfs UFS.
+    XEIJ_MEDIA=()
+    if [[ -f "$XDF" ]]; then XEIJ_MEDIA+=(-fd0="$XDF"); fi
+    if [[ -f "$HDS" ]]; then XEIJ_MEDIA+=(-sc0="$HDS"); fi
+
+    echo "[run] Launching XEiJ (boot=$X68K_BOOT, serial on TCP port $XEIJ_TCP_PORT) ..."
     read -r -a XEIJ_EXTRA_ARGV <<< "${XEIJ_EXTRA_ARGS:-}"
     "$JAVA_BIN" -jar "$XEIJ_JAR" \
-        -fd0="$XDF" -boot=fd0 -memory=2 -model=Hybrid -mpu=68000 \
+        "${XEIJ_MEDIA[@]}" -boot="$X68K_BOOT" -memory=2 -model=Hybrid -mpu=68000 \
         -rs232cconnection="$XEIJ_RS232C" \
         -tcpipport="$XEIJ_TCP_PORT" \
         "${XEIJ_EXTRA_ARGV[@]}" &

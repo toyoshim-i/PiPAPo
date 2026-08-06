@@ -46,6 +46,10 @@ STAGE2_CORE_C="$PROJECT_DIR/src/target/x68k/boot/stage2_core.c"
 STAGE2_FLOPPY_C="$PROJECT_DIR/src/target/x68k/boot/stage2_floppy.c"
 STAGE2_LD="$PROJECT_DIR/src/target/x68k/boot/stage2.ld"
 BOOT_INC="$PROJECT_DIR/src/target/x68k/boot"
+SCSI_HEAD_S="$BOOT_INC/scsi_head.S"
+STAGE2_SCSI_C="$BOOT_INC/stage2_scsi.c"
+SCSI_LOADER_LD="$BOOT_INC/scsi_loader.ld"
+SCSI_LAYOUT_H="$BOOT_INC/scsi_layout.h"
 
 ROMFS_STAGING="$PROJECT_DIR/build/x68k/romfs_ppap_x68k"
 
@@ -130,6 +134,29 @@ if [[ $STAGE2_SIZE -gt $STAGE2_MAX ]]; then
     exit 1
 fi
 
+# ── Build the SCSI IPL loader (disk record 1 → 0x2000) ────────────────────────
+#
+# SCSIINROM reads record 1 (1024 B) to 0x2000 and JSRs it, so the whole loader
+# (SCSI entry + shared stage2 core + SCSI read backend) must fit in 1024 bytes.
+
+SCSI_LOADER_MAX=1024
+echo "[mkx68kimg] Building SCSI loader..."
+$M68K_GCC -m68000 -nostdlib -ffreestanding -Os \
+    -I "$BOOT_INC" \
+    -T "$SCSI_LOADER_LD" \
+    -Wl,--build-id=none \
+    -o "$TMPDIR/scsi_loader.elf" \
+    "$SCSI_HEAD_S" "$STAGE2_CORE_C" "$STAGE2_SCSI_C"
+$M68K_OBJCOPY -O binary -j .text -j .rodata \
+    "$TMPDIR/scsi_loader.elf" "$TMPDIR/scsi_loader.bin"
+
+SCSI_LOADER_SIZE=$(stat -c%s "$TMPDIR/scsi_loader.bin")
+echo "[mkx68kimg] SCSI ldr: $SCSI_LOADER_SIZE / $SCSI_LOADER_MAX bytes"
+if [[ $SCSI_LOADER_SIZE -gt $SCSI_LOADER_MAX ]]; then
+    echo "[mkx68kimg] Error: SCSI loader too large ($SCSI_LOADER_SIZE > $SCSI_LOADER_MAX bytes)"
+    exit 1
+fi
+
 # ── Stage the rootfs UFS (kernel under /boot, userland at /) ──────────────────
 
 echo "[mkx68kimg] Staging UFS contents..."
@@ -151,20 +178,29 @@ UFS_INODES=$(( STAGING_INODES * 5 / 4 + 16 ))
 UFS_SIZE=$(stat -c%s "$TMPDIR/rootfs.ufs")
 echo "[mkx68kimg] UFS:      $UFS_SIZE bytes (${UFS_SIZE_KB} KB allocated)"
 
-# ── Build the SCSI HDD image (.hds): X68SCSI1 header (LBA 0) + UFS (LBA 1+) ────
+# ── Build the bootable SCSI HDD image (.hds) ──────────────────────────────────
 #
-# XEiJ .hds device-init header (512 bytes at offset 0, big-endian):
+# Layout for the ROM SCSIINROM boot path (512-byte records; see scsi_layout.h):
+#   record 0  (byte 0x000)  X68SCSI1 device-init header
+#   record 1  (byte 0x200)  unused (zero)
+#   record 2  (byte 0x400)  SCSI IPL loader — SCSIINROM reads 1024 B here to
+#                           0x2000, checks the first byte is $60, and JSRs it
+#   record SCSI_UFS_BASE+   rootfs UFS
+#
+# XEiJ .hds device-init header (big-endian) at byte 0:
 #   0x00  "X68SCSI1"   magic
 #   0x08  word         bytes/record (512)
-#   0x0A  long         disk record count (valid LBAs 0..count-1)
+#   0x0A  long         disk record count = fileLength/512 (diskEndByte==len)
 #   0x0E  byte         Read(10)/Write(10)-capable flag (0x01)
-# The rootfs UFS follows at LBA 1 (byte 512).  Guest LBA 0 IS the header
-# (XEiJ maps LBA→offset directly), so scsi_blk maps blkdev sector S to
-# LBA (1 + S) — matching SCSI_UFS_BASE in scsi_blk.c.
 
 HDS_RECORD=512
-HDS_UFS_RECORDS=$(( UFS_SIZE / HDS_RECORD ))
-HDS_TOTAL_RECORDS=$(( 1 + HDS_UFS_RECORDS ))   # +1 for the header at LBA 0
+# Single source of truth: the UFS base LBA comes from scsi_layout.h (shared
+# with the SCSI boot loader and the kernel's scsi_blk driver).
+SCSI_UFS_BASE=$(grep -E '^#define[[:space:]]+SCSI_UFS_BASE' "$SCSI_LAYOUT_H" \
+    | awk '{print $3}' | tr -cd '0-9')
+HDS_LOADER_OFFSET=1024                                   # record 2 (byte 0x400)
+HDS_UFS_OFFSET=$(( SCSI_UFS_BASE * HDS_RECORD ))         # rootfs UFS byte offset
+HDS_TOTAL_RECORDS=$(( SCSI_UFS_BASE + UFS_SIZE / HDS_RECORD ))
 python3 - "$TMPDIR/hds_header.bin" "$HDS_TOTAL_RECORDS" <<'PY'
 import struct, sys
 out, total = sys.argv[1], int(sys.argv[2])
@@ -176,9 +212,15 @@ hdr[0x0E] = 0x01                            # Read(10)/Write(10) capable
 open(out, "wb").write(hdr)
 PY
 mkdir -p "$(dirname "$OUTPUT_HDS")"
-cat "$TMPDIR/hds_header.bin" "$TMPDIR/rootfs.ufs" > "$OUTPUT_HDS"
+dd if=/dev/zero of="$OUTPUT_HDS" bs="$HDS_RECORD" count="$HDS_TOTAL_RECORDS" \
+    status=none
+dd if="$TMPDIR/hds_header.bin" of="$OUTPUT_HDS" conv=notrunc status=none
+dd if="$TMPDIR/scsi_loader.bin" of="$OUTPUT_HDS" bs=1 seek="$HDS_LOADER_OFFSET" \
+    conv=notrunc status=none
+dd if="$TMPDIR/rootfs.ufs" of="$OUTPUT_HDS" bs=1 seek="$HDS_UFS_OFFSET" \
+    conv=notrunc status=none
 HDS_SIZE=$(stat -c%s "$OUTPUT_HDS")
-echo "[mkx68kimg] HDD:      $OUTPUT_HDS ($HDS_SIZE bytes, $HDS_TOTAL_RECORDS records)"
+echo "[mkx68kimg] HDD:      $OUTPUT_HDS ($HDS_SIZE bytes, $HDS_TOTAL_RECORDS records, UFS@LBA $SCSI_UFS_BASE)"
 
 # ── Floppy capacity (skip .xdf gracefully if the UFS overflows) ───────────────
 

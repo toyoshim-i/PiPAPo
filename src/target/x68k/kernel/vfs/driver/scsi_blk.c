@@ -6,11 +6,11 @@
  * (IOCS $F5, TRAP #15).  On XEiJ's Hybrid model the ROM's SCSI driver talks
  * to the emulated MB89352 (SPC), so no direct controller access is needed.
  *
- * Disk layout (XEiJ .hds): logical block 0 holds the "X68SCSI1" device-init
- * header, so the rootfs UFS starts at LBA SCSI_UFS_BASE; a blkdev sector S
- * maps to LBA (SCSI_UFS_BASE + S).  Records are 512 bytes = one blkdev
- * sector, so a read goes straight into the target page (no cache, unlike the
- * 1024-byte floppy sectors of iocs_blk).
+ * Disk layout (XEiJ .hds, see scsi_layout.h): record 0 holds the "X68SCSI1"
+ * device-init header, record 2 the SCSI IPL loader, and the rootfs UFS starts
+ * at LBA SCSI_UFS_BASE; a blkdev sector S maps to LBA (SCSI_UFS_BASE + S).
+ * Records are 512 bytes = one blkdev sector, so a read goes straight into the
+ * target page (no cache, unlike the 1024-byte floppy sectors of iocs_blk).
  *
  * Like iocs_blk, every IOCS call takes the x68k IOCS guard and masks Timer-C
  * while lowering IPL, so the ROM's SCSI/DMAC completion interrupts fire but
@@ -21,6 +21,7 @@
 
 #include <stdint.h>
 
+#include "boot/scsi_layout.h"
 #include "common/errno.h"
 #include "kernel/common/mod/mod_core.h"
 #include "kernel/common/mod/mod_vfs.h"
@@ -37,8 +38,8 @@
 /* Block-size code for _S_READ/_S_WRITE d5: 0=256, 1=512, 2=1024. */
 #define SCSI_BLKSIZE_CODE 1u
 
-/* LBA 0 holds the X68SCSI1 header; the UFS begins at the next record. */
-#define SCSI_UFS_BASE 1u
+/* SCSI_UFS_BASE (first LBA of the rootfs UFS) comes from boot/scsi_layout.h,
+ * shared with the SCSI boot loader and the .hds image builder. */
 
 /* Issue _S_READ for `nblocks` 512-byte records starting at `lba` into `buf`.
  * Returns 0 on success, -EIO on a negative IOCS status. */

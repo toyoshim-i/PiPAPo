@@ -77,8 +77,8 @@ A bootable PPAP system on the Sharp X68000 that:
 | X-4 | Interactive shell on both consoles (TVRAM/keyboard + RS-232C getty) | ✅ Complete |
 | X-5 | Live IOCS floppy block device (single 44bsd UFS, no in-RAM rootfs) | ✅ Complete |
 | X-6 | Enhanced TVRAM console — color (SGR) + native tty geometry; TVRAM/serial driver split | ✅ Complete |
-| X-7 | SCSI HDD rootfs — read path (`scsi_blk`, IOCS `_S_READ`) | ⬜ Planned |
-| X-8 | SCSI-IPL boot + SRAM-driven device select (HDD independently bootable) | ⬜ Planned |
+| X-7 | SCSI HDD rootfs — read path (`scsi_blk`, IOCS `_S_READ`) | ✅ Complete |
+| X-8 | SCSI-IPL boot (SCSIINROM record 1) + boot-medium rootfs select (HDD independently bootable) | ✅ Complete |
 | X-9 | Writable rootfs (IOCS `_S_WRITE`) | ⬜ Planned |
 | X-10 | Full userland test suite on the HDD image; recorded `runtests` pass | ⬜ Planned |
 | X-11 | Real hardware bring-up | ⬜ Planned |
@@ -205,24 +205,48 @@ while still booting the kernel from the floppy; verify `ls /` reads from the
 HDD UFS on XEiJ (`-boot=fd0 -sc0=…hds`).  This temp config does not yet
 consult SRAM — that arrives in X-8.
 
-### 3.4 SCSI-IPL boot + SRAM-driven device select (Phase X-8)
+### 3.4 SCSI-IPL boot (SCSIINROM record 1) + boot-medium rootfs select (Phase X-8)
 
-The X68000 IPL ROM reads the boot-device word at SRAM `$ED0018` and boots the
-named device — `0x0000` = STD (scan by priority), `0x9070`–`0x9370` = FDn,
-`0x8000`–`0x8F00` = SASI HDn, `0xA000` = SCSI/ROM, `0xB000` = RAM.  XEiJ
-writes this word from `-boot=` at launch.  To follow it like a stock X68000:
+The X68000 IPL ROM reads the boot-device word at SRAM `$ED0018` — `0x0000` =
+STD (scan by priority), `0x9070`–`0x9370` = FDn, `0x8000`–`0x8F00` = SASI HDn,
+`0xA000` = ROM (SCSIINROM / SCSI HDD), `0xB000` = RAM (XEiJ `XEiJ.java`
+`smrParseBootDevice`).  `-boot=sc0` writes `$ED0018 = 0xA000` and the SCSI-ROM
+handle to `$ED000C`, so a SCSI disk boots through the ROM SCSIINROM path.
 
-- Keep the floppy independently bootable (as today) **and** make the HDD
-  independently IPL-bootable through the ROM's SCSI boot path (research the
-  X68000 SCSI-IPL handoff, then add SCSI-boot stage1/stage2).
-- `stage2` reads `$ED0018` (**read-only** — never write SRAM
-  `0xED0000`–`0xED3FFF`, per the battery-backed rule) to resolve the boot
-  device and records it in the handoff area; the kernel mounts the matching
-  rootfs (`fd0`/`sd0`), replacing the X-7 hardcode.  One kernel image, correct
-  root regardless of boot source.
+**SCSIINROM handoff** (traced from `IPLROM30.DAT`, entry `ff935a`): reads disk
+record 0 and verifies the `X68SCSI1` signature, reads record 1 (the IPL,
+always at byte `0x400` regardless of the 256/512-byte record size) to
+`0x2000`, requires the first byte to be `$60` (`BRA`), and `JSR`s `0x2000` with
+`D4.b` = boot SCSI ID.  It does **not** read the partition table — record 1 is
+self-sufficient, so no Human68k partition/FAT is needed.
 
-After this, `-boot=sc0` boots fully from the HDD and `-boot=fd0` still boots
-the self-contained floppy.
+**Boot chain.** The whole SCSI loader (`scsi_head.S` + the shared
+`stage2_core.c` + the SCSI read backend `stage2_scsi.c`) fits in the single
+1024-byte record the ROM loads, so — unlike the floppy's stage1→stage2 — SCSI
+boots in one hop: `scsi_head.S` saves the IOCS vector, sets a stack, and calls
+`stage2_main()`, which reads `/boot/kernel` from the SCSI UFS via IOCS
+`_SCSIDRV` and boots it.  `stage2_core.c` (superblock/inode walk, kernel load,
+vector copy) is shared with the floppy path; only the block-read backend
+differs (`stage2_floppy.c` `_B_READ` vs `stage2_scsi.c` `_SCSIDRV`).
+
+**`.hds` layout** (512-byte records, `scsi_layout.h`): record 0 = `X68SCSI1`
+header, record 2 (byte `0x400`) = SCSI IPL loader, rootfs UFS at LBA
+`SCSI_UFS_BASE`.  `mkx68kimg.sh` builds the loader and lays out this bootable
+image; the same UFS is mounted live by `scsi_blk` at runtime.
+
+**Boot-medium rootfs select.** Rather than re-reading `$ED0018` in the kernel
+(ambiguous under STD/auto-boot, where it reads `0x0000`), each stage2 backend
+records its own medium in the boot handoff (`boot_handoff.h`: `0x2FF4` magic +
+`0x2FF8` device code) — floppy writes `fd0`, SCSI writes `sd0`.
+`target_early_init()` reads it before the low-RAM handoff region is reclaimed
+as pages; `target_mount_rootfs()` mounts the matching UFS, replacing the X-7
+hardcode.  This still follows the SRAM (the ROM used `$ED0018` to choose which
+medium's loader to run), and one kernel image roots correctly from either
+source.  SRAM is never written (`0xED0000`–`0xED3FFF` is battery-backed).
+
+Verified on XEiJ (headless): `-boot=sc0` boots fully from the HDD
+(`boot: rootfs on sd0`) and `-boot=fd0` still boots the self-contained floppy
+(`boot: rootfs on fd0`).
 
 ### 3.5 Writable rootfs (Phase X-9)
 
